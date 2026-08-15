@@ -33,6 +33,7 @@ class Task:
     plan_status: list[str] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
     validation: dict[str, Any] | None = None
+    repair_attempts: int = 0
 
 
 class Runtime:
@@ -184,6 +185,7 @@ class Runtime:
         return result
 
     def run_model_turn(self, on_text: Callable[[str], None] | None = None, max_steps: int = 8) -> str:
+        self._node("model.requested")
         if not self.provider or not self.task:
             raise RuntimeError("PROVIDER_NOT_CONFIGURED")
         final_text = ""
@@ -230,14 +232,31 @@ class Runtime:
         self.emit("task.blocked", self.task.id, reason="TOOL_BUDGET_EXCEEDED")
         raise RuntimeError("TASK_BUDGET_EXCEEDED")
 
+    def _node(self, node: str, **payload: object) -> None:
+        if self.task:
+            self.emit("agent.node", self.task.id, node=node, **payload)
+
     def validate(self, command: str) -> ToolResult:
-        """Run a user-selected validation command without changing task state."""
-        if not self.task:
+        """Run validation and record evidence for a bounded repair loop."""
+        if not self.task or self.task.status != "running":
             raise RuntimeError("NO_ACTIVE_TASK")
+        self._node("validation.started", command=command)
         self.emit("validation.started", self.task.id, command=command)
         result = self.run_tool("exec", command=command)
         self.task.validation = {"ok": result.ok, "command": command, "text": result.text}
-        self.emit("validation.completed" if result.ok else "validation.failed", self.task.id, ok=result.ok, command=command)
+        self.emit("validation.completed" if result.ok else "validation.failed", self.task.id, ok=result.ok, command=command, text=result.text)
+        return result
+
+    def repair(self, command: str, max_attempts: int = 2) -> ToolResult:
+        if not self.task or self.task.status != "running":
+            raise RuntimeError("NO_ACTIVE_TASK")
+        if self.task.repair_attempts >= max_attempts:
+            self.emit("repair.blocked", self.task.id, reason="REPAIR_BUDGET_EXCEEDED", attempts=self.task.repair_attempts)
+            return ToolResult(False, "REPAIR_BUDGET_EXCEEDED")
+        self.task.repair_attempts += 1
+        self._node("repair.started", attempt=self.task.repair_attempts)
+        result = self.validate(command)
+        self.emit("repair.completed" if result.ok else "repair.failed", self.task.id, attempt=self.task.repair_attempts, ok=result.ok)
         return result
 
     def checkpoint(self, label: str = "manual") -> dict[str, object]:

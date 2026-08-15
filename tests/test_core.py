@@ -79,6 +79,10 @@ class CoreTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.text, "UNSUPPORTED_TOOL")
 
+    def test_agent_node_event_is_renderable(self):
+        renderer = TerminalRenderer(color=False)
+        self.assertTrue(renderer.event("agent.node", {"node": "validation.started"}).startswith("◌"))
+
     def test_plan_step_updates_are_event_sourced(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto")
@@ -155,6 +159,19 @@ class CoreTests(unittest.TestCase):
             path.write_text("three\n", encoding="utf-8")
             runtime.restore_checkpoint(snapshot)
             self.assertEqual(path.read_text(encoding="utf-8"), "two\n")
+
+    def test_validation_repair_is_bounded_and_evented(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("repair")
+            first = runtime.repair("python3 -c \"raise SystemExit(1)\"")
+            second = runtime.repair("python3 -c \"raise SystemExit(1)\"")
+            blocked = runtime.repair("true")
+            self.assertFalse(first.ok)
+            self.assertFalse(second.ok)
+            self.assertEqual(blocked.text, "REPAIR_BUDGET_EXCEEDED")
+            self.assertIn("repair.failed", [event.type for event in runtime.events.list()])
+            self.assertIn("repair.blocked", [event.type for event in runtime.events.list()])
 
     def test_checkpoint_and_validation_emit_events(self):
         with TemporaryDirectory() as directory:
