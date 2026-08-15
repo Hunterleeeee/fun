@@ -1,8 +1,9 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from fun.provider import tool_schemas
+from fun.provider import ModelConfig, OpenAICompatible, ProviderError, tool_schemas
 from fun.runtime import Runtime
 
 
@@ -37,6 +38,14 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_provider_error_classification_is_safe(self):
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "secret-key", "model"))
+        with patch("urllib.request.urlopen", side_effect=TimeoutError("secret response")):
+            with self.assertRaises(ProviderError) as context:
+                next(provider.stream([], []))
+        self.assertEqual(context.exception.error_tag, "PROVIDER_TIMEOUT")
+        self.assertNotIn("secret response", str(context.exception))
+
     def test_invalid_model_plan_is_rejected_without_breaking_turn(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", provider=InvalidPlanProvider())

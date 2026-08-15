@@ -16,7 +16,12 @@ class ModelConfig:
 
 
 class ProviderError(RuntimeError):
-    pass
+    """Provider failure with a stable, privacy-safe classification."""
+
+    def __init__(self, error_tag: str, *, cause: Exception | None = None) -> None:
+        self.error_tag = error_tag
+        self.cause_type = type(cause).__name__ if cause is not None else None
+        super().__init__(error_tag)
 
 
 class OpenAICompatible:
@@ -53,8 +58,15 @@ class OpenAICompatible:
                         item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
                         first = False
                     yield item
+        except TimeoutError as exc:
+            raise ProviderError("PROVIDER_TIMEOUT", cause=exc) from exc
+        except urllib.error.HTTPError as exc:
+            tag = "PROVIDER_AUTH_FAILED" if exc.code in {401, 403} else "PROVIDER_HTTP_FAILED"
+            raise ProviderError(tag, cause=exc) from exc
+        except urllib.error.URLError as exc:
+            raise ProviderError("PROVIDER_NETWORK_FAILED", cause=exc) from exc
         except Exception as exc:
-            raise ProviderError(str(exc)) from exc
+            raise ProviderError("PROVIDER_REQUEST_FAILED", cause=exc) from exc
 
 
 def tool_schemas() -> list[dict[str, Any]]:
