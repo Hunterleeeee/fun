@@ -59,6 +59,10 @@ class OpenAICompatible:
                 raw_status = getattr(response, "status", getattr(response, "code", 200))
                 if isinstance(raw_status, bool):
                     raise ProviderError("PROVIDER_INVALID_STATUS")
+                if isinstance(raw_status, float) and not raw_status.is_integer():
+                    raise ProviderError("PROVIDER_INVALID_STATUS")
+                if isinstance(raw_status, str) and raw_status.strip() != raw_status:
+                    raise ProviderError("PROVIDER_INVALID_STATUS")
                 try:
                     status = int(raw_status)
                 except (TypeError, ValueError) as exc:
