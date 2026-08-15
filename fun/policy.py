@@ -43,7 +43,7 @@ class Policy:
             return True
         if self.mode == ApprovalMode.AUTO:
             return False
-        return risk in (Risk.HIGH,)
+        return risk in (Risk.MEDIUM, Risk.HIGH)
 
 
 class WorkspaceGuard:

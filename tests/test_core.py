@@ -59,6 +59,16 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(PolicyError, "PROTECTED_PATH"):
                 tools.read(".env")
 
+    def test_approval_boundary_blocks_medium_write_without_callback(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "a.txt"
+            path.write_text("one\n", encoding="utf-8")
+            runtime = Runtime(directory, "smart")
+            runtime.create_task("edit")
+            result = runtime.run_tool("edit", path="a.txt", expected_hash=file_hash(path), patch="@@ -1 +1 @@\n-one\n+two\n")
+            self.assertFalse(result.ok)
+            self.assertEqual(result.text, "APPROVAL_REQUIRED")
+
     def test_exec_runs_inside_workspace(self):
         with TemporaryDirectory() as directory:
             result = Tools(directory).exec("python3 -c \"print('ok')\"")

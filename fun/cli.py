@@ -18,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", default=os.getenv("FUN_API_URL"))
     parser.add_argument("--api-key", default=os.getenv("FUN_API_KEY"))
     parser.add_argument("--model", default=os.getenv("FUN_MODEL"))
+    parser.add_argument("--non-interactive", action="store_true", help="Never wait for interactive approval")
     return parser
 
 
@@ -28,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
         provider = OpenAICompatible(ModelConfig(args.base_url, args.api_key, args.model))
     state_dir = os.getenv("FUN_STATE_DIR", str(os.path.expanduser("~/.fun")))
     def approve(name: str, risk: object) -> bool:
-        if not sys.stdin.isatty():
+        if args.non_interactive or not sys.stdin.isatty():
             return False
         try:
             return input(f"? Allow {name} ({risk})? [y/N] ").strip().lower() in {"y", "yes"}
