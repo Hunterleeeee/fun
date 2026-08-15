@@ -6,6 +6,7 @@ import shlex
 import sys
 
 from .config import FunConfig
+from .dashboard import serve
 from .provider import ModelConfig, OpenAICompatible
 from .renderer import TerminalRenderer
 from .runtime import Runtime
@@ -22,12 +23,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", default=os.getenv("FUN_MODEL"))
     parser.add_argument("--non-interactive", action="store_true", help="Never wait for interactive approval")
     parser.add_argument("--configure", action="store_true", help="Save provider settings interactively")
+    parser.add_argument("--dashboard", action="store_true", help="Open the local-only usage dashboard")
+    parser.add_argument("--dashboard-port", type=int, default=8765)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     state_dir = os.getenv("FUN_STATE_DIR", str(os.path.expanduser("~/.fun")))
+    if args.dashboard:
+        serve(os.path.join(state_dir, "events.db"), args.dashboard_port)
+        return 0
     config_path = os.path.join(state_dir, "config.json")
     saved = FunConfig.load(config_path)
     if args.configure:

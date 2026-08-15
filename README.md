@@ -29,6 +29,15 @@ python3 -m pip install -e .
 fun
 ```
 
+查看本机使用总览（仅监听 `127.0.0.1`）：
+
+```bash
+fun --dashboard
+# open http://127.0.0.1:8765
+```
+
+Dashboard 读取本地 `~/.fun/events.db`，展示 Sessions（当前作为用户近似）、Tasks、token、Tool 调用和最近活动，不上传数据。
+
 配置 OpenAI-compatible Provider：
 
 ```bash
@@ -89,6 +98,7 @@ Fun 让模型负责提出下一步动作，让 Runtime 负责事实、安全和�
 /plan         查看 PlanStep
 /diff         查看当前 diff
 /usage        查看 token / TTFT
+fun --dashboard  启动本地 HTML 总览台
 /pause        暂停
 /resume       继续
 /checkpoint   创建 checkpoint
