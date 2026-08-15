@@ -184,32 +184,57 @@ class Runtime:
         self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, name=name, ok=result.ok, text=result.text, changed=result.changed or [])
         return result
 
-    def run_model_turn(self, on_text: Callable[[str], None] | None = None, max_steps: int = 8) -> str:
-        self._node("model.requested")
+    def request_model(self) -> Any:
         if not self.provider or not self.task:
             raise RuntimeError("PROVIDER_NOT_CONFIGURED")
+        self._node("model.requested")
+        return self.provider.stream(self.task.messages, tool_schemas())
+
+    def parse_model_response(self, chunks: Any, on_text: Callable[[str], None] | None = None) -> tuple[str, list[dict[str, Any]]]:
+        content = ""
+        calls: dict[str, dict[str, str]] = {}
+        for chunk in chunks:
+            if chunk.get("_meta", {}).get("ttft_ms") is not None:
+                self.usage.ttft_ms = int(chunk["_meta"]["ttft_ms"])
+            if isinstance(chunk.get("usage"), dict):
+                self.usage.merge_provider(chunk["usage"], self.usage.ttft_ms)
+            choice = (chunk.get("choices") or [{}])[0]
+            delta = choice.get("delta") or {}
+            if delta.get("content"):
+                content += delta["content"]
+                if on_text:
+                    on_text(delta["content"])
+            for call in delta.get("tool_calls") or []:
+                entry = calls.setdefault(str(call.get("index", 0)), {"name": "", "arguments": "", "id": ""})
+                entry["id"] += call.get("id", "")
+                function = call.get("function") or {}
+                entry["name"] += function.get("name", "")
+                entry["arguments"] += function.get("arguments", "")
+        parsed = [{"id": item["id"], "type": "function", "function": {"name": item["name"], "arguments": item["arguments"]}} for item in calls.values()]
+        self._node("response.parsed", content_length=len(content), tool_calls=len(parsed))
+        return content, parsed
+
+    def execute_tool_calls(self, calls: list[dict[str, Any]]) -> None:
+        if not self.task:
+            raise RuntimeError("NO_ACTIVE_TASK")
+        self._node("tools.executing", count=len(calls))
+        for call in calls:
+            name = call["function"]["name"]
+            try:
+                arguments = json.loads(call["function"]["arguments"] or "{}")
+            except json.JSONDecodeError:
+                result = ToolResult(False, "INVALID_ARGUMENTS")
+            else:
+                self.emit("model.tool_call", self.task.id, call_id=call["id"], name=name)
+                result = self.run_tool(name, **arguments)
+            self.task.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})
+
+    def run_model_turn(self, on_text: Callable[[str], None] | None = None, max_steps: int = 8) -> str:
+        if not self.task:
+            raise RuntimeError("NO_ACTIVE_TASK")
         final_text = ""
         for _ in range(max_steps):
-            chunks = self.provider.stream(self.task.messages, tool_schemas())
-            content = ""
-            calls: dict[str, dict[str, str]] = {}
-            for chunk in chunks:
-                if chunk.get("_meta", {}).get("ttft_ms") is not None:
-                    self.usage.ttft_ms = int(chunk["_meta"]["ttft_ms"])
-                if isinstance(chunk.get("usage"), dict):
-                    self.usage.merge_provider(chunk["usage"], self.usage.ttft_ms)
-                choice = (chunk.get("choices") or [{}])[0]
-                delta = choice.get("delta") or {}
-                if delta.get("content"):
-                    content += delta["content"]
-                    if on_text:
-                        on_text(delta["content"])
-                for call in delta.get("tool_calls") or []:
-                    entry = calls.setdefault(str(call.get("index", 0)), {"name": "", "arguments": "", "id": ""})
-                    entry["id"] += call.get("id", "")
-                    function = call.get("function") or {}
-                    entry["name"] += function.get("name", "")
-                    entry["arguments"] += function.get("arguments", "")
+            content, calls = self.parse_model_response(self.request_model(), on_text)
             if content:
                 final_text += content
             if not calls:
@@ -217,18 +242,8 @@ class Runtime:
                     self.task.messages.append({"role": "assistant", "content": content})
                 self.emit("model.completed", self.task.id, text=content, usage=self.usage.as_dict())
                 return final_text
-            assistant_calls = [{"id": item["id"], "type": "function", "function": {"name": item["name"], "arguments": item["arguments"]}} for item in calls.values()]
-            self.task.messages.append({"role": "assistant", "content": content or None, "tool_calls": assistant_calls})
-            for call in assistant_calls:
-                name = call["function"]["name"]
-                try:
-                    arguments = json.loads(call["function"]["arguments"] or "{}")
-                except json.JSONDecodeError:
-                    result = ToolResult(False, "INVALID_ARGUMENTS")
-                else:
-                    self.emit("model.tool_call", self.task.id, call_id=call["id"], name=name)
-                    result = self.run_tool(name, **arguments)
-                self.task.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})
+            self.task.messages.append({"role": "assistant", "content": content or None, "tool_calls": calls})
+            self.execute_tool_calls(calls)
         self.emit("task.blocked", self.task.id, reason="TOOL_BUDGET_EXCEEDED")
         raise RuntimeError("TASK_BUDGET_EXCEEDED")
 

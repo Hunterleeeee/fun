@@ -33,6 +33,18 @@ class AgentLoopTests(unittest.TestCase):
             self.assertIn("tool.completed", event_types)
             self.assertIn("model.completed", event_types)
 
+    def test_model_nodes_can_be_called_independently(self):
+        with TemporaryDirectory() as directory:
+            Path(directory, "hello.txt").write_text("hello\n", encoding="utf-8")
+            runtime = Runtime(directory, "auto", provider=FakeProvider())
+            runtime.create_task("inspect")
+            content, calls = runtime.parse_model_response(runtime.request_model())
+            self.assertEqual(content, "")
+            self.assertEqual(calls[0]["function"]["name"], "read")
+            runtime.task.messages.append({"role": "assistant", "content": None, "tool_calls": calls})
+            runtime.execute_tool_calls(calls)
+            self.assertIn("tools.executing", [event.payload.get("node") for event in runtime.events.list() if event.type == "agent.node"])
+
     def test_tool_schemas_are_structured(self):
         schemas = tool_schemas()
         self.assertEqual({item["function"]["name"] for item in schemas}, {"explore", "read", "edit", "exec"})

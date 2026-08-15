@@ -86,6 +86,14 @@ def main(argv: list[str] | None = None) -> int:
             if text == "/status":
                 status = runtime.task.status if runtime.task else "idle"
                 print(f"session={runtime.session_id} task={status} policy={runtime.policy.mode.value}")
+                print(runtime.usage.summary())
+                continue
+            if text == "/usage":
+                print(runtime.usage.summary())
+                continue
+            if text == "/diff":
+                snapshot = runtime.checkpoint("view")
+                print(snapshot["diff"] or "(no working tree diff)")
                 continue
             if text == "/plan":
                 print(renderer.plan(runtime.task.plan if runtime.task else []))

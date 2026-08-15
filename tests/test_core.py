@@ -8,6 +8,11 @@ from fun.policy import PolicyError
 from fun.renderer import TerminalRenderer
 from fun.runtime import Runtime
 from fun.tools import Tools, file_hash
+from fun.usage import Usage
+
+
+def runtime_usage_summary():
+    return Usage().summary()
 
 
 class CoreTests(unittest.TestCase):
@@ -144,6 +149,7 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(renderer.activity("reading").startswith("◌"))
         self.assertTrue(renderer.finding("risk").startswith("!"))
         self.assertTrue(renderer.event("tool.completed", {"text": "ok"}).startswith("✓"))
+        self.assertIn("ttft", runtime_usage_summary())
 
     def test_checkpoint_restore_reapplies_git_diff(self):
         with TemporaryDirectory() as directory:

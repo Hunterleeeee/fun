@@ -32,3 +32,9 @@ class Usage:
 
     def as_dict(self) -> dict[str, object]:
         return self.__dict__.copy()
+
+    def summary(self) -> str:
+        input_text = str(self.input_tokens if self.input_tokens is not None else "?")
+        output_text = str(self.output_tokens if self.output_tokens is not None else "?")
+        ttft_text = f"{self.ttft_ms}ms" if self.ttft_ms is not None else "?"
+        return f"in {input_text} · out {output_text} · ttft {ttft_text}"
