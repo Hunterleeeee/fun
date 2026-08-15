@@ -37,6 +37,14 @@ class CoreTests(unittest.TestCase):
             self.assertGreaterEqual(len(event_types), 8)
             recovered.stop()
 
+    def test_event_store_rejects_duplicate_ids_in_batch(self):
+        store = EventStore()
+        first = Event("one", "session", id="same")
+        second = Event("two", "session", id="same")
+        with self.assertRaisesRegex(ValueError, "DUPLICATE_EVENT_ID"):
+            store.append_many([first, second])
+        self.assertEqual(store.list(), [])
+
     def test_recovered_store_continues_persisting_new_events(self):
         with TemporaryDirectory() as directory:
             first = Runtime(directory, "auto", state_dir=directory)

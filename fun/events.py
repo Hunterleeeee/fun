@@ -35,7 +35,17 @@ class EventStore:
         return event
 
     def append_many(self, events: list[Event]) -> list[Event]:
-        new_events = [event for event in events if not any(item.id == event.id for item in self._events)]
+        existing_ids = {item.id for item in self._events}
+        batch_ids: set[str] = set()
+        for event in events:
+            if event.id in batch_ids:
+                raise ValueError("DUPLICATE_EVENT_ID")
+            if event.id in existing_ids:
+                if len(events) == 1:
+                    return events
+                raise ValueError("DUPLICATE_EVENT_ID")
+            batch_ids.add(event.id)
+        new_events = list(events)
         if self._durable is not None and new_events:
             durable = self._durable
             append_many = getattr(durable, "append_many", None)
