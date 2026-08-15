@@ -36,9 +36,18 @@ class SQLiteEventStore:
     def append_many(self, events: list[Event]) -> list[Event]:
         try:
             for event in events:
+                payload = json.dumps(event.payload)
+                existing = self.connection.execute(
+                    "SELECT seq,id,type,session_id,task_id,timestamp,payload FROM events WHERE id = ?",
+                    (event.id,),
+                ).fetchone()
+                if existing is not None:
+                    if existing == (event.seq, event.id, event.type, event.session_id, event.task_id, event.timestamp, payload):
+                        continue
+                    raise sqlite3.IntegrityError("UNIQUE constraint failed: events.id")
                 self.connection.execute(
-                    "INSERT OR IGNORE INTO events(seq,id,type,session_id,task_id,timestamp,payload) VALUES(?,?,?,?,?,?,?)",
-                    (event.seq, event.id, event.type, event.session_id, event.task_id, event.timestamp, json.dumps(event.payload)),
+                    "INSERT INTO events(seq,id,type,session_id,task_id,timestamp,payload) VALUES(?,?,?,?,?,?,?)",
+                    (event.seq, event.id, event.type, event.session_id, event.task_id, event.timestamp, payload),
                 )
             self.connection.commit()
         except Exception:
