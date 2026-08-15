@@ -83,12 +83,23 @@ class EventStore:
 
     def load(self, events: list[Event]) -> None:
         global _next_event_seq
-        ordered = sorted(events, key=lambda item: item.seq)
-        highest_seq = max((event.seq for event in ordered), default=0)
+        existing_by_id = {item.id: item for item in self._events}
+        existing_by_seq = {item.seq: item for item in self._events}
+        additions: list[Event] = []
+        for event in sorted(events, key=lambda item: item.seq):
+            prior_id = existing_by_id.get(event.id)
+            prior_seq = existing_by_seq.get(event.seq)
+            if prior_id is not None and prior_id != event:
+                raise ValueError("CONFLICTING_EVENT_ID")
+            if prior_seq is not None and prior_seq != event:
+                raise ValueError("CONFLICTING_EVENT_SEQ")
+            if prior_id is None and prior_seq is None:
+                existing_by_id[event.id] = event
+                existing_by_seq[event.seq] = event
+                additions.append(event)
+        highest_seq = max((event.seq for event in events), default=0)
         _next_event_seq = max(_next_event_seq, highest_seq + 1)
-        for event in ordered:
-            if not any(item.id == event.id for item in self._events):
-                self._events.append(event)
+        self._events.extend(additions)
 
     def replay(self, session_id: str) -> list[Event]:
         return sorted(self.list(session_id), key=lambda event: event.seq)

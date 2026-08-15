@@ -7,6 +7,17 @@ from fun.persistence import SQLiteEventStore
 
 
 class PersistenceTests(unittest.TestCase):
+    def test_event_store_load_rejects_conflicts_without_mutation(self):
+        from fun.events import EventStore
+
+        store = EventStore()
+        original = Event("original", "ses_1", id="evt_original", seq=12)
+        store.load([original])
+        conflict = Event("changed", "ses_1", id="evt_original", seq=13)
+        with self.assertRaisesRegex(ValueError, "CONFLICTING_EVENT_ID"):
+            store.load([conflict])
+        self.assertEqual(store.list(), [original])
+
     def test_event_store_load_is_idempotent_for_duplicate_history(self):
         from fun.events import EventStore
 
