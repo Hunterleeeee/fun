@@ -30,7 +30,7 @@ class OpenAICompatible:
 
     def __init__(self, config: ModelConfig) -> None:
         parsed = urlparse(config.base_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.query or parsed.fragment:
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("INVALID_PROVIDER_ENDPOINT")
         if not config.model:
             raise ValueError("INVALID_PROVIDER_MODEL")
