@@ -55,6 +55,14 @@ class Runtime:
         if not self.task or self.task.status != "running":
             raise RuntimeError("NO_ACTIVE_TASK")
         self.emit("tool.requested", self.task.id, name=name, arguments=kwargs)
+        write_operation = name in {"edit", "exec"}
+        risk = self.policy.risk_for(name, write=write_operation)
+        if self.policy.requires_approval(risk):
+            self.emit("approval.required", self.task.id, name=name, risk=risk.value)
+            if self.policy.mode != ApprovalMode.AUTO:
+                result = ToolResult(False, "APPROVAL_REQUIRED", risk)
+                self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
+                return result
         method: Callable[..., ToolResult] = getattr(self.tools, name)
         try:
             result = method(**kwargs)

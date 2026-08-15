@@ -97,8 +97,6 @@ class Tools:
             return ToolResult(False, f"File does not exist: {path}", Risk.MEDIUM)
         if file_hash(target) != expected_hash:
             return ToolResult(False, "FILE_CHANGED_SINCE_READ", Risk.MEDIUM)
-        if self.policy.requires_approval(Risk.MEDIUM):
-            return ToolResult(False, "APPROVAL_REQUIRED", Risk.MEDIUM)
         old_text = target.read_text(encoding="utf-8")
         new_text = _apply_unified_patch(old_text, patch)
         if new_text is None:
