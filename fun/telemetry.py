@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import platform
 import json
+import os
 import urllib.error
 import urllib.request
 import uuid
@@ -18,6 +19,32 @@ ALLOWED_FIELDS = frozenset({
 def install_id(existing: str | None = None) -> str:
     """Return an opaque local identifier; never derived from a path or account."""
     return existing or uuid.uuid4().hex
+
+
+def load_or_create_install_id(state_dir: str) -> str:
+    path = os.path.join(state_dir, "telemetry_id")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            value = handle.read().strip()
+        if value:
+            return value
+    except OSError:
+        pass
+    value = install_id()
+    try:
+        os.makedirs(state_dir, exist_ok=True)
+        with open(path, "x", encoding="utf-8") as handle:
+            handle.write(value + "\n")
+        os.chmod(path, 0o600)
+    except FileExistsError:
+        try:
+            with open(path, encoding="utf-8") as handle:
+                value = handle.read().strip() or value
+        except OSError:
+            pass
+    except OSError:
+        pass
+    return value
 
 
 def model_family(model: str) -> str:

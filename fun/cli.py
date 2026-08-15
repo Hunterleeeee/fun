@@ -61,8 +61,8 @@ def main(argv: list[str] | None = None) -> int:
             return False
     telemetry = None
     if saved.telemetry and saved.telemetry_endpoint:
-        from .telemetry import TelemetryClient
-        telemetry = TelemetryClient(enabled=True, endpoint=saved.telemetry_endpoint)
+        from .telemetry import TelemetryClient, load_or_create_install_id
+        telemetry = TelemetryClient(enabled=True, endpoint=saved.telemetry_endpoint, install=load_or_create_install_id(state_dir))
     runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
     renderer = TerminalRenderer(color=sys.stdout.isatty())
     if args.goal:

@@ -2,7 +2,7 @@ import unittest
 from unittest import mock
 
 from fun.runtime import Runtime
-from fun.telemetry import TelemetryClient, event_payload, install_id, model_family
+from fun.telemetry import TelemetryClient, event_payload, install_id, load_or_create_install_id, model_family
 
 
 class TelemetryTests(unittest.TestCase):
@@ -12,6 +12,17 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(payload["total_tokens"], 14)
         self.assertNotIn("local-secret", str(payload))
         self.assertEqual(set(payload), set(payload) & {"event", "install_id", "fun_version", "python_version", "os", "model_family", "input_tokens", "output_tokens", "total_tokens", "tool_calls", "status"})
+
+    def test_install_id_is_stable_and_private(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            first = load_or_create_install_id(directory)
+            second = load_or_create_install_id(directory)
+            self.assertEqual(first, second)
+            path = Path(directory) / "telemetry_id"
+            self.assertEqual(path.read_text(encoding="utf-8").strip(), first)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
     def test_runtime_does_not_send_without_client(self):
         with mock.patch.object(TelemetryClient, "send") as send:
@@ -55,6 +66,14 @@ class TelemetryTests(unittest.TestCase):
                 runtime.fail("broken")
             send.assert_called_once()
             self.assertEqual(send.call_args.args[0]["status"], "failed")
+
+    def test_disabled_client_does_not_create_install_file(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertFalse((Path(directory) / "telemetry_id").exists())
+            self.assertFalse(TelemetryClient().send(event_payload(event="x", install="local")))
+            self.assertFalse((Path(directory) / "telemetry_id").exists())
 
     def test_sender_is_disabled_without_explicit_opt_in_and_endpoint(self):
         payload = event_payload(event="task.finished", install="local")
