@@ -7,6 +7,20 @@ from fun.persistence import SQLiteEventStore
 
 
 class PersistenceTests(unittest.TestCase):
+    def test_event_store_load_rejects_batch_seq_conflict_without_mutation(self):
+        from fun.events import EventStore
+
+        store = EventStore()
+        original = Event("original", "ses_1", id="evt_original", seq=12)
+        store.load([original])
+        batch = [
+            Event("first", "ses_1", id="evt_first", seq=20),
+            Event("second", "ses_1", id="evt_second", seq=20),
+        ]
+        with self.assertRaisesRegex(ValueError, "CONFLICTING_EVENT_SEQ"):
+            store.load(batch)
+        self.assertEqual(store.list(), [original])
+
     def test_event_store_load_rejects_conflicts_without_mutation(self):
         from fun.events import EventStore
 
