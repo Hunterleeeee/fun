@@ -242,6 +242,17 @@ class CoreTests(unittest.TestCase):
                 runtime.pause()
             self.assertEqual(runtime.task.status, "running")
 
+    def test_stop_is_idempotent_after_terminal_state(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("stop twice")
+            runtime.stop()
+            events = len(runtime.events.list())
+            runtime.stop()
+            self.assertEqual(runtime.task.status, "stopped")
+            self.assertEqual(len(runtime.events.list()), events)
+            self.assertFalse(runtime.lock.held)
+
     def test_task_pause_resume_and_complete(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory)
