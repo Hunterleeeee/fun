@@ -440,6 +440,14 @@ class Runtime:
         self.emit("task.result", self.task.id, result=result, validation=self.task.validation or {})
         self.lock.release()
 
+    def fail(self, reason: str) -> None:
+        if not self.task or self.task.status not in {"running", "paused"}:
+            raise RuntimeError("NO_ACTIVE_TASK")
+        self.task.agent_state = "failed"
+        self.emit("task.failed", self.task.id, reason=reason)
+        self._transition("stopped", "task.stopped")
+        self.lock.release()
+
     def stop(self) -> None:
         if self.task and self.task.status in {"running", "paused"}:
             self._transition("stopped", "task.stopped")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import sys
 
 from .config import FunConfig
@@ -86,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
                 print()
             except Exception as exc:
                 print(f"\n× {exc}", file=sys.stderr)
-                runtime.stop()
+                runtime.fail(str(exc))
         else:
             print("Model not configured. Use --configure or set FUN_API_URL, FUN_API_KEY, and FUN_MODEL.")
             runtime.stop()
@@ -101,9 +102,18 @@ def main(argv: list[str] | None = None) -> int:
             if text == "/goal":
                 print(runtime.goal() or "(no active goal)")
                 continue
-            if text.startswith("/goal "):
+            if text.startswith("/goal"):
                 try:
-                    task = runtime.set_goal(text[6:].strip())
+                    parts = shlex.split(text)
+                except ValueError as exc:
+                    print(f"× invalid goal syntax: {exc}", file=sys.stderr)
+                    continue
+                goal_text = " ".join(parts[1:]).strip()
+                if not goal_text:
+                    print("Usage: /goal <what you want Fun to do>", file=sys.stderr)
+                    continue
+                try:
+                    task = runtime.set_goal(goal_text)
                     run_interactive_task(task)
                 except Exception as exc:
                     print(f"× {exc}", file=sys.stderr)
