@@ -270,6 +270,15 @@ class AgentLoopTests(unittest.TestCase):
         with patch("urllib.request.urlopen", return_value=Response()):
             self.assertEqual(list(provider.stream([], []))[0]["choices"][0]["delta"]["content"], "hello")
 
+    def test_provider_rejects_invalid_request_collections(self):
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with self.assertRaises(ProviderError) as messages_error:
+            next(provider.stream("not-a-list"))
+        self.assertEqual(messages_error.exception.error_tag, "PROVIDER_INVALID_MESSAGES")
+        with self.assertRaises(ProviderError) as tools_error:
+            next(provider.stream([], ["not-a-tool"]))
+        self.assertEqual(tools_error.exception.error_tag, "PROVIDER_INVALID_TOOLS")
+
     def test_provider_rejects_insecure_or_empty_endpoint(self):
         with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_ENDPOINT"):
             OpenAICompatible(ModelConfig("file:///tmp/provider", "key", "model"))

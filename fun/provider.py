@@ -46,6 +46,10 @@ class OpenAICompatible:
         self.config = config
 
     def stream(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> Iterator[dict[str, Any]]:
+        if not isinstance(messages, list) or any(not isinstance(message, dict) for message in messages):
+            raise ProviderError("PROVIDER_INVALID_MESSAGES")
+        if tools is not None and (not isinstance(tools, list) or any(not isinstance(tool, dict) for tool in tools)):
+            raise ProviderError("PROVIDER_INVALID_TOOLS")
         payload: dict[str, Any] = {"model": self.config.model, "messages": messages, "stream": True}
         if tools:
             payload["tools"] = tools
