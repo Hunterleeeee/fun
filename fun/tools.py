@@ -122,10 +122,15 @@ class Tools:
         if not argv:
             return ToolResult(False, "INVALID_COMMAND: empty command", risk)
         executable = Path(argv[0]).name
+        wrapped = argv[1:] if executable in {"env", "command", "xargs"} else argv
+        if executable in {"env", "command"}:
+            while wrapped and "=" in wrapped[0] and not wrapped[0].startswith("-"):
+                wrapped = wrapped[1:]
+            executable = Path(wrapped[0]).name if wrapped else executable
         critical = executable in {"sudo", "curl", "wget"}
-        critical = critical or (executable == "rm" and any(flag in {"-r", "-R", "-rf", "-fr"} or flag.startswith("-r") and "f" in flag for flag in argv[1:]))
-        critical = critical or (executable == "git" and len(argv) >= 3 and argv[1:3] == ["reset", "--hard"])
-        critical = critical or (executable == "git" and len(argv) >= 2 and argv[1] == "clean")
+        critical = critical or (executable == "rm" and any(flag in {"-r", "-R", "-rf", "-fr", "--recursive", "--force"} or flag.startswith("-") and "r" in flag and "f" in flag for flag in wrapped[1:]))
+        critical = critical or (executable == "git" and len(wrapped) >= 3 and wrapped[1:3] == ["reset", "--hard"])
+        critical = critical or (executable == "git" and len(wrapped) >= 2 and wrapped[1] == "clean")
         if critical:
             if self.policy.mode != self.policy.mode.ASK:
                 return ToolResult(False, "CRITICAL_OPERATION_BLOCKED", Risk.CRITICAL)

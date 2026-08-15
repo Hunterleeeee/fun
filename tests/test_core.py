@@ -263,7 +263,7 @@ class CoreTests(unittest.TestCase):
 
     def test_exec_blocks_critical_argv_forms(self):
         with TemporaryDirectory() as directory:
-            for command in ("rm -rf build", "git reset --hard HEAD", "git clean -fd", "sudo echo nope", "curl https://example.com"):
+            for command in ("rm -rf build", "rm --recursive --force build", "git reset --hard HEAD", "git clean -fd", "sudo echo nope", "curl https://example.com", "env FOO=bar rm -rf build", "command rm --recursive --force build"):
                 result = Tools(directory, Policy(ApprovalMode.ASK)).exec(command)
                 self.assertFalse(result.ok)
                 self.assertEqual(result.text, "APPROVAL_REQUIRED")
