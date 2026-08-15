@@ -477,9 +477,10 @@ class Runtime:
         if self.task.repair_attempts >= max_attempts:
             self.emit("repair.blocked", self.task.id, reason="REPAIR_BUDGET_EXCEEDED", attempts=self.task.repair_attempts)
             return ToolResult(False, "REPAIR_BUDGET_EXCEEDED")
-        self.task.repair_attempts += 1
-        self._node("repair.started", attempt=self.task.repair_attempts)
-        self.emit("repair.started", self.task.id, attempt=self.task.repair_attempts)
+        attempt = self.task.repair_attempts + 1
+        self.emit("repair.started", self.task.id, attempt=attempt)
+        self.task.repair_attempts = attempt
+        self._node("repair.started", attempt=attempt)
         result = self.validate(command)
         self.emit("repair.completed" if result.ok else "repair.failed", self.task.id, attempt=self.task.repair_attempts, ok=result.ok)
         return result

@@ -303,6 +303,19 @@ class CoreTests(unittest.TestCase):
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
+    def test_repair_start_does_not_consume_budget_when_event_fails(self):
+        class FailingStore:
+            def append(self, event):
+                raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("repair atomic")
+            runtime.events._durable = FailingStore()
+            with self.assertRaises(OSError):
+                runtime.repair("false")
+            self.assertEqual(runtime.task.repair_attempts, 0)
+
     def test_repair_attempts_replay_and_remain_bounded(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
