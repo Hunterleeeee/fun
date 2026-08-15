@@ -51,10 +51,13 @@ class OpenAICompatible:
                     buffer = lines.pop() if lines and not lines[-1].endswith(("\\n", "\\r")) else ""
                     for raw_line in lines:
                         line = raw_line.strip()
-                        if not line or line == "data: [DONE]":
+                        if not line or line.startswith(":"):
                             continue
-                        if line.startswith("data:"):
-                            line = line[5:].strip()
+                        if not line.startswith("data:"):
+                            continue
+                        line = line[5:].strip()
+                        if line == "[DONE]":
+                            continue
                         try:
                             item = json.loads(line)
                         except json.JSONDecodeError as exc:
@@ -63,10 +66,13 @@ class OpenAICompatible:
                             item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
                             first = False
                         yield item
-                if buffer.strip() and buffer.strip() != "data: [DONE]":
+                if buffer.strip() and not buffer.strip().startswith(":"):
                     line = buffer.strip()
-                    if line.startswith("data:"):
-                        line = line[5:].strip()
+                    if not line.startswith("data:"):
+                        return
+                    line = line[5:].strip()
+                    if line == "[DONE]":
+                        return
                     try:
                         item = json.loads(line)
                     except json.JSONDecodeError as exc:

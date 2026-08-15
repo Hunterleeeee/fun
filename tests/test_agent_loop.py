@@ -38,6 +38,24 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_provider_stream_ignores_sse_comments_and_accepts_done_spacing(self):
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def __iter__(self):
+                yield b': keepalive\r\n'
+                yield b'event: message\r\n'
+                yield b'data: {"choices": [{"delta": {"content": "ok"}}]}\r\n'
+                yield b'data:   [DONE]  \r\n'
+
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with patch("urllib.request.urlopen", return_value=Response()):
+            items = list(provider.stream([], []))
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["choices"][0]["delta"]["content"], "ok")
+
     def test_provider_stream_rejects_malformed_event_without_body(self):
         class Response:
             def __enter__(self):
