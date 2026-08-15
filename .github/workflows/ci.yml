@@ -87,6 +87,8 @@ jobs:
         with:
           name: fun-distributions
           path: dist
+      - name: Verify distribution checksums
+        run: (cd dist && sha256sum -c SHA256SUMS)
       - name: Install wheel in isolated environment
         run: |
           python -m venv /tmp/fun-ci-venv
