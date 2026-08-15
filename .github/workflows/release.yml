@@ -80,7 +80,12 @@ jobs:
             esac
           done
       - name: Generate checksums
-        run: sha256sum dist/* > dist/SHA256SUMS
+        run: |
+          rm -f dist/SHA256SUMS
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          sdists=(dist/*.tar.gz)
+          sha256sum "${wheels[@]}" "${sdists[@]}" > dist/SHA256SUMS
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
