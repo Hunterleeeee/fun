@@ -54,7 +54,11 @@ jobs:
       - name: Install build tooling
         run: python -m pip install "build>=1.2,<2"
       - name: Report build tooling
-        run: python -m build --version
+        run: |
+          python --version
+          python -m pip --version
+          python -c "import setuptools; print('setuptools', setuptools.__version__)"
+          python -m build --version
       - name: Build distributions
         run: python -m build
       - name: Generate distribution checksums
@@ -104,7 +108,9 @@ jobs:
           python -m venv /tmp/fun-ci-sdist-venv
           /tmp/fun-ci-sdist-venv/bin/python -m pip install --upgrade pip
           /tmp/fun-ci-sdist-venv/bin/python -m pip install "setuptools>=68,<81" wheel
+          /tmp/fun-ci-sdist-venv/bin/python --version
           /tmp/fun-ci-sdist-venv/bin/python -m pip --version
+          /tmp/fun-ci-sdist-venv/bin/python -c "import setuptools, wheel; print('setuptools', setuptools.__version__); print('wheel', wheel.__version__)"
           sdists=(dist/*.tar.gz)
           test "${#sdists[@]}" -eq 1
           sdist="${sdists[0]}"
