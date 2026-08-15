@@ -113,6 +113,8 @@ class AgentLoopTests(unittest.TestCase):
                 runtime.run_tool("exec", command="echo hi")
             failed = next(event for event in runtime.events.list() if event.type == "approval.failed")
             self.assertEqual(failed.payload["error_tag"], "APPROVAL_CALLBACK_FAILED")
+            tool_failed = next(event for event in runtime.events.list() if event.type == "tool.failed")
+            self.assertEqual(tool_failed.payload["error_tag"], "APPROVAL_CALLBACK_FAILED")
             self.assertNotIn("approval secret", str(failed.payload))
             self.assertEqual(runtime.task.agent_state, "ready")
             self.assertIsNone(runtime.task.pending_tool)
