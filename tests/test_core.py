@@ -303,6 +303,20 @@ class CoreTests(unittest.TestCase):
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
+    def test_validation_failure_event_does_not_update_plan_step(self):
+        class FailingStore:
+            def append(self, event):
+                if event.type in {"validation.completed", "validation.failed"}:
+                    raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("validation plan atomic")
+            runtime.events._durable = FailingStore()
+            with self.assertRaises(OSError):
+                runtime.validate("false")
+            self.assertIsNone(runtime.task.validation)
+
     def test_validation_does_not_mutate_when_validation_event_fails(self):
         class FailingStore:
             def append(self, event):
@@ -643,7 +657,7 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(result.ok)
             snapshot = runtime.checkpoint("test")
             self.assertEqual(snapshot["label"], "test")
-            self.assertEqual([event.type for event in runtime.events.list()][-5:], ["tool.completed", "plan.step_updated", "plan.step_updated", "validation.completed", "checkpoint.created"])
+            self.assertEqual([event.type for event in runtime.events.list()][-5:], ["tool.completed", "plan.step_updated", "validation.completed", "plan.step_updated", "checkpoint.created"])
 
     def test_edit_applies_hash_checked_patch_in_auto_mode(self):
         with TemporaryDirectory() as directory:
