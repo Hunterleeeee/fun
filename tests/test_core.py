@@ -244,6 +244,21 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "closed"):
                 durable.list()
 
+    def test_recovery_mark_failed_keeps_store_open_for_resume(self):
+        with TemporaryDirectory() as directory:
+            first = Runtime(directory, state_dir=directory)
+            first.create_task("recovery mark failed")
+            session_id = first.session_id
+            first.events.append(Event("tool.executing", first.session_id, first.task.id, {"call_id": "call_failed", "name": "explore"}))
+            first.lock.release()
+            first.close()
+            recovered = Runtime.recover(directory, directory, session_id, approval="auto")
+            recovered.acknowledge_recovery("mark_failed")
+            self.assertEqual(recovered.task.status, "running")
+            recovered.run_tool("explore", path=".")
+            self.assertFalse(recovered._closed)
+            recovered.stop()
+
     def test_recovery_discard_keeps_store_open_for_resume(self):
         with TemporaryDirectory() as directory:
             first = Runtime(directory, state_dir=directory)
