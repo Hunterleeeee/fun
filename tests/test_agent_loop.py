@@ -65,12 +65,16 @@ class AgentLoopTests(unittest.TestCase):
 
     def test_invalid_tool_arguments_record_failure_without_arguments(self):
         with TemporaryDirectory() as directory:
-            runtime = Runtime(directory, "auto")
+            runtime = Runtime(directory, "auto", state_dir=directory)
             runtime.create_task("invalid args")
             runtime.execute_tool_calls([{"id": "call_bad", "function": {"name": "read", "arguments": "not-json-secret"}}])
             failed = [event for event in runtime.events.list() if event.type == "tool.failed"][-1]
             self.assertEqual(failed.payload["error_tag"], "INVALID_TOOL_ARGUMENTS")
             self.assertNotIn("not-json-secret", str(failed.payload))
+            self.assertIsNone(runtime.task.pending_tool)
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertIsNone(recovered.task.pending_tool)
+            recovered.stop()
 
     def test_tool_exception_records_ready_state_before_propagating(self):
         class BrokenTools:

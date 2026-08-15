@@ -477,6 +477,7 @@ class Runtime:
                     arguments = json.loads(call["function"]["arguments"] or "{}")
                 except json.JSONDecodeError:
                     self.emit("tool.failed", self.task.id, call_id=call["id"], name=name, ok=False, error_tag="INVALID_TOOL_ARGUMENTS")
+                    self.task.pending_tool = None
                     result = ToolResult(False, "INVALID_ARGUMENTS")
                 else:
                     self.emit("model.tool_call", self.task.id, call_id=call["id"], name=name)
