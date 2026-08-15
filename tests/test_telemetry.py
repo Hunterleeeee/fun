@@ -17,6 +17,7 @@ class TelemetryTests(unittest.TestCase):
     def test_cli_exposes_explicit_telemetry_switches(self):
         self.assertTrue(build_parser().parse_args(["--telemetry"]).telemetry)
         self.assertFalse(build_parser().parse_args(["--no-telemetry"]).telemetry)
+        self.assertIsNone(build_parser().parse_args([]).telemetry)
 
     def test_install_id_is_stable_and_private(self):
         import tempfile

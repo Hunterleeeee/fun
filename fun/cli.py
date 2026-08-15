@@ -70,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
         except (EOFError, KeyboardInterrupt):
             return False
     telemetry_enabled = saved.telemetry if args.telemetry is None else args.telemetry
+    if args.telemetry is True:
+        saved.telemetry = True
     if args.telemetry is False:
         saved.telemetry = False
         saved.telemetry_endpoint = ""
@@ -77,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
             os.remove(os.path.join(state_dir, "telemetry_id"))
         except FileNotFoundError:
             pass
+        saved.save(config_path)
     telemetry = None
     if telemetry_enabled and saved.telemetry_endpoint:
         from .telemetry import TelemetryClient, load_or_create_install_id
