@@ -109,7 +109,7 @@ jobs:
           test "${#sdists[@]}" -eq 1
           sdist="${sdists[0]}"
           echo "Installing sdist: $sdist"
-          tar -tzf "$sdist" | head -n 12
+          tar -tzf "$sdist" | sed -n '1,12p'
           /tmp/fun-ci-sdist-venv/bin/python -m pip install --verbose --no-deps --no-build-isolation "$sdist"
           /tmp/fun-ci-sdist-venv/bin/python -c "import fun"
           /tmp/fun-ci-sdist-venv/bin/fun --help
