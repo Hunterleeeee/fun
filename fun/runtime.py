@@ -484,7 +484,10 @@ class Runtime:
         try:
             result = self.validate(command)
         except Exception as exc:
-            self.emit("repair.failed", self.task.id, attempt=attempt, ok=False, error=str(exc))
+            try:
+                self.emit("repair.failed", self.task.id, attempt=attempt, ok=False, error=str(exc))
+            except Exception:
+                pass
             raise
         self.emit("repair.completed" if result.ok else "repair.failed", self.task.id, attempt=attempt, ok=result.ok)
         return result

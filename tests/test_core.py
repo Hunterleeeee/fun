@@ -303,6 +303,19 @@ class CoreTests(unittest.TestCase):
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
+    def test_repair_preserves_original_error_if_failure_fact_fails(self):
+        class FailingStore:
+            def append(self, event):
+                raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("repair original error")
+            runtime.events._durable = FailingStore()
+            with self.assertRaisesRegex(OSError, "disk full"):
+                runtime.repair("false")
+            self.assertEqual(runtime.task.repair_attempts, 0)
+
     def test_repair_failure_event_is_recorded_before_error_propagates(self):
         class FailingStore:
             def __init__(self):
