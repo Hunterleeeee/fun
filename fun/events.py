@@ -6,7 +6,8 @@ from itertools import count
 from typing import Any
 
 
-_seq = count(1)
+_event_ids = count(1)
+_event_seq = count(1)
 
 
 def now_iso() -> str:
@@ -19,8 +20,8 @@ class Event:
     session_id: str
     task_id: str | None = None
     payload: dict[str, Any] = field(default_factory=dict)
-    id: str = field(default_factory=lambda: f"evt_{next(_seq)}")
-    seq: int = field(default_factory=lambda: next(_seq))
+    id: str = field(default_factory=lambda: f"evt_{next(_event_ids)}")
+    seq: int = field(default_factory=lambda: next(_event_seq))
     timestamp: str = field(default_factory=now_iso)
 
 

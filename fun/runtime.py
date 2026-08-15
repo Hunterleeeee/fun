@@ -48,7 +48,11 @@ class Runtime:
         self.task: Task | None = None
 
     def emit(self, event_type: str, task_id: str | None = None, **payload: object) -> Event:
-        return self.events.append(Event(event_type, self.session_id, task_id, dict(payload)))
+        event = Event(event_type, self.session_id, task_id, dict(payload))
+        stored = self.events.append(event)
+        if stored is not event:
+            raise RuntimeError("EVENT_APPEND_FAILED")
+        return event
 
     def create_task(self, goal: str) -> Task:
         if self.task and self.task.status == "running":
