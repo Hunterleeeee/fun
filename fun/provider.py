@@ -56,7 +56,12 @@ class OpenAICompatible:
         started = time.monotonic()
         try:
             with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
-                raw_status = getattr(response, "status", getattr(response, "code", 200))
+                raw_status = getattr(response, "status", None)
+                fallback_status = getattr(response, "code", None)
+                if raw_status is not None and fallback_status is not None and raw_status != fallback_status:
+                    raise ProviderError("PROVIDER_INVALID_STATUS")
+                if raw_status is None:
+                    raw_status = fallback_status if fallback_status is not None else 200
                 if isinstance(raw_status, bool):
                     raise ProviderError("PROVIDER_INVALID_STATUS")
                 if isinstance(raw_status, float) and not raw_status.is_integer():

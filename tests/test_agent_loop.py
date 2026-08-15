@@ -137,6 +137,20 @@ class AgentLoopTests(unittest.TestCase):
                 list(provider.stream([], []))
         self.assertEqual(context.exception.error_tag, "PROVIDER_AUTH_FAILED")
 
+    def test_provider_rejects_conflicting_status_and_code(self):
+        class Response:
+            status = 200
+            code = 401
+            headers = {}
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def __iter__(self): yield b'secret'
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with patch("urllib.request.urlopen", return_value=Response()):
+            with self.assertRaises(ProviderError) as context:
+                list(provider.stream([], []))
+        self.assertEqual(context.exception.error_tag, "PROVIDER_INVALID_STATUS")
+
     def test_provider_rejects_fractional_or_padded_status(self):
         class Response:
             headers = {}
