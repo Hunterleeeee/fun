@@ -4,6 +4,10 @@
 
 - Future work will be tracked here.
 
+## 1.0.0a2 - Alpha
+
+- Improved provider streaming compatibility, release validation, CI packaging, and artifact auditing.
+
 ## 1.0.0a1 - Alpha
 
 - Runtime-first terminal Coding Agent with SQLite Event Replay and recovery.
