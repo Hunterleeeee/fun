@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from itertools import count
 from typing import Any
+from uuid import uuid4
 
 
-_event_ids = count(1)
 _event_seq = count(1)
 
 
@@ -20,7 +20,7 @@ class Event:
     session_id: str
     task_id: str | None = None
     payload: dict[str, Any] = field(default_factory=dict)
-    id: str = field(default_factory=lambda: f"evt_{next(_event_ids)}")
+    id: str = field(default_factory=lambda: f"evt_{uuid4().hex}")
     seq: int = field(default_factory=lambda: next(_event_seq))
     timestamp: str = field(default_factory=now_iso)
 
@@ -66,7 +66,11 @@ class EventStore:
         return [event for event in self._events if event.session_id == session_id]
 
     def load(self, events: list[Event]) -> None:
-        for event in sorted(events, key=lambda item: item.seq):
+        global _event_seq
+        ordered = sorted(events, key=lambda item: item.seq)
+        highest_seq = max((event.seq for event in ordered), default=0)
+        _event_seq = count(highest_seq + 1)
+        for event in ordered:
             if not any(item.id == event.id for item in self._events):
                 self._events.append(event)
 

@@ -16,6 +16,21 @@ def runtime_usage_summary():
 
 
 class CoreTests(unittest.TestCase):
+    def test_recovered_store_continues_persisting_new_events(self):
+        with TemporaryDirectory() as directory:
+            first = Runtime(directory, "auto", state_dir=directory)
+            first.create_task("continue after recovery")
+            session_id = first.session_id
+            recovered = Runtime.recover(directory, directory, session_id, approval="auto")
+            recovered.run_tool("explore", path=".")
+            event_types = [event.type for event in recovered.events.list(session_id)]
+            self.assertIn("tool.requested", event_types)
+            self.assertIn("tool.executing", event_types)
+            self.assertIn("tool.completed", event_types)
+            self.assertIn("agent.node", event_types)
+            self.assertGreaterEqual(len(event_types), 8)
+            recovered.stop()
+
     def test_usage_accumulates_multiple_provider_responses(self):
         usage = Usage()
         usage.merge_provider({"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14})
