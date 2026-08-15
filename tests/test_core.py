@@ -47,7 +47,7 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertEqual(
                 [event.type for event in runtime.events.list()],
-                ["task.created", "task.started", "tool.requested", "tool.completed"],
+                ["task.created", "plan.created", "task.started", "tool.requested", "tool.completed"],
             )
             runtime.stop()
             self.assertEqual(runtime.task.status, "stopped")

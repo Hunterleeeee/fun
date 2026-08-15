@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.goal:
         task = runtime.create_task(args.goal)
         print(f"Fun · {args.workspace}")
-        print(renderer.plan([task.goal]))
+        print(renderer.plan(task.plan))
         if provider:
             try:
                 runtime.run_model_turn(on_text=lambda text: print(text, end="", flush=True))
@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"session={runtime.session_id} task={runtime.task.status if runtime.task else 'idle'}")
                 continue
             task = runtime.create_task(text)
-            print(renderer.plan([task.goal]))
+            print(renderer.plan(task.plan))
             print("V1 Core runtime initialized. Use /status or /quit.")
             runtime.stop()
     except (KeyboardInterrupt, EOFError):

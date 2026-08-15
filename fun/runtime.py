@@ -53,10 +53,19 @@ class Runtime:
         if self.task and self.task.status == "running":
             raise RuntimeError("TASK_ALREADY_RUNNING")
         self.task = Task(f"task_{uuid.uuid4().hex[:12]}", goal, "running")
+        self.task.plan = self._initial_plan(goal)
         self.task.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
         self.emit("task.created", self.task.id, goal=goal)
+        self.emit("plan.created", self.task.id, steps=self.task.plan)
         self.emit("task.started", self.task.id)
         return self.task
+
+    @staticmethod
+    def _initial_plan(goal: str) -> list[str]:
+        lower = goal.lower()
+        if any(word in lower for word in ("fix", "修复", "改", "implement", "实现")):
+            return ["inspect workspace", "locate relevant code", "apply a minimal change", "run focused validation"]
+        return ["inspect workspace", "analyze the request", "report verified findings"]
 
     def run_tool(self, name: str, **kwargs: object) -> ToolResult:
         if not self.task or self.task.status != "running":
