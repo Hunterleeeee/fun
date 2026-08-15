@@ -92,6 +92,18 @@ class CoreTests(unittest.TestCase):
             self.assertIsNone(replayed.task.pending_tool)
             replayed.stop()
 
+    def test_create_task_failure_does_not_leave_task_or_lock(self):
+        class FailingStore:
+            def append(self, event):
+                raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", event_store=EventStore(FailingStore()))
+            with self.assertRaises(OSError):
+                runtime.create_task("cannot persist")
+            self.assertIsNone(runtime.task)
+            self.assertFalse(runtime.lock.held)
+
     def test_runtime_recovers_cumulative_usage_from_events(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)

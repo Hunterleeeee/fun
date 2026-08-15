@@ -181,19 +181,28 @@ class Runtime:
     def create_task(self, goal: str) -> Task:
         if self.task and self.task.status == "running":
             raise RuntimeError("TASK_ALREADY_RUNNING")
+        acquired = False
         if not self.lock.held:
             self.lock.acquire()
-        self.task = Task(f"task_{uuid.uuid4().hex[:12]}", goal, "created")
-        self.task.plan = self._initial_plan(goal)
-        self.task.plan_status = ["pending"] * len(self.task.plan)
-        self.task.agent_state = "planning"
-        self.task.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
-        self.emit("task.created", self.task.id, goal=goal)
-        self.emit("plan.created", self.task.id, steps=self.task.plan)
-        self._transition("running", "task.started")
-        self._task_started_at = time.monotonic()
-        self._node("ready")
-        return self.task
+            acquired = True
+        candidate = Task(f"task_{uuid.uuid4().hex[:12]}", goal, "created")
+        candidate.plan = self._initial_plan(goal)
+        candidate.plan_status = ["pending"] * len(candidate.plan)
+        candidate.agent_state = "planning"
+        candidate.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
+        try:
+            self.emit("task.created", candidate.id, goal=goal)
+            self.emit("plan.created", candidate.id, steps=candidate.plan)
+            self.task = candidate
+            self._transition("running", "task.started")
+            self._task_started_at = time.monotonic()
+            self._node("ready")
+            return candidate
+        except Exception:
+            if acquired:
+                self.lock.release()
+            self.task = None
+            raise
 
     def _transition(self, status: str, event_type: str) -> None:
         if not self.task:
