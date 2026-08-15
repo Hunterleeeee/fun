@@ -63,6 +63,18 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_approval_failure_then_tool_failure_replay_stays_ready(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("approval duplicate terminal")
+            runtime.emit("approval.pending", runtime.task.id, call_id="c1", name="exec", risk="medium", arguments={})
+            runtime.emit("approval.failed", runtime.task.id, call_id="c1", name="exec", error_type="RuntimeError", error_tag="APPROVAL_CALLBACK_FAILED")
+            runtime.emit("tool.failed", runtime.task.id, call_id="c1", name="exec", ok=False, error_type="RuntimeError", error_tag="APPROVAL_CALLBACK_FAILED")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.agent_state, "ready")
+            self.assertIsNone(recovered.task.pending_tool)
+            recovered.stop()
+
     def test_approval_failure_replay_projects_ready_without_tool_fact(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
