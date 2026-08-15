@@ -177,7 +177,9 @@ class Runtime:
                 self.task.pending_tool = None
             elif event.type == "approval.failed":
                 self.task.agent_state = "ready"
-                self.task.pending_tool = None
+                pending_call = self.task.pending_tool or {}
+                if not pending_call or pending_call.get("call_id") == event.payload.get("call_id"):
+                    self.task.pending_tool = None
             elif event.type in {"tool.completed", "tool.failed", "approval.resolved"}:
                 self.task.agent_state = "ready"
                 if event.type != "approval.resolved":

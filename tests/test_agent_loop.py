@@ -63,6 +63,17 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_stale_approval_failure_does_not_clear_new_pending_tool(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("stale approval")
+            runtime.emit("approval.pending", runtime.task.id, call_id="new", name="exec", risk="medium", arguments={})
+            runtime.emit("approval.failed", runtime.task.id, call_id="old", name="exec", error_type="RuntimeError", error_tag="APPROVAL_CALLBACK_FAILED")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.agent_state, "ready")
+            self.assertEqual(recovered.task.pending_tool["call_id"], "new")
+            recovered.stop()
+
     def test_approval_failure_then_tool_failure_replay_stays_ready(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
