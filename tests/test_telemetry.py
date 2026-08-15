@@ -90,6 +90,24 @@ class TelemetryTests(unittest.TestCase):
             self.assertEqual(telemetry.calls, 2)
             self.assertTrue(runtime._telemetry_sent)
 
+    def test_terminal_paths_close_store_when_telemetry_fails(self):
+        telemetry = TelemetryClient(enabled=True, endpoint="http://127.0.0.1:1/telemetry", install="test")
+        with mock.patch.object(telemetry, "send", side_effect=RuntimeError("network")):
+            with tempfile.TemporaryDirectory() as directory:
+                stopped = Runtime(directory, state_dir=directory, telemetry=telemetry)
+                stopped.create_task("stop telemetry failure")
+                durable = stopped.events._durable
+                stopped.stop()
+                with self.assertRaisesRegex(Exception, "closed"):
+                    durable.list()
+
+                failed = Runtime(directory, state_dir=directory, telemetry=telemetry)
+                failed.create_task("fail telemetry failure")
+                durable = failed.events._durable
+                failed.fail("broken")
+                with self.assertRaisesRegex(Exception, "closed"):
+                    durable.list()
+
     def test_runtime_reports_stopped_once(self):
         telemetry = TelemetryClient(enabled=True, endpoint="http://127.0.0.1:1/telemetry", install="test")
         with mock.patch.object(telemetry, "send", return_value=True) as send:
