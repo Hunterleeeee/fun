@@ -1,3 +1,4 @@
+import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -110,6 +111,21 @@ class CoreTests(unittest.TestCase):
         self.assertIn("◇ PLAN", renderer.plan(["inspect files"]))
         self.assertTrue(renderer.activity("reading").startswith("◌"))
         self.assertTrue(renderer.finding("risk").startswith("!"))
+
+    def test_checkpoint_restore_reapplies_git_diff(self):
+        with TemporaryDirectory() as directory:
+            subprocess.run(["git", "init", "-q"], cwd=directory, check=True)
+            path = Path(directory) / "a.txt"
+            path.write_text("one\n", encoding="utf-8")
+            subprocess.run(["git", "add", "a.txt"], cwd=directory, check=True)
+            subprocess.run(["git", "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", "base"], cwd=directory, check=True)
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("restore")
+            path.write_text("two\n", encoding="utf-8")
+            snapshot = runtime.checkpoint("before")
+            path.write_text("three\n", encoding="utf-8")
+            runtime.restore_checkpoint(snapshot)
+            self.assertEqual(path.read_text(encoding="utf-8"), "two\n")
 
     def test_checkpoint_and_validation_emit_events(self):
         with TemporaryDirectory() as directory:

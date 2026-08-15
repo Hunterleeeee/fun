@@ -193,9 +193,29 @@ class Runtime:
         if not self.task:
             raise RuntimeError("NO_ACTIVE_TASK")
         diff = subprocess.run(["git", "diff", "--binary"], cwd=self.workspace, capture_output=True, text=True)
-        snapshot = {"label": label, "task_id": self.task.id, "diff": diff.stdout, "event_count": len(self.events.list())}
-        self.emit("checkpoint.created", self.task.id, label=label, changed=bool(diff.stdout))
+        snapshot = {"label": label, "task_id": self.task.id, "diff": diff.stdout, "event_count": len(self.events.list()), "status": self.task.status, "goal": self.task.goal}
+        self.emit("checkpoint.created", self.task.id, label=label, changed=bool(diff.stdout), snapshot=snapshot)
         return snapshot
+
+    def restore_checkpoint(self, snapshot: dict[str, object]) -> None:
+        if not self.task:
+            raise RuntimeError("NO_ACTIVE_TASK")
+        if snapshot.get("task_id") != self.task.id:
+            raise RuntimeError("CHECKPOINT_TASK_MISMATCH")
+        diff = snapshot.get("diff")
+        if not isinstance(diff, str):
+            raise RuntimeError("INVALID_CHECKPOINT")
+        self.emit("checkpoint.restore_requested", self.task.id, label=snapshot.get("label", "unknown"))
+        if diff:
+            reset = subprocess.run(["git", "restore", "--worktree", "--source=HEAD", "--", "."], cwd=self.workspace, capture_output=True, text=True)
+            if reset.returncode != 0:
+                self.emit("checkpoint.restore_failed", self.task.id, error=reset.stderr.strip())
+                raise RuntimeError("CHECKPOINT_RESTORE_FAILED")
+            patch = subprocess.run(["git", "apply", "--binary", "-"], cwd=self.workspace, input=diff, capture_output=True, text=True)
+            if patch.returncode != 0:
+                self.emit("checkpoint.restore_failed", self.task.id, error=patch.stderr.strip())
+                raise RuntimeError("CHECKPOINT_RESTORE_FAILED")
+        self.emit("checkpoint.restored", self.task.id)
 
     def pause(self) -> None:
         if self.task and self.task.status == "running":

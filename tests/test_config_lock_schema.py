@@ -28,6 +28,15 @@ class ConfigLockSchemaTests(unittest.TestCase):
             second.acquire()
             second.release()
 
+    def test_stale_lock_is_reclaimed(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "workspace.lock"
+            path.write_text('{"pid": 999999999, "workspace": "x"}', encoding="utf-8")
+            lock = WorkspaceLock(directory, directory)
+            lock.acquire()
+            self.assertTrue(lock.held)
+            lock.release()
+
     def test_tool_schema_rejects_unknown_and_wrong_types(self):
         with self.assertRaisesRegex(SchemaError, "INVALID_ARGUMENTS"):
             validate_tool_arguments("read", {"path": "a", "unexpected": True})
