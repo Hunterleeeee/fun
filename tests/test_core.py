@@ -303,6 +303,20 @@ class CoreTests(unittest.TestCase):
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
+    def test_validation_does_not_mutate_when_validation_event_fails(self):
+        class FailingStore:
+            def append(self, event):
+                if event.type in {"validation.completed", "validation.failed"}:
+                    raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("validation atomic")
+            runtime.events._durable = FailingStore()
+            with self.assertRaises(OSError):
+                runtime.validate("true")
+            self.assertIsNone(runtime.task.validation)
+
     def test_repair_result_survives_terminal_fact_persistence_failure(self):
         class FailingAfterValidation:
             def append(self, event):
