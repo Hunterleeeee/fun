@@ -64,6 +64,12 @@ jobs:
       - name: Generate distribution checksums
         run: |
           shopt -s nullglob
+          for unexpected in dist/*; do
+            case "$unexpected" in
+              dist/*.whl|dist/*.tar.gz|dist/SHA256SUMS) ;;
+              *) echo "Unexpected distribution file: $unexpected"; exit 1 ;;
+            esac
+          done
           wheels=(dist/*.whl)
           sdists=(dist/*.tar.gz)
           test "${#wheels[@]}" -gt 0
