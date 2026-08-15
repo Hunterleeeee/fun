@@ -490,11 +490,15 @@ class Runtime:
         except Exception as exc:
             try:
                 self.emit("repair.failed", self.task.id, attempt=attempt, ok=False, error=str(exc))
+                self.emit("agent.node", self.task.id, node="ready")
+                self.task.agent_state = "ready"
             except Exception:
                 pass
             raise
         try:
             self.emit("repair.completed" if result.ok else "repair.failed", self.task.id, attempt=attempt, ok=result.ok)
+            self.emit("agent.node", self.task.id, node="ready")
+            self.task.agent_state = "ready"
         except Exception:
             pass
         return result
