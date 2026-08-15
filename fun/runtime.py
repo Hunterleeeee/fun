@@ -481,6 +481,8 @@ class Runtime:
                 self._tool_calls += 1
                 result = self.run_tool(name, **arguments)
             self.task.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})
+        self.emit("agent.node", self.task.id, node="ready")
+        self.task.agent_state = "ready"
 
     def run_model_turn(self, on_text: Callable[[str], None] | None = None, max_steps: int = 8) -> str:
         if not self.task:

@@ -63,6 +63,15 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_tool_batch_replays_ready_agent_state(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("tool ready")
+            runtime.execute_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": '{"path":"missing.txt"}'}}])
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.agent_state, "ready")
+            recovered.stop()
+
     def test_model_tool_loop_returns_final_text_and_records_facts(self):
         with TemporaryDirectory() as directory:
             Path(directory, "hello.txt").write_text("hello\n", encoding="utf-8")
