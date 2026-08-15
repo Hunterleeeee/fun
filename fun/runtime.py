@@ -160,6 +160,8 @@ class Runtime:
                     self.task.recovery_reason = None
             elif event.type == "model.failed":
                 self.task.model_error = {key: event.payload.get(key) for key in ("error_type", "error_tag") if key in event.payload}
+            elif event.type == "model.completed":
+                self.task.model_error = None
             elif event.type == "task.result":
                 self.task.result = str(event.payload.get("result", ""))
                 self.task.agent_state = "completed"
@@ -490,6 +492,7 @@ class Runtime:
                 if content:
                     self.task.messages.append({"role": "assistant", "content": content})
                 self.emit("model.completed", self.task.id, text=content, usage=self.usage.as_dict())
+                self.task.model_error = None
                 return final_text
             self.task.messages.append({"role": "assistant", "content": content or None, "tool_calls": calls})
             self.execute_tool_calls(calls)

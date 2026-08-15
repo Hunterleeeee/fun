@@ -110,6 +110,28 @@ class AgentLoopTests(unittest.TestCase):
             self.assertNotIn("malformed response", str(failed.payload))
             self.assertNotIn("None has no attribute", str(failed.payload))
 
+    def test_successful_model_turn_clears_previous_model_error(self):
+        class Provider:
+            def __init__(self):
+                self.calls = 0
+            def stream(self, messages, tools=None):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("temporary")
+                yield {"choices": [{"delta": {"content": "recovered"}}]}
+
+        with TemporaryDirectory() as directory:
+            provider = Provider()
+            runtime = Runtime(directory, "auto", provider=provider, state_dir=directory)
+            runtime.create_task("recover model")
+            with self.assertRaises(RuntimeError):
+                next(runtime.request_model())
+            runtime.run_model_turn()
+            self.assertIsNone(runtime.task.model_error)
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertIsNone(recovered.task.model_error)
+            recovered.stop()
+
     def test_model_failure_error_replays(self):
         class BrokenProvider:
             def stream(self, messages, tools=None):
