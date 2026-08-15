@@ -51,4 +51,11 @@ jobs:
         run: |
           python -m venv /tmp/fun-ci-venv
           /tmp/fun-ci-venv/bin/python -m pip install dist/*.whl
+          /tmp/fun-ci-venv/bin/python -c "import fun"
           /tmp/fun-ci-venv/bin/fun --help
+      - name: Install sdist in isolated environment
+        run: |
+          python -m venv /tmp/fun-ci-sdist-venv
+          /tmp/fun-ci-sdist-venv/bin/python -m pip install dist/*.tar.gz
+          /tmp/fun-ci-sdist-venv/bin/python -c "import fun"
+          /tmp/fun-ci-sdist-venv/bin/fun --help
