@@ -14,7 +14,8 @@ class SQLiteEventStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.path)
+        self.connection = sqlite3.connect(self.path, timeout=30.0)
+        self.connection.execute("PRAGMA busy_timeout = 30000")
         self.connection.execute(
             "CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, type TEXT NOT NULL, session_id TEXT NOT NULL, task_id TEXT, timestamp TEXT NOT NULL, payload TEXT NOT NULL)"
         )

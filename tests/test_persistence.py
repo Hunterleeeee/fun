@@ -71,6 +71,13 @@ class PersistenceTests(unittest.TestCase):
         self.assertGreater(fresh.seq, 42)
         self.assertEqual([event.seq for event in store.replay("ses_1")], [41, 42, fresh.seq])
 
+    def test_sqlite_event_store_configures_busy_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "events.db")
+            value = store.connection.execute("PRAGMA busy_timeout").fetchone()[0]
+            self.assertEqual(value, 30000)
+            store.close()
+
     def test_sqlite_event_store_batch_conflict_rolls_back_all_events(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "events.db")
