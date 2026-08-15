@@ -95,6 +95,7 @@ jobs:
         run: |
           python -m venv /tmp/fun-ci-venv
           /tmp/fun-ci-venv/bin/python -m pip install --upgrade pip
+          /tmp/fun-ci-venv/bin/python -m pip --version
           /tmp/fun-ci-venv/bin/python -m pip install dist/*.whl
           /tmp/fun-ci-venv/bin/python -c "import fun"
           /tmp/fun-ci-venv/bin/fun --help
@@ -102,6 +103,8 @@ jobs:
         run: |
           python -m venv /tmp/fun-ci-sdist-venv
           /tmp/fun-ci-sdist-venv/bin/python -m pip install --upgrade pip
-          /tmp/fun-ci-sdist-venv/bin/python -m pip install dist/*.tar.gz
+          /tmp/fun-ci-sdist-venv/bin/python -m pip install "setuptools>=68,<81" wheel
+          /tmp/fun-ci-sdist-venv/bin/python -m pip --version
+          /tmp/fun-ci-sdist-venv/bin/python -m pip install --no-build-isolation dist/*.tar.gz
           /tmp/fun-ci-sdist-venv/bin/python -c "import fun"
           /tmp/fun-ci-sdist-venv/bin/fun --help
