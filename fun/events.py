@@ -43,7 +43,9 @@ class EventStore:
             commit = getattr(durable, "commit", None)
             rollback = getattr(durable, "rollback", None)
             transactional = all(callable(method) for method in (begin, commit, rollback))
-            if transactional:
+            if callable(append_many):
+                append_many(new_events)
+            elif transactional:
                 begin()
                 try:
                     for event in new_events:
@@ -52,8 +54,6 @@ class EventStore:
                 except Exception:
                     rollback()
                     raise
-            elif callable(append_many):
-                append_many(new_events)
             else:
                 for event in new_events:
                     durable.append(event)

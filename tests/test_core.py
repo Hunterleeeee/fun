@@ -161,6 +161,15 @@ class CoreTests(unittest.TestCase):
             self.assertIn("goal.replaced", [event.type for event in runtime.events.list()])
             runtime.stop()
 
+    def test_sqlite_runtime_batch_events_replay(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("sqlite batch")
+            runtime.replace_plan(["one", "two"])
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.plan, ["one", "two"])
+            recovered.stop()
+
     def test_runtime_can_persist_events(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)
