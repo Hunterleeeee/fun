@@ -51,11 +51,12 @@ class OpenAICompatible:
         if tools is not None and (not isinstance(tools, list) or any(not isinstance(tool, dict) for tool in tools)):
             raise ProviderError("PROVIDER_INVALID_TOOLS")
         try:
-            json.dumps(messages)
-            if tools is not None:
-                json.dumps(tools)
+            serialized_messages = json.dumps(messages, separators=(",", ":"))
+            serialized_tools = json.dumps(tools, separators=(",", ":")) if tools is not None else ""
         except (TypeError, ValueError) as exc:
             raise ProviderError("PROVIDER_INVALID_PAYLOAD", cause=exc) from exc
+        if len(serialized_messages.encode()) + len(serialized_tools.encode()) > 1024 * 1024:
+            raise ProviderError("PROVIDER_PAYLOAD_TOO_LARGE")
         payload: dict[str, Any] = {"model": self.config.model, "messages": messages, "stream": True}
         if tools:
             payload["tools"] = tools

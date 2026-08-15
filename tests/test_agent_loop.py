@@ -270,6 +270,12 @@ class AgentLoopTests(unittest.TestCase):
         with patch("urllib.request.urlopen", return_value=Response()):
             self.assertEqual(list(provider.stream([], []))[0]["choices"][0]["delta"]["content"], "hello")
 
+    def test_provider_rejects_oversized_payload(self):
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with self.assertRaises(ProviderError) as context:
+            next(provider.stream([{"content": "x" * (1024 * 1024)}]))
+        self.assertEqual(context.exception.error_tag, "PROVIDER_PAYLOAD_TOO_LARGE")
+
     def test_provider_rejects_non_serializable_payload(self):
         provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
         with self.assertRaises(ProviderError) as context:
