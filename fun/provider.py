@@ -37,7 +37,7 @@ class OpenAICompatible:
             raise ValueError("INVALID_PROVIDER_ENDPOINT") from exc
         if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment or (port is not None and not 1 <= port <= 65535):
             raise ValueError("INVALID_PROVIDER_ENDPOINT")
-        if not config.model:
+        if not isinstance(config.model, str) or not config.model.strip():
             raise ValueError("INVALID_PROVIDER_MODEL")
         if not isinstance(config.api_key, str) or not config.api_key.strip():
             raise ValueError("INVALID_PROVIDER_API_KEY")

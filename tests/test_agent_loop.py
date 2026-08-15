@@ -286,6 +286,9 @@ class AgentLoopTests(unittest.TestCase):
             OpenAICompatible(ModelConfig("https://provider.invalid:65536", "key", "model"))
         with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_ENDPOINT"):
             OpenAICompatible(ModelConfig("https://provider.invalid:notaport", "key", "model"))
+        for model in ("", "   ", None, 123):
+            with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_MODEL"):
+                OpenAICompatible(ModelConfig("https://provider.invalid", "key", model))
         for api_key in ("", "   ", None, 123):
             with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_API_KEY"):
                 OpenAICompatible(ModelConfig("https://provider.invalid", api_key, "model"))
