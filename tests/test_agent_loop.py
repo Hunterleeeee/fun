@@ -63,6 +63,17 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_approval_callback_non_bool_cannot_bypass_policy(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "smart", approve=lambda name, risk: "yes", state_dir=directory)
+            runtime.create_task("approval type")
+            with self.assertRaisesRegex(TypeError, "must return bool"):
+                runtime.run_tool("exec", command="echo hi")
+            failed = next(event for event in runtime.events.list() if event.type == "approval.failed")
+            self.assertEqual(failed.payload["error_tag"], "APPROVAL_CALLBACK_FAILED")
+            self.assertIsNone(runtime.task.pending_tool)
+            self.assertEqual(runtime.task.agent_state, "ready")
+
     def test_approval_callback_failure_records_safe_fact_and_ready(self):
         def broken_approval(name, risk):
             raise RuntimeError("approval secret")

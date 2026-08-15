@@ -318,6 +318,8 @@ class Runtime:
             self.emit("approval.pending", self.task.id, call_id=call_id, name=name, risk=risk.value, arguments=dict(kwargs))
             try:
                 allowed = self.approve(name, risk) if self.approve else False
+                if not isinstance(allowed, bool):
+                    raise TypeError("approval callback must return bool")
             except Exception as exc:
                 self.emit("approval.failed", self.task.id, call_id=call_id, name=name, error_type=type(exc).__name__, error_tag="APPROVAL_CALLBACK_FAILED")
                 self.task.pending_tool = None
