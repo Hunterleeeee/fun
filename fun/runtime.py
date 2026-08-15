@@ -328,9 +328,9 @@ class Runtime:
             self.emit("approval.resolved", self.task.id, call_id=call_id, name=name, allowed=allowed)
             if not allowed:
                 self.emit("approval.rejected", self.task.id, call_id=call_id, name=name, risk=risk.value, reason="callback_denied")
-                self.task.pending_tool = None
                 result = ToolResult(False, "APPROVAL_REQUIRED", risk)
                 self.emit("tool.failed", self.task.id, call_id=call_id, name=name, ok=False, text=result.text, changed=[])
+                self.task.pending_tool = None
                 self._ready_after_tool()
                 return result
         registered: dict[str, Callable[..., ToolResult]] = {

@@ -63,6 +63,17 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_approval_rejection_replays_without_pending_tool(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "smart", approve=lambda name, risk: False, state_dir=directory)
+            runtime.create_task("approval reject replay")
+            result = runtime.run_tool("exec", command="echo hi")
+            self.assertFalse(result.ok)
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertIsNone(recovered.task.pending_tool)
+            self.assertEqual(recovered.task.agent_state, "ready")
+            recovered.stop()
+
     def test_approval_callback_non_bool_cannot_bypass_policy(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "smart", approve=lambda name, risk: "yes", state_dir=directory)
