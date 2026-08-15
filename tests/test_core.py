@@ -303,6 +303,20 @@ class CoreTests(unittest.TestCase):
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
+    def test_validation_start_failure_does_not_change_agent_state(self):
+        class FailingStore:
+            def append(self, event):
+                if event.type == "validation.started":
+                    raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("validation node atomic")
+            runtime.events._durable = FailingStore()
+            with self.assertRaises(OSError):
+                runtime.validate("true")
+            self.assertEqual(runtime.task.agent_state, "ready")
+
     def test_validation_failure_event_does_not_update_plan_step(self):
         class FailingStore:
             def append(self, event):

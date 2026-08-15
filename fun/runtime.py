@@ -461,8 +461,8 @@ class Runtime:
         """Run validation and record evidence for a bounded repair loop."""
         if not self.task or self.task.status != "running":
             raise RuntimeError("NO_ACTIVE_TASK")
-        self._node("validation.started", command=command)
         self.emit("validation.started", self.task.id, command=command)
+        self.task.agent_state = "validation.started"
         result = self.run_tool("exec", command=command)
         validation = {"ok": result.ok, "command": command, "text": result.text}
         self.emit("validation.completed" if result.ok else "validation.failed", self.task.id, **validation)
