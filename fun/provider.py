@@ -46,7 +46,10 @@ class OpenAICompatible:
                 first = True
                 buffer = ""
                 data_parts: list[str] = []
+                done = False
                 for raw in response:
+                    if done:
+                        break
                     buffer += raw.decode(errors="replace")
                     lines: list[str] = []
                     while True:
@@ -80,6 +83,7 @@ class OpenAICompatible:
                             continue
                         value = line[5:].strip()
                         if value == "[DONE]":
+                            done = True
                             if data_parts:
                                 try:
                                     item = json.loads("\n".join(data_parts))
@@ -92,6 +96,8 @@ class OpenAICompatible:
                                 yield item
                             continue
                         data_parts.append(value)
+                if done:
+                    return
                 if buffer.strip():
                     line = buffer.strip()
                     if line.startswith("data:"):
