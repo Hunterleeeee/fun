@@ -42,7 +42,9 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install build tooling
-        run: python -m pip install --upgrade build
+        run: python -m pip install "build>=1.2,<2"
+      - name: Report build tooling
+        run: python -m build --version
       - name: Build distributions
         run: python -m build
       - name: Install wheel in isolated environment
