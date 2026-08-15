@@ -461,7 +461,7 @@ class Runtime:
                 if self.task:
                     self.task.plan_error_summary = summary
                 self.emit("plan.rejected", self.task.id if self.task else None, reason=str(exc), summary=summary)
-        self.emit("response.parsed", self.task.id, content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated)
+        self.emit("response.parsed", self.task.id, content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated, summary={"content_length": len(content), "tool_calls": len(parsed)})
         self._node("response.parsed", content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated)
         self.task.response_error = None
         return content, parsed

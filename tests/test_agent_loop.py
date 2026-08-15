@@ -60,6 +60,8 @@ class AgentLoopTests(unittest.TestCase):
                 runtime.run_model_turn()
                 self.assertEqual(runtime.task.plan, ["inspect", "verify"])
                 self.assertIn("plan.replaced", [event.type for event in runtime.events.list()])
+            parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
+            self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
     def test_model_tool_loop_returns_final_text_and_records_facts(self):
         with TemporaryDirectory() as directory:
