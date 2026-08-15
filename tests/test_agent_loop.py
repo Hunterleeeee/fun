@@ -152,6 +152,17 @@ class AgentLoopTests(unittest.TestCase):
         with patch("urllib.request.urlopen", return_value=Response()):
             self.assertEqual(list(provider.stream([], []))[0]["choices"][0]["delta"]["content"], "hello")
 
+    def test_provider_http_status_like_oserror_is_classified(self):
+        class StatusError(OSError):
+            code = 401
+
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with patch("urllib.request.urlopen", side_effect=StatusError("secret http body")):
+            with self.assertRaises(ProviderError) as context:
+                next(provider.stream([], []))
+        self.assertEqual(context.exception.error_tag, "PROVIDER_AUTH_FAILED")
+        self.assertNotIn("secret http body", str(context.exception))
+
     def test_provider_error_classification_is_safe(self):
         provider = OpenAICompatible(ModelConfig("https://provider.invalid", "secret-key", "model"))
         with patch("urllib.request.urlopen", side_effect=TimeoutError("secret response")):
