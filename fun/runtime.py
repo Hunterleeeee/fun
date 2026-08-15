@@ -331,7 +331,7 @@ class Runtime:
         try:
             result = method(**kwargs)
         except Exception as exc:
-            self.emit("tool.failed", self.task.id, name=name, error=str(exc))
+            self.emit("tool.failed", self.task.id, name=name, error_type=type(exc).__name__, error_tag="TOOL_EXECUTION_FAILED")
             raise
         self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, call_id=call_id, name=name, ok=result.ok, text=result.text, changed=result.changed or [])
         if plan_index is not None:
