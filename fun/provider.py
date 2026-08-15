@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 import urllib.request
 from dataclasses import dataclass
@@ -38,6 +39,8 @@ class OpenAICompatible:
             raise ValueError("INVALID_PROVIDER_ENDPOINT")
         if not config.model:
             raise ValueError("INVALID_PROVIDER_MODEL")
+        if not isinstance(config.timeout, (int, float)) or isinstance(config.timeout, bool) or not math.isfinite(config.timeout) or config.timeout <= 0:
+            raise ValueError("INVALID_PROVIDER_TIMEOUT")
         self.config = config
 
     def stream(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> Iterator[dict[str, Any]]:
