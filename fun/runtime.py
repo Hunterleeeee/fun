@@ -126,9 +126,10 @@ class Runtime:
                     entry["name"] += function.get("name", "")
                     entry["arguments"] += function.get("arguments", "")
             if content:
-                self.task.messages.append({"role": "assistant", "content": content})
                 final_text += content
             if not calls:
+                if content:
+                    self.task.messages.append({"role": "assistant", "content": content})
                 self.emit("model.completed", self.task.id, text=content)
                 return final_text
             assistant_calls = [{"id": item["id"], "type": "function", "function": {"name": item["name"], "arguments": item["arguments"]}} for item in calls.values()]
