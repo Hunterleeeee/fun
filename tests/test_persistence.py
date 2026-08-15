@@ -43,6 +43,19 @@ class PersistenceTests(unittest.TestCase):
         self.assertGreater(fresh.seq, 42)
         self.assertEqual([event.seq for event in store.replay("ses_1")], [41, 42, fresh.seq])
 
+    def test_sqlite_event_store_batch_conflict_rolls_back_all_events(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "events.db")
+            existing = Event("existing", "ses_1", id="evt_existing", seq=1)
+            store.append(existing)
+            first = Event("first", "ses_1", id="evt_first", seq=2)
+            conflicting = Event("conflict", "ses_1", id="evt_existing", seq=3)
+            with self.assertRaisesRegex(Exception, "UNIQUE"):
+                store.append_many([first, conflicting])
+            rows = store.list("ses_1")
+            self.assertEqual([row["id"] for row in rows], ["evt_existing"])
+            store.close()
+
     def test_sqlite_event_store_batch_is_atomic(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "events.db")
