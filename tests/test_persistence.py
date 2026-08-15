@@ -7,6 +7,17 @@ from fun.persistence import SQLiteEventStore
 
 
 class PersistenceTests(unittest.TestCase):
+    def test_event_store_load_is_idempotent_for_duplicate_history(self):
+        from fun.events import EventStore
+
+        historical = Event("task.created", "ses_1", "task_1", id="evt_history", seq=9)
+        store = EventStore()
+        store.load([historical, historical])
+        self.assertEqual(store.list(), [historical])
+        fresh = Event("task.started", "ses_1", "task_1")
+        store.append(fresh)
+        self.assertGreater(fresh.seq, 9)
+
     def test_event_store_load_advances_sequence_after_recovery(self):
         from fun.events import EventStore
 
