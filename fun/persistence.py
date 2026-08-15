@@ -41,5 +41,8 @@ class SQLiteEventStore:
             for row in rows
         ]
 
+    def checkpoint(self) -> None:
+        self.connection.commit()
+
     def close(self) -> None:
         self.connection.close()

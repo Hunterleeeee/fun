@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 
+from .config import FunConfig
 from .provider import ModelConfig, OpenAICompatible
 from .renderer import TerminalRenderer
 from .runtime import Runtime
@@ -19,15 +20,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-key", default=os.getenv("FUN_API_KEY"))
     parser.add_argument("--model", default=os.getenv("FUN_MODEL"))
     parser.add_argument("--non-interactive", action="store_true", help="Never wait for interactive approval")
+    parser.add_argument("--configure", action="store_true", help="Save provider settings interactively")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    provider = None
-    if args.base_url and args.api_key and args.model:
-        provider = OpenAICompatible(ModelConfig(args.base_url, args.api_key, args.model))
     state_dir = os.getenv("FUN_STATE_DIR", str(os.path.expanduser("~/.fun")))
+    config_path = os.path.join(state_dir, "config.json")
+    saved = FunConfig.load(config_path)
+    if args.configure:
+        if not sys.stdin.isatty():
+            print("Configuration requires an interactive terminal.", file=sys.stderr)
+            return 2
+        saved.base_url = input(f"Base URL [{saved.base_url}]: ").strip() or saved.base_url
+        saved.api_key = input("API key [hidden, leave blank to keep]: ").strip() or saved.api_key
+        saved.model = input(f"Model [{saved.model}]: ").strip() or saved.model
+        saved.save(config_path)
+        print(f"Saved provider configuration to {config_path}")
+        return 0
+    base_url = args.base_url or saved.base_url
+    api_key = args.api_key or saved.api_key
+    model = args.model or saved.model
+    provider = None
+    if base_url and api_key and model:
+        provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
     def approve(name: str, risk: object) -> bool:
         if args.non_interactive or not sys.stdin.isatty():
             return False

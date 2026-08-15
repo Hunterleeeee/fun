@@ -57,7 +57,8 @@ class CoreTests(unittest.TestCase):
             runtime.resume()
             runtime.complete("done")
             self.assertEqual(runtime.task.status, "completed")
-            self.assertEqual(runtime.events.list()[-1].type, "task.completed")
+            self.assertEqual(runtime.events.list()[-2].type, "task.completed")
+            self.assertEqual(runtime.events.list()[-1].type, "task.result")
 
     def test_unknown_tool_is_rejected(self):
         with TemporaryDirectory() as directory:

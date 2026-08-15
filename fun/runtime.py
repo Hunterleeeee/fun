@@ -11,7 +11,10 @@ from .events import Event, EventStore
 from .policy import ApprovalMode, Policy, Risk
 from .persistence import SQLiteEventStore
 from .provider import OpenAICompatible, tool_schemas
+from .lock import WorkspaceLock
+from .schema import SchemaError, validate_tool_arguments
 from .tools import ToolResult, Tools
+from .usage import Usage
 
 SYSTEM_PROMPT = """You are Fun, a safety-first terminal coding agent.
 The Runtime is authoritative for tool results, workspace boundaries, approvals, and task state.
@@ -45,6 +48,8 @@ class Runtime:
         self.tools = Tools(workspace, self.policy)
         self.approve = approve
         self.provider = provider
+        self.usage = Usage()
+        self.lock = WorkspaceLock(self.workspace, state_dir or str(self.workspace / ".fun"))
         self.task: Task | None = None
 
     def emit(self, event_type: str, task_id: str | None = None, **payload: object) -> Event:
@@ -57,13 +62,30 @@ class Runtime:
     def create_task(self, goal: str) -> Task:
         if self.task and self.task.status == "running":
             raise RuntimeError("TASK_ALREADY_RUNNING")
-        self.task = Task(f"task_{uuid.uuid4().hex[:12]}", goal, "running")
+        if not self.lock.held:
+            self.lock.acquire()
+        self.task = Task(f"task_{uuid.uuid4().hex[:12]}", goal, "created")
         self.task.plan = self._initial_plan(goal)
         self.task.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
         self.emit("task.created", self.task.id, goal=goal)
         self.emit("plan.created", self.task.id, steps=self.task.plan)
-        self.emit("task.started", self.task.id)
+        self._transition("running", "task.started")
         return self.task
+
+    def _transition(self, status: str, event_type: str) -> None:
+        if not self.task:
+            raise RuntimeError("NO_ACTIVE_TASK")
+        allowed = {
+            "created": {"running"},
+            "running": {"paused", "completed", "stopped"},
+            "paused": {"running", "stopped"},
+            "completed": set(),
+            "stopped": set(),
+        }
+        if status not in allowed.get(self.task.status, set()):
+            raise RuntimeError("INVALID_TASK_TRANSITION")
+        self.task.status = status
+        self.emit(event_type, self.task.id)
 
     @staticmethod
     def _initial_plan(goal: str) -> list[str]:
@@ -76,6 +98,12 @@ class Runtime:
         if not self.task or self.task.status != "running":
             raise RuntimeError("NO_ACTIVE_TASK")
         self.emit("tool.requested", self.task.id, name=name, arguments=kwargs)
+        try:
+            kwargs = validate_tool_arguments(name, kwargs)
+        except SchemaError as exc:
+            result = ToolResult(False, str(exc))
+            self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
+            return result
         write_operation = name in {"edit", "exec"}
         risk = self.policy.risk_for(name, write=write_operation)
         if self.policy.requires_approval(risk):
@@ -113,6 +141,10 @@ class Runtime:
             content = ""
             calls: dict[str, dict[str, str]] = {}
             for chunk in chunks:
+                if chunk.get("_meta", {}).get("ttft_ms") is not None:
+                    self.usage.ttft_ms = int(chunk["_meta"]["ttft_ms"])
+                if isinstance(chunk.get("usage"), dict):
+                    self.usage.merge_provider(chunk["usage"], self.usage.ttft_ms)
                 choice = (chunk.get("choices") or [{}])[0]
                 delta = choice.get("delta") or {}
                 if delta.get("content"):
@@ -130,7 +162,7 @@ class Runtime:
             if not calls:
                 if content:
                     self.task.messages.append({"role": "assistant", "content": content})
-                self.emit("model.completed", self.task.id, text=content)
+                self.emit("model.completed", self.task.id, text=content, usage=self.usage.as_dict())
                 return final_text
             assistant_calls = [{"id": item["id"], "type": "function", "function": {"name": item["name"], "arguments": item["arguments"]}} for item in calls.values()]
             self.task.messages.append({"role": "assistant", "content": content or None, "tool_calls": assistant_calls})
@@ -167,21 +199,20 @@ class Runtime:
 
     def pause(self) -> None:
         if self.task and self.task.status == "running":
-            self.task.status = "paused"
-            self.emit("task.paused", self.task.id)
+            self._transition("paused", "task.paused")
 
     def resume(self) -> None:
         if self.task and self.task.status == "paused":
-            self.task.status = "running"
-            self.emit("task.resumed", self.task.id)
+            self._transition("running", "task.resumed")
 
     def complete(self, result: str = "") -> None:
         if not self.task or self.task.status != "running":
             raise RuntimeError("NO_ACTIVE_TASK")
-        self.task.status = "completed"
-        self.emit("task.completed", self.task.id, result=result, validation=self.task.validation or {})
+        self._transition("completed", "task.completed")
+        self.emit("task.result", self.task.id, result=result, validation=self.task.validation or {})
+        self.lock.release()
 
     def stop(self) -> None:
         if self.task and self.task.status in {"running", "paused"}:
-            self.task.status = "stopped"
-            self.emit("task.stopped", self.task.id)
+            self._transition("stopped", "task.stopped")
+            self.lock.release()
