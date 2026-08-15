@@ -161,6 +161,16 @@ class CoreTests(unittest.TestCase):
             self.assertIn("goal.replaced", [event.type for event in runtime.events.list()])
             runtime.stop()
 
+    def test_completed_result_replays_after_restart(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("result replay")
+            runtime.complete("verified result")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.status, "completed")
+            self.assertEqual(recovered.task.result, "verified result")
+            recovered.stop()
+
     def test_sqlite_runtime_batch_events_replay(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)

@@ -38,6 +38,7 @@ class Task:
     plan_status: list[str] = field(default_factory=list)
     plan_error: str | None = None
     plan_error_summary: dict[str, Any] | None = None
+    result: str | None = None
     messages: list[dict[str, Any]] = field(default_factory=list)
     validation: dict[str, Any] | None = None
     repair_attempts: int = 0
@@ -154,6 +155,7 @@ class Runtime:
                     self.task.status = "stopped"
                     self.task.recovery_reason = None
             elif event.type == "task.result":
+                self.task.result = str(event.payload.get("result", ""))
                 self.task.agent_state = "completed"
             elif event.type == "approval.pending":
                 self.task.agent_state = "approval.pending"
@@ -518,6 +520,7 @@ class Runtime:
         task_result = Event("task.result", self.session_id, self.task.id, {"result": result, "validation": self.task.validation or {}})
         self.events.append_many([completed, task_result])
         self.task.status = "completed"
+        self.task.result = result
         try:
             self._send_telemetry("completed")
         finally:
