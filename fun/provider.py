@@ -56,6 +56,10 @@ class OpenAICompatible:
         started = time.monotonic()
         try:
             with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+                status = getattr(response, "status", getattr(response, "code", 200))
+                if isinstance(status, int) and status >= 400:
+                    tag = "PROVIDER_AUTH_FAILED" if status in {401, 403} else "PROVIDER_HTTP_FAILED"
+                    raise ProviderError(tag)
                 headers = getattr(response, "headers", None)
                 raw_content_type = headers.get("Content-Type", "") if headers is not None else ""
                 content_type = raw_content_type if isinstance(raw_content_type, str) else ""
