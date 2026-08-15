@@ -83,6 +83,8 @@ Fun 让模型负责提出下一步动作，让 Runtime 负责事实、安全和�
 ## Commands
 
 ```text
+/goal         查看当前目标
+/goal <text>  设置目标（当前任务结束后）
 /status       task、agent、usage、recovery 状态
 /plan         查看 PlanStep
 /diff         查看当前 diff

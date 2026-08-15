@@ -94,6 +94,19 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(recovered.task.status, "paused")
             recovered.stop()
 
+    def test_goal_can_be_read_and_replaced_after_stop(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory)
+            runtime.set_goal("first goal")
+            self.assertEqual(runtime.goal(), "first goal")
+            with self.assertRaisesRegex(RuntimeError, "TASK_ALREADY_ACTIVE"):
+                runtime.set_goal("blocked goal")
+            runtime.stop()
+            runtime.set_goal("second goal")
+            self.assertEqual(runtime.goal(), "second goal")
+            self.assertIn("goal.replaced", [event.type for event in runtime.events.list()])
+            runtime.stop()
+
     def test_runtime_can_persist_events(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)

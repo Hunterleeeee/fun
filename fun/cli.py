@@ -83,6 +83,16 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if text in {"/quit", "/exit"}:
                 break
+            if text == "/goal":
+                print(runtime.goal() or "(no active goal)")
+                continue
+            if text.startswith("/goal "):
+                try:
+                    task = runtime.set_goal(text[6:].strip())
+                    print(renderer.plan(task.plan, task.plan_status))
+                except Exception as exc:
+                    print(f"× {exc}", file=sys.stderr)
+                continue
             if text == "/status":
                 status = runtime.task.status if runtime.task else "idle"
                 agent_state = runtime.task.agent_state if runtime.task else "idle"

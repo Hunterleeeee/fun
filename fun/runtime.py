@@ -179,6 +179,18 @@ class Runtime:
         self.task.status = status
         self.emit(event_type, self.task.id)
 
+    def set_goal(self, goal: str) -> Task:
+        if not goal.strip():
+            raise RuntimeError("EMPTY_GOAL")
+        if self.task and self.task.status in {"running", "paused", "recovery_required"}:
+            raise RuntimeError("TASK_ALREADY_ACTIVE")
+        if self.task and self.task.status in {"completed", "stopped"}:
+            self.emit("goal.replaced", self.task.id, previous=self.task.goal, goal=goal)
+        return self.create_task(goal.strip())
+
+    def goal(self) -> str | None:
+        return self.task.goal if self.task else None
+
     @staticmethod
     def _initial_plan(goal: str) -> list[str]:
         lower = goal.lower()
