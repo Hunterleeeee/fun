@@ -522,8 +522,8 @@ class Runtime:
     def fail(self, reason: str) -> None:
         if not self.task or self.task.status not in {"running", "paused"}:
             raise RuntimeError("NO_ACTIVE_TASK")
-        self.task.agent_state = "failed"
         self.emit("task.failed", self.task.id, reason=reason)
+        self.task.agent_state = "failed"
         self._transition("stopped", "task.stopped")
         self._send_telemetry("failed")
         self.lock.release()
