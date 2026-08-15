@@ -244,6 +244,20 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "closed"):
                 durable.list()
 
+    def test_runtime_context_manager_releases_recovery_lock(self):
+        with TemporaryDirectory() as directory:
+            first = Runtime(directory, state_dir=directory)
+            first.create_task("recovery context")
+            session_id = first.session_id
+            first.events.append(Event("tool.executing", first.session_id, first.task.id, {"call_id": "call_context", "name": "explore"}))
+            first.lock.release()
+            first.close()
+            with Runtime.recover(directory, directory, session_id) as recovered:
+                self.assertEqual(recovered.task.status, "recovery_required")
+                lock = recovered.lock
+            self.assertFalse(lock.held)
+            self.assertFalse(lock.path.exists())
+
     def test_runtime_context_manager_releases_active_lock(self):
         with TemporaryDirectory() as directory:
             with Runtime(directory, state_dir=directory) as runtime:

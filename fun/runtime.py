@@ -77,6 +77,9 @@ class Runtime:
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
         if self.task and self.task.status in {"running", "paused"}:
             self.stop()
+        elif self.task and self.task.status == "recovery_required":
+            self.lock.release()
+            self.close()
         else:
             self.close()
 
