@@ -88,6 +88,8 @@ class AgentLoopTests(unittest.TestCase):
             with self.assertRaises(AttributeError):
                 runtime.run_model_turn()
             failed = next(event for event in runtime.events.list() if event.type == "response.failed")
+            self.assertEqual(failed.payload["error_type"], "AttributeError")
+            self.assertEqual(failed.payload["error_tag"], "MALFORMED_RESPONSE")
             self.assertEqual(failed.payload["summary"]["content_length"], 7)
             self.assertEqual(failed.payload["summary"]["tool_calls"], 1)
             self.assertEqual(failed.payload["summary"]["chunk_types"], ["dict", "NoneType"])
@@ -105,6 +107,7 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(failed.payload["summary"]["tool_calls"], 0)
             self.assertEqual(failed.payload["summary"]["chunk_types"], ["NoneType"])
             self.assertNotIn("malformed response", str(failed.payload))
+            self.assertNotIn("None has no attribute", str(failed.payload))
 
     def test_provider_failure_records_model_failed_and_ready(self):
         class BrokenProvider:
