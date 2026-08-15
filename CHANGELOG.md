@@ -4,6 +4,10 @@
 
 - Future work will be tracked here.
 
+## 1.0.0a4 - Alpha
+
+- Hardened cross-process event persistence, CI packaging, checksum validation, and release diagnostics.
+
 ## 1.0.0a3 - Alpha
 
 - Fixed release artifact version normalization checks and hardened package publishing validation.
