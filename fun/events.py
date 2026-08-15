@@ -33,9 +33,9 @@ class EventStore:
     def append(self, event: Event) -> Event:
         if any(item.id == event.id for item in self._events):
             return event
-        self._events.append(event)
         if self._durable is not None:
             self._durable.append(event)
+        self._events.append(event)
         return event
 
     def list(self, session_id: str | None = None) -> list[Event]:

@@ -239,9 +239,10 @@ class Runtime:
         if not normalized or len(normalized) > 7:
             raise RuntimeError("INVALID_PLAN")
         previous = list(self.task.plan)
+        statuses = ["pending"] * len(normalized)
+        self.emit("plan.replaced", self.task.id, previous=previous, steps=normalized, statuses=statuses)
         self.task.plan = normalized
-        self.task.plan_status = ["pending"] * len(normalized)
-        self.emit("plan.replaced", self.task.id, previous=previous, steps=normalized, statuses=list(self.task.plan_status))
+        self.task.plan_status = statuses
 
     def update_plan_step(self, index: int, status: str, evidence: str = "") -> None:
         if not self.task or self.task.status != "running":
