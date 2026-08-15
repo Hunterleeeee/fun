@@ -63,6 +63,22 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_tool_exception_records_ready_state_before_propagating(self):
+        class BrokenTools:
+            def read(self, **kwargs):
+                raise RuntimeError("tool exploded")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("tool exception")
+            runtime.tools.read = BrokenTools().read
+            with self.assertRaisesRegex(RuntimeError, "tool exploded"):
+                runtime.execute_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": "{\"path\":\"missing.txt\"}"}}])
+            self.assertEqual(runtime.task.agent_state, "ready")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.agent_state, "ready")
+            recovered.stop()
+
     def test_tool_batch_replays_ready_agent_state(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)

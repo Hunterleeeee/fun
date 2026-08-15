@@ -469,20 +469,25 @@ class Runtime:
         if not self.task:
             raise RuntimeError("NO_ACTIVE_TASK")
         self._node("tools.executing", count=len(calls))
-        for call in calls:
-            self._ensure_running()
-            name = call["function"]["name"]
+        try:
+            for call in calls:
+                self._ensure_running()
+                name = call["function"]["name"]
+                try:
+                    arguments = json.loads(call["function"]["arguments"] or "{}")
+                except json.JSONDecodeError:
+                    result = ToolResult(False, "INVALID_ARGUMENTS")
+                else:
+                    self.emit("model.tool_call", self.task.id, call_id=call["id"], name=name)
+                    self._tool_calls += 1
+                    result = self.run_tool(name, **arguments)
+                self.task.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})
+        finally:
             try:
-                arguments = json.loads(call["function"]["arguments"] or "{}")
-            except json.JSONDecodeError:
-                result = ToolResult(False, "INVALID_ARGUMENTS")
-            else:
-                self.emit("model.tool_call", self.task.id, call_id=call["id"], name=name)
-                self._tool_calls += 1
-                result = self.run_tool(name, **arguments)
-            self.task.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})
-        self.emit("agent.node", self.task.id, node="ready")
-        self.task.agent_state = "ready"
+                self.emit("agent.node", self.task.id, node="ready")
+                self.task.agent_state = "ready"
+            except Exception:
+                pass
 
     def run_model_turn(self, on_text: Callable[[str], None] | None = None, max_steps: int = 8) -> str:
         if not self.task:
