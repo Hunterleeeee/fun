@@ -63,6 +63,20 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_rejected_tool_ready_persistence_failure_keeps_previous_state(self):
+        class FailingStore:
+            def append(self, event):
+                if event.type == "agent.node" and event.payload.get("node") == "ready":
+                    raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("ready persistence")
+            runtime.events._durable = FailingStore()
+            with self.assertRaises(OSError):
+                runtime.run_tool("read", path=3)
+            self.assertEqual(runtime.task.agent_state, "ready")
+
     def test_schema_failure_replays_ready_state(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)

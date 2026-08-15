@@ -289,6 +289,12 @@ class Runtime:
                 return index
         return None
 
+    def _ready_after_tool(self) -> None:
+        if not self.task:
+            return
+        self.emit("agent.node", self.task.id, node="ready")
+        self.task.agent_state = "ready"
+
     def run_tool(self, name: str, **kwargs: object) -> ToolResult:
         if not self.task or self.task.status != "running":
             raise RuntimeError("NO_ACTIVE_TASK")
@@ -304,8 +310,7 @@ class Runtime:
             result = ToolResult(False, str(exc))
             self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
             self.task.pending_tool = None
-            self.emit("agent.node", self.task.id, node="ready")
-            self.task.agent_state = "ready"
+            self._ready_after_tool()
             return result
         write_operation = name in {"edit", "exec"}
         risk = self.policy.risk_for(name, write=write_operation)
@@ -318,8 +323,7 @@ class Runtime:
                 self.task.pending_tool = None
                 result = ToolResult(False, "APPROVAL_REQUIRED", risk)
                 self.emit("tool.failed", self.task.id, call_id=call_id, name=name, ok=False, text=result.text, changed=[])
-                self.emit("agent.node", self.task.id, node="ready")
-                self.task.agent_state = "ready"
+                self._ready_after_tool()
                 return result
         registered: dict[str, Callable[..., ToolResult]] = {
             "explore": self.tools.explore,
@@ -331,9 +335,8 @@ class Runtime:
         if method is None:
             result = ToolResult(False, "UNSUPPORTED_TOOL")
             self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
-            self.emit("agent.node", self.task.id, node="ready")
-            self.task.agent_state = "ready"
             self.task.pending_tool = None
+            self._ready_after_tool()
             return result
         self.emit("tool.executing", self.task.id, call_id=call_id, name=name)
         try:
