@@ -194,6 +194,18 @@ class CoreTests(unittest.TestCase):
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
+    def test_dynamic_plan_replaces_and_replays_latest_steps(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("dynamic plan")
+            runtime.replace_plan(["inspect code", "edit safely", "run tests"])
+            runtime.update_plan_step(0, "done", "inspected")
+            recovered = Runtime.recover(directory, directory, runtime.session_id, approval="auto")
+            self.assertEqual(recovered.task.plan, ["inspect code", "edit safely", "run tests"])
+            self.assertEqual(recovered.task.plan_status, ["done", "pending", "pending"])
+            self.assertEqual([event.type for event in runtime.events.list()][-2], "plan.replaced")
+            recovered.stop()
+
     def test_plan_step_updates_are_event_sourced(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto")

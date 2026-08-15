@@ -103,9 +103,9 @@ class Runtime:
         for event in events:
             if event.task_id != self.task.id:
                 continue
-            if event.type == "plan.created":
+            if event.type in {"plan.created", "plan.replaced"}:
                 self.task.plan = list(event.payload.get("steps", []))
-                self.task.plan_status = ["pending"] * len(self.task.plan)
+                self.task.plan_status = list(event.payload.get("statuses", ["pending"] * len(self.task.plan)))
             elif event.type == "plan.step_updated":
                 index = event.payload.get("index")
                 if isinstance(index, int) and 0 <= index < len(self.task.plan_status):
@@ -217,6 +217,17 @@ class Runtime:
         if any(word in lower for word in ("fix", "修复", "改", "implement", "实现")):
             return ["inspect workspace", "locate relevant code", "apply a minimal change", "run focused validation"]
         return ["inspect workspace", "analyze the request", "report verified findings"]
+
+    def replace_plan(self, steps: list[str]) -> None:
+        if not self.task or self.task.status != "running":
+            raise RuntimeError("NO_ACTIVE_TASK")
+        normalized = [step.strip() for step in steps if isinstance(step, str) and step.strip()]
+        if not normalized or len(normalized) > 7:
+            raise RuntimeError("INVALID_PLAN")
+        previous = list(self.task.plan)
+        self.task.plan = normalized
+        self.task.plan_status = ["pending"] * len(normalized)
+        self.emit("plan.replaced", self.task.id, previous=previous, steps=normalized, statuses=list(self.task.plan_status))
 
     def update_plan_step(self, index: int, status: str, evidence: str = "") -> None:
         if not self.task or self.task.status != "running":
