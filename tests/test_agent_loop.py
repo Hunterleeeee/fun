@@ -63,6 +63,24 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_approval_callback_failure_records_safe_fact_and_ready(self):
+        def broken_approval(name, risk):
+            raise RuntimeError("approval secret")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "smart", approve=broken_approval, state_dir=directory)
+            runtime.create_task("approval failure")
+            with self.assertRaisesRegex(RuntimeError, "approval secret"):
+                runtime.run_tool("exec", command="echo hi")
+            failed = next(event for event in runtime.events.list() if event.type == "approval.failed")
+            self.assertEqual(failed.payload["error_tag"], "APPROVAL_CALLBACK_FAILED")
+            self.assertNotIn("approval secret", str(failed.payload))
+            self.assertEqual(runtime.task.agent_state, "ready")
+            self.assertIsNone(runtime.task.pending_tool)
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.agent_state, "ready")
+            recovered.stop()
+
     def test_rejected_tool_ready_persistence_failure_keeps_previous_state(self):
         class FailingStore:
             def append(self, event):

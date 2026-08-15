@@ -316,7 +316,13 @@ class Runtime:
         risk = self.policy.risk_for(name, write=write_operation)
         if self.policy.requires_approval(risk):
             self.emit("approval.pending", self.task.id, call_id=call_id, name=name, risk=risk.value, arguments=dict(kwargs))
-            allowed = self.approve(name, risk) if self.approve else False
+            try:
+                allowed = self.approve(name, risk) if self.approve else False
+            except Exception as exc:
+                self.emit("approval.failed", self.task.id, call_id=call_id, name=name, error_type=type(exc).__name__, error_tag="APPROVAL_CALLBACK_FAILED")
+                self.task.pending_tool = None
+                self._ready_after_tool()
+                raise
             self.emit("approval.resolved", self.task.id, call_id=call_id, name=name, allowed=allowed)
             if not allowed:
                 self.emit("approval.rejected", self.task.id, call_id=call_id, name=name, risk=risk.value, reason="callback_denied")
