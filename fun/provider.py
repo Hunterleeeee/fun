@@ -44,20 +44,37 @@ class OpenAICompatible:
         try:
             with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
                 first = True
+                buffer = ""
                 for raw in response:
-                    line = raw.decode(errors="replace").strip()
-                    if not line or line == "data: [DONE]":
-                        continue
+                    buffer += raw.decode(errors="replace")
+                    lines = buffer.splitlines(keepends=True)
+                    buffer = lines.pop() if lines and not lines[-1].endswith(("\\n", "\\r")) else ""
+                    for raw_line in lines:
+                        line = raw_line.strip()
+                        if not line or line == "data: [DONE]":
+                            continue
+                        if line.startswith("data:"):
+                            line = line[5:].strip()
+                        try:
+                            item = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if first:
+                            item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
+                            first = False
+                        yield item
+                if buffer.strip() and buffer.strip() != "data: [DONE]":
+                    line = buffer.strip()
                     if line.startswith("data:"):
                         line = line[5:].strip()
                     try:
                         item = json.loads(line)
                     except json.JSONDecodeError:
-                        continue
-                    if first:
-                        item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
-                        first = False
-                    yield item
+                        item = None
+                    if item is not None:
+                        if first:
+                            item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
+                        yield item
         except TimeoutError as exc:
             raise ProviderError("PROVIDER_TIMEOUT", cause=exc) from exc
         except urllib.error.HTTPError as exc:

@@ -38,6 +38,21 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_provider_stream_handles_split_sse_lines(self):
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def __iter__(self):
+                yield b'data: {"choices": [{"delta": {"content": "hel'
+                yield b'lo"}}]}\n'
+                yield b'data: [DONE]\n'
+
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with patch("urllib.request.urlopen", return_value=Response()):
+            self.assertEqual(list(provider.stream([], []))[0]["choices"][0]["delta"]["content"], "hello")
+
     def test_provider_error_classification_is_safe(self):
         provider = OpenAICompatible(ModelConfig("https://provider.invalid", "secret-key", "model"))
         with patch("urllib.request.urlopen", side_effect=TimeoutError("secret response")):
