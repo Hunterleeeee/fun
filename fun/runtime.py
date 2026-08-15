@@ -481,8 +481,12 @@ class Runtime:
         self.emit("repair.started", self.task.id, attempt=attempt)
         self.task.repair_attempts = attempt
         self._node("repair.started", attempt=attempt)
-        result = self.validate(command)
-        self.emit("repair.completed" if result.ok else "repair.failed", self.task.id, attempt=self.task.repair_attempts, ok=result.ok)
+        try:
+            result = self.validate(command)
+        except Exception as exc:
+            self.emit("repair.failed", self.task.id, attempt=attempt, ok=False, error=str(exc))
+            raise
+        self.emit("repair.completed" if result.ok else "repair.failed", self.task.id, attempt=attempt, ok=result.ok)
         return result
 
     def checkpoint(self, label: str = "manual") -> dict[str, object]:
