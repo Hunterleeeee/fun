@@ -201,6 +201,20 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(runtime.task.status, "running")
             self.assertTrue(runtime.lock.held)
 
+    def test_fail_is_atomic_when_stopped_event_persistence_fails(self):
+        class FailingBatchStore:
+            def append_many(self, events):
+                raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("fail atomic")
+            runtime.events._durable = FailingBatchStore()
+            with self.assertRaises(OSError):
+                runtime.fail("broken")
+            self.assertEqual(runtime.task.status, "running")
+            self.assertEqual(runtime.task.agent_state, "ready")
+
     def test_fail_does_not_mutate_agent_state_when_event_persistence_fails(self):
         class FailingStore:
             def append(self, event):

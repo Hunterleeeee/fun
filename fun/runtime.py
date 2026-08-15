@@ -526,9 +526,11 @@ class Runtime:
     def fail(self, reason: str) -> None:
         if not self.task or self.task.status not in {"running", "paused"}:
             raise RuntimeError("NO_ACTIVE_TASK")
-        self.emit("task.failed", self.task.id, reason=reason)
+        failed = Event("task.failed", self.session_id, self.task.id, {"reason": reason})
+        stopped = Event("task.stopped", self.session_id, self.task.id, {})
+        self.events.append_many([failed, stopped])
         self.task.agent_state = "failed"
-        self._transition("stopped", "task.stopped")
+        self.task.status = "stopped"
         try:
             self._send_telemetry("failed")
         finally:
