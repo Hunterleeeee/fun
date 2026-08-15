@@ -249,8 +249,8 @@ class Runtime:
             raise RuntimeError("NO_ACTIVE_TASK")
         if index < 0 or index >= len(self.task.plan) or status not in {"pending", "active", "done", "blocked"}:
             raise RuntimeError("INVALID_PLAN_STEP")
-        self.task.plan_status[index] = status
         self.emit("plan.step_updated", self.task.id, index=index, status=status, evidence=evidence)
+        self.task.plan_status[index] = status
 
     def _active_plan_index(self) -> int | None:
         if not self.task:

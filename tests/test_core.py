@@ -231,6 +231,20 @@ class CoreTests(unittest.TestCase):
                 runtime.replace_plan(["new step"])
             self.assertEqual(runtime.task.plan, original)
 
+    def test_plan_step_does_not_mutate_when_event_persistence_fails(self):
+        class FailingStore:
+            def append(self, event):
+                raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("plan step")
+            runtime.events._durable = FailingStore()
+            original = list(runtime.task.plan_status)
+            with self.assertRaises(OSError):
+                runtime.update_plan_step(0, "active", "start")
+            self.assertEqual(runtime.task.plan_status, original)
+
     def test_dynamic_plan_replaces_and_replays_latest_steps(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
