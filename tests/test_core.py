@@ -214,6 +214,20 @@ class CoreTests(unittest.TestCase):
             self.assertIsNone(recovered.task.recovery_reason)
             recovered.stop()
 
+    def test_terminal_runtime_stop_is_idempotent_after_complete_or_fail(self):
+        with TemporaryDirectory() as directory:
+            completed = Runtime(directory, state_dir=directory)
+            completed.create_task("complete then stop")
+            completed.complete("done")
+            completed.stop()
+            self.assertFalse(completed.lock.held)
+
+            failed = Runtime(directory, state_dir=directory)
+            failed.create_task("fail then stop")
+            failed.fail("broken")
+            failed.stop()
+            self.assertFalse(failed.lock.held)
+
     def test_terminal_runtime_paths_close_durable_store(self):
         with TemporaryDirectory() as directory:
             completed = Runtime(directory, state_dir=directory)
