@@ -80,6 +80,20 @@ jobs:
           test "${#wheels[@]}" -gt 0
           test "${#sdists[@]}" -gt 0
           echo "wheel_count=${#wheels[@]} sdist_count=${#sdists[@]}"
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          wheel_normalized=$(printf '%s' "$version" | tr '.-' '__')
+          for artifact in "${wheels[@]}"; do
+            case "$artifact" in
+              *"$version"*|*"$wheel_normalized"*) ;;
+              *) echo "Wheel version mismatch: $artifact"; exit 1 ;;
+            esac
+          done
+          for artifact in "${sdists[@]}"; do
+            case "$artifact" in
+              *"$version"*) ;;
+              *) echo "Sdist version mismatch: $artifact"; exit 1 ;;
+            esac
+          done
           (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: List built distributions
         run: ls -la dist
