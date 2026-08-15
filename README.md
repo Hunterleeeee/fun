@@ -6,7 +6,7 @@ Fun is an open-source, extensible, safety-first terminal coding agent runtime fo
 
 ## Status
 
-Fun 1.0 development is starting. The current tree contains the V1 Core runtime skeleton and design contracts. The model-driven planner, production persistence, and complete interactive tool loop are being implemented incrementally; this repository does not yet claim feature-complete 1.0 behavior.
+Fun 1.0 development is starting. The current tree contains the V1 Core runtime foundation: bounded planning, an OpenAI-compatible streaming loop, event persistence, workspace tools, approval boundaries, validation/checkpoint hooks, and a single-column renderer. It is still an alpha and does not yet claim feature-complete 1.0 behavior.
 
 ## V1 Core
 
