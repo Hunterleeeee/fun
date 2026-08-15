@@ -50,12 +50,16 @@ class OpenAICompatible:
         request = urllib.request.Request(
             self.config.base_url.rstrip("/") + "/chat/completions",
             data=json.dumps(payload).encode(),
-            headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json", "Accept": "text/event-stream"},
             method="POST",
         )
         started = time.monotonic()
         try:
             with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+                headers = getattr(response, "headers", None)
+                content_type = headers.get("Content-Type", "") if headers is not None else ""
+                if content_type and "text/event-stream" not in content_type.lower():
+                    raise ProviderError("PROVIDER_UNEXPECTED_CONTENT_TYPE")
                 first = True
                 buffer = ""
                 data_parts: list[str] = []

@@ -121,6 +121,26 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["choices"][0]["delta"]["content"], "ok")
 
+    def test_provider_rejects_non_sse_response_without_body(self):
+        class Headers:
+            def get(self, name, default=""):
+                return "application/json"
+        class Response:
+            headers = Headers()
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def __iter__(self):
+                yield b'{"secret":"response"}'
+
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with patch("urllib.request.urlopen", return_value=Response()):
+            with self.assertRaises(ProviderError) as context:
+                list(provider.stream([], []))
+        self.assertEqual(context.exception.error_tag, "PROVIDER_UNEXPECTED_CONTENT_TYPE")
+        self.assertNotIn("response", str(context.exception))
+
     def test_provider_stream_rejects_malformed_event_without_body(self):
         class Response:
             def __enter__(self):
