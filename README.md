@@ -36,7 +36,9 @@ fun --dashboard
 # open http://127.0.0.1:8765
 ```
 
-Dashboard 读取本地 `~/.fun/events.db`，展示 Sessions（当前作为用户近似）、Tasks、token、Tool 调用和最近活动，不上传数据。
+Dashboard 读取本地 `~/.fun/events.db`，展示 Sessions、Tasks、token、Tool 调用和最近活动，不上传数据。它是本机调试页，不是全体用户数据看板。
+
+Fun 的产品遥测默认关闭。当前只定义了一个未来私有后端可使用的匿名、聚合协议；不会发送 Prompt、代码、文件路径、命令、Tool 参数或 API Key。公开仓库不包含任何用户数据或管理看板。
 
 配置 OpenAI-compatible Provider：
 

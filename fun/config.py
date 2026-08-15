@@ -12,6 +12,8 @@ class FunConfig:
     model: str = ""
     approval: str = "smart"
     locale: str = "en-US"
+    telemetry: bool = False
+    telemetry_endpoint: str = ""
 
     @classmethod
     def load(cls, path: str | Path) -> "FunConfig":
@@ -19,7 +21,7 @@ class FunConfig:
         if not target.exists():
             return cls()
         data = json.loads(target.read_text(encoding="utf-8"))
-        allowed = {"base_url", "api_key", "model", "approval", "locale"}
+        allowed = {"base_url", "api_key", "model", "approval", "locale", "telemetry", "telemetry_endpoint"}
         return cls(**{key: value for key, value in data.items() if key in allowed})
 
     def save(self, path: str | Path) -> None:
