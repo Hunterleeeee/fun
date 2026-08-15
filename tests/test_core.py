@@ -230,6 +230,21 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "closed"):
                 durable.list()
 
+    def test_runtime_context_manager_closes_store_on_success_and_error(self):
+        with TemporaryDirectory() as directory:
+            with Runtime(directory, state_dir=directory) as runtime:
+                runtime.create_task("context success")
+                durable = runtime.events._durable
+            with self.assertRaisesRegex(Exception, "closed"):
+                durable.list()
+
+            with self.assertRaisesRegex(ValueError, "boom"):
+                with Runtime(directory, state_dir=directory) as runtime:
+                    durable = runtime.events._durable
+                    raise ValueError("boom")
+            with self.assertRaisesRegex(Exception, "closed"):
+                durable.list()
+
     def test_memory_runtime_close_is_idempotent(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory)

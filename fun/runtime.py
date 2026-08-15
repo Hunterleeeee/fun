@@ -71,6 +71,12 @@ class Runtime:
         self._task_started_at: float | None = None
         self._closed = False
 
+    def __enter__(self) -> "Runtime":
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
+
     @classmethod
     def recover(cls, workspace: str, state_dir: str, session_id: str, approval: str = "smart", provider: OpenAICompatible | None = None, approve: Callable[[str, Risk], bool] | None = None) -> "Runtime":
         durable = SQLiteEventStore(Path(state_dir) / "events.db")
