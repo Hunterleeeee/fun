@@ -29,10 +29,13 @@ class DashboardData:
                 payload = {}
             if event_type == "model.completed":
                 usage = payload.get("usage", {})
-                for key in totals:
-                    value = usage.get(key)
+                aliases = {"input_tokens": "prompt_tokens", "output_tokens": "completion_tokens", "total_tokens": "total_tokens"}
+                for key, alias in aliases.items():
+                    value = usage.get(key, usage.get(alias))
                     if isinstance(value, int):
                         totals[key] += value
+                if "total_tokens" not in usage and isinstance(usage.get("prompt_tokens"), int) and isinstance(usage.get("completion_tokens"), int):
+                    totals["total_tokens"] += usage["prompt_tokens"] + usage["completion_tokens"]
             elif event_type == "model.tool_call":
                 counts["tool_calls"] += 1
             elif event_type == "task.completed":
