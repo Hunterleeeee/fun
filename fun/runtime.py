@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,6 +62,7 @@ class Runtime:
         self.model = model
         self._tool_calls = 0
         self._telemetry_sent = False
+        self._task_started_at: float | None = None
 
     @classmethod
     def recover(cls, workspace: str, state_dir: str, session_id: str, approval: str = "smart", provider: OpenAICompatible | None = None, approve: Callable[[str, Risk], bool] | None = None) -> "Runtime":
@@ -168,6 +170,7 @@ class Runtime:
         self.emit("task.created", self.task.id, goal=goal)
         self.emit("plan.created", self.task.id, steps=self.task.plan)
         self._transition("running", "task.started")
+        self._task_started_at = time.monotonic()
         self._node("ready")
         return self.task
 
@@ -464,7 +467,8 @@ class Runtime:
             return
         self._telemetry_sent = True
         usage = self.usage.as_dict()
-        payload = event_payload(event="task.finished", install=self.telemetry.install, model=self.model, status=status, input_tokens=usage.get("input_tokens") or 0, output_tokens=usage.get("output_tokens") or 0, total_tokens=usage.get("total_tokens") or 0, tool_calls=self._tool_calls)
+        duration_ms = None if self._task_started_at is None else int(max(0.0, time.monotonic() - self._task_started_at) * 1000)
+        payload = event_payload(event="task.finished", install=self.telemetry.install, model=self.model, status=status, input_tokens=usage.get("input_tokens") or 0, output_tokens=usage.get("output_tokens") or 0, total_tokens=usage.get("total_tokens") or 0, tool_calls=self._tool_calls, duration_ms=duration_ms)
         self.telemetry.send(payload)
 
     def stop(self) -> None:

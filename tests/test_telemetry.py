@@ -68,6 +68,8 @@ class TelemetryTests(unittest.TestCase):
                 runtime.stop()
             send.assert_called_once()
             self.assertEqual(send.call_args.args[0]["status"], "stopped")
+            self.assertIsInstance(send.call_args.args[0]["duration_ms"], int)
+            self.assertNotIn("started_at", send.call_args.args[0])
 
     def test_runtime_reports_failure_once(self):
         telemetry = TelemetryClient(enabled=True, endpoint="http://127.0.0.1:1/telemetry", install="test")
