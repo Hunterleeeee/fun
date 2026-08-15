@@ -220,9 +220,11 @@ class CoreTests(unittest.TestCase):
             runtime.create_task("close lifecycle")
             durable = runtime.events._durable
             runtime.stop()
+            self.assertTrue(runtime._closed)
             with self.assertRaisesRegex(Exception, "closed"):
                 durable.list()
             runtime.stop()
+            self.assertTrue(runtime._closed)
 
     def test_goal_creation_matches_normal_task_lifecycle(self):
         with TemporaryDirectory() as directory:

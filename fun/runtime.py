@@ -69,6 +69,7 @@ class Runtime:
         self._tool_calls = 0
         self._telemetry_sent = False
         self._task_started_at: float | None = None
+        self._closed = False
 
     @classmethod
     def recover(cls, workspace: str, state_dir: str, session_id: str, approval: str = "smart", provider: OpenAICompatible | None = None, approve: Callable[[str, Risk], bool] | None = None) -> "Runtime":
@@ -669,6 +670,9 @@ class Runtime:
         self._telemetry_sent = True
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         durable = getattr(self.events, "_durable", None)
         close = getattr(durable, "close", None)
         if callable(close):
