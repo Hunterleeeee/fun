@@ -43,7 +43,8 @@ def main(argv: list[str] | None = None) -> int:
         print(renderer.plan(task.plan))
         if provider:
             try:
-                runtime.run_model_turn(on_text=lambda text: print(text, end="", flush=True))
+                output = runtime.run_model_turn(on_text=lambda text: print(text, end="", flush=True))
+                runtime.complete(output)
                 print()
             except Exception as exc:
                 print(f"\n× {exc}", file=__import__("sys").stderr)
@@ -66,11 +67,31 @@ def main(argv: list[str] | None = None) -> int:
             if text in {"/quit", "/exit"}:
                 break
             if text == "/status":
-                print(f"session={runtime.session_id} task={runtime.task.status if runtime.task else 'idle'}")
+                status = runtime.task.status if runtime.task else "idle"
+                print(f"session={runtime.session_id} task={status} policy={runtime.policy.mode.value}")
+                continue
+            if text == "/plan":
+                print(renderer.plan(runtime.task.plan if runtime.task else []))
+                continue
+            if text == "/pause":
+                runtime.pause()
+                print("● paused")
+                continue
+            if text == "/resume":
+                runtime.resume()
+                print("● running")
+                continue
+            if text == "/stop":
+                runtime.stop()
+                print("✓ stopped")
+                continue
+            if text == "/checkpoint":
+                runtime.checkpoint()
+                print("✓ checkpoint created")
                 continue
             task = runtime.create_task(text)
             print(renderer.plan(task.plan))
-            print("V1 Core runtime initialized. Use /status or /quit.")
+            print("V1 Core runtime initialized. Use /status, /plan, /pause, /stop, or /quit.")
             runtime.stop()
     except (KeyboardInterrupt, EOFError):
         print()

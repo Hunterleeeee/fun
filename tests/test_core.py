@@ -38,6 +38,16 @@ class CoreTests(unittest.TestCase):
             self.assertGreaterEqual(len(runtime.events.list()), 2)
             self.assertTrue((Path(directory) / "events.db").exists())
 
+    def test_repl_control_methods_emit_events(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory)
+            runtime.create_task("controls")
+            runtime.pause()
+            runtime.resume()
+            runtime.checkpoint()
+            runtime.stop()
+            self.assertEqual([event.type for event in runtime.events.list()][-4:], ["task.paused", "task.resumed", "checkpoint.created", "task.stopped"])
+
     def test_task_pause_resume_and_complete(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory)
