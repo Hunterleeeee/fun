@@ -51,6 +51,15 @@ jobs:
           test "$expected" = "$actual"
       - name: Build distributions
         run: python -m build
+      - name: Verify distribution versions
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"].replace(".", "-"))')
+          for artifact in dist/*.whl dist/*.tar.gz; do
+            case "$artifact" in
+              *"$version"*) ;;
+              *) echo "Version mismatch: $artifact"; exit 1 ;;
+            esac
+          done
       - name: Generate checksums
         run: sha256sum dist/* > dist/SHA256SUMS
       - name: Create GitHub release
