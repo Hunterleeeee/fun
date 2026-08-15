@@ -38,6 +38,10 @@ jobs:
         run: |
           git rev-parse --verify "$GITHUB_SHA^{commit}"
           git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"
+      - name: Report package version
+        run: |
+          python -c "import tomllib; print('project_version', tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+          echo "commit=$GITHUB_SHA"
       - name: Verify tag version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
