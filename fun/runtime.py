@@ -427,9 +427,9 @@ class Runtime:
                 if on_text:
                     on_text(delta["content"])
             for call in delta.get("tool_calls") or []:
-                if stats is not None:
-                    stats["tool_calls"] = len(calls) + 1
                 entry = calls.setdefault(str(call.get("index", 0)), {"name": "", "arguments": "", "id": ""})
+                if stats is not None:
+                    stats["tool_calls"] = len(calls)
                 entry["id"] += call.get("id", "")
                 function = call.get("function") or {}
                 entry["name"] += function.get("name", "")

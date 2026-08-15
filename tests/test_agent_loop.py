@@ -76,6 +76,22 @@ class AgentLoopTests(unittest.TestCase):
             self.assertIn("tool.completed", event_types)
             self.assertIn("model.completed", event_types)
 
+    def test_response_failure_summary_counts_distinct_tool_calls(self):
+        class BrokenChunkProvider:
+            def stream(self, messages, tools=None):
+                yield {"choices": [{"delta": {"content": "partial", "tool_calls": [{"index": 0, "id": "call_1", "function": {"name": "read", "arguments": "{"}}]}}]}
+                yield None
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", provider=BrokenChunkProvider())
+            runtime.create_task("partial response")
+            with self.assertRaises(AttributeError):
+                runtime.run_model_turn()
+            failed = next(event for event in runtime.events.list() if event.type == "response.failed")
+            self.assertEqual(failed.payload["summary"]["content_length"], 7)
+            self.assertEqual(failed.payload["summary"]["tool_calls"], 1)
+            self.assertEqual(failed.payload["summary"]["chunk_types"], ["dict", "NoneType"])
+
     def test_malformed_response_records_failure_and_ready(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto")
