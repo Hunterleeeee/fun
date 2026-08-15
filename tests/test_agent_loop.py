@@ -152,6 +152,12 @@ class AgentLoopTests(unittest.TestCase):
         with patch("urllib.request.urlopen", return_value=Response()):
             self.assertEqual(list(provider.stream([], []))[0]["choices"][0]["delta"]["content"], "hello")
 
+    def test_provider_rejects_insecure_or_empty_endpoint(self):
+        with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_ENDPOINT"):
+            OpenAICompatible(ModelConfig("file:///tmp/provider", "key", "model"))
+        with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_ENDPOINT"):
+            OpenAICompatible(ModelConfig("", "key", "model"))
+
     def test_provider_http_status_like_oserror_is_classified(self):
         class StatusError(OSError):
             code = 401

@@ -4,6 +4,7 @@ import json
 import time
 import urllib.request
 from dataclasses import dataclass
+from urllib.parse import urlparse
 from typing import Any, Iterator
 
 
@@ -28,6 +29,11 @@ class OpenAICompatible:
     """Minimal OpenAI-compatible chat-completions streaming adapter."""
 
     def __init__(self, config: ModelConfig) -> None:
+        parsed = urlparse(config.base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("INVALID_PROVIDER_ENDPOINT")
+        if not config.model:
+            raise ValueError("INVALID_PROVIDER_MODEL")
         self.config = config
 
     def stream(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> Iterator[dict[str, Any]]:
