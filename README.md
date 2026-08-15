@@ -38,7 +38,7 @@ fun --dashboard
 
 Dashboard 读取本地 `~/.fun/events.db`，展示 Sessions、Tasks、token、Tool 调用和最近活动，不上传数据。它是本机调试页，不是全体用户数据看板。
 
-Fun 的产品遥测默认关闭。只有在你明确设置 `telemetry=true` 且配置自己控制的 `telemetry_endpoint` 后，才会进行 best-effort 匿名聚合发送；网络失败不会影响 Agent。不会发送 Prompt、代码、文件路径、命令、Tool 参数或 API Key。公开仓库不包含任何用户数据或管理看板。
+Fun 的产品遥测默认关闭。只有在你明确设置 `telemetry=true` 且配置自己控制的 `telemetry_endpoint` 后，才会进行 best-effort 匿名聚合发送；网络失败不会影响 Agent。可以用 `fun --no-telemetry` 关闭并删除本地匿名 ID，用 `fun --telemetry` 临时启用。不会发送 Prompt、代码、文件路径、命令、Tool 参数或 API Key。公开仓库不包含任何用户数据或管理看板。
 
 配置 OpenAI-compatible Provider：
 

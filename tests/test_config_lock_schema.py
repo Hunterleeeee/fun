@@ -16,6 +16,12 @@ class ConfigLockSchemaTests(unittest.TestCase):
             loaded = FunConfig.load(path)
             self.assertEqual(loaded.model, "model-x")
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            config.telemetry = True
+            config.telemetry_endpoint = "http://private.test/telemetry"
+            config.save(path)
+            loaded = FunConfig.load(path)
+            self.assertTrue(loaded.telemetry)
+            self.assertEqual(loaded.telemetry_endpoint, "http://private.test/telemetry")
 
     def test_workspace_lock_is_exclusive(self):
         with TemporaryDirectory() as directory:

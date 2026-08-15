@@ -2,6 +2,7 @@ import unittest
 from unittest import mock
 
 from fun.runtime import Runtime
+from fun.cli import build_parser
 from fun.telemetry import TelemetryClient, event_payload, install_id, load_or_create_install_id, model_family
 
 
@@ -12,6 +13,10 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(payload["total_tokens"], 14)
         self.assertNotIn("local-secret", str(payload))
         self.assertEqual(set(payload), set(payload) & {"event", "install_id", "fun_version", "python_version", "os", "model_family", "input_tokens", "output_tokens", "total_tokens", "tool_calls", "status"})
+
+    def test_cli_exposes_explicit_telemetry_switches(self):
+        self.assertTrue(build_parser().parse_args(["--telemetry"]).telemetry)
+        self.assertFalse(build_parser().parse_args(["--no-telemetry"]).telemetry)
 
     def test_install_id_is_stable_and_private(self):
         import tempfile

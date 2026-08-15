@@ -25,6 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--configure", action="store_true", help="Save provider settings interactively")
     parser.add_argument("--dashboard", action="store_true", help="Open the local-only usage dashboard")
     parser.add_argument("--dashboard-port", type=int, default=8765)
+    parser.add_argument("--telemetry", dest="telemetry", action="store_true", help="Enable configured private telemetry")
+    parser.add_argument("--no-telemetry", dest="telemetry", action="store_false", help="Disable telemetry and remove local anonymous ID")
+    parser.set_defaults(telemetry=None)
     return parser
 
 
@@ -43,6 +46,13 @@ def main(argv: list[str] | None = None) -> int:
         saved.base_url = input(f"Base URL [{saved.base_url}]: ").strip() or saved.base_url
         saved.api_key = input("API key [hidden, leave blank to keep]: ").strip() or saved.api_key
         saved.model = input(f"Model [{saved.model}]: ").strip() or saved.model
+        telemetry_choice = input(f"Enable private telemetry? [{'Y/n' if saved.telemetry else 'y/N'}]: ").strip().lower()
+        if telemetry_choice in {"y", "yes"}:
+            saved.telemetry = True
+            saved.telemetry_endpoint = input(f"Private telemetry endpoint [{saved.telemetry_endpoint}]: ").strip() or saved.telemetry_endpoint
+        elif telemetry_choice in {"n", "no"}:
+            saved.telemetry = False
+            saved.telemetry_endpoint = ""
         saved.save(config_path)
         print(f"Saved provider configuration to {config_path}")
         return 0
@@ -59,8 +69,16 @@ def main(argv: list[str] | None = None) -> int:
             return input(f"? Allow {name} ({risk})? [y/N] ").strip().lower() in {"y", "yes"}
         except (EOFError, KeyboardInterrupt):
             return False
+    telemetry_enabled = saved.telemetry if args.telemetry is None else args.telemetry
+    if args.telemetry is False:
+        saved.telemetry = False
+        saved.telemetry_endpoint = ""
+        try:
+            os.remove(os.path.join(state_dir, "telemetry_id"))
+        except FileNotFoundError:
+            pass
     telemetry = None
-    if saved.telemetry and saved.telemetry_endpoint:
+    if telemetry_enabled and saved.telemetry_endpoint:
         from .telemetry import TelemetryClient, load_or_create_install_id
         telemetry = TelemetryClient(enabled=True, endpoint=saved.telemetry_endpoint, install=load_or_create_install_id(state_dir))
     runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
