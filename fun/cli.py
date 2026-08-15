@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 
 from .provider import ModelConfig, OpenAICompatible
+from .renderer import TerminalRenderer
 from .runtime import Runtime
 
 
@@ -25,10 +27,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.base_url and args.api_key and args.model:
         provider = OpenAICompatible(ModelConfig(args.base_url, args.api_key, args.model))
     runtime = Runtime(args.workspace, args.approval, provider)
+    renderer = TerminalRenderer(color=sys.stdout.isatty())
     if args.goal:
         task = runtime.create_task(args.goal)
         print(f"Fun · {args.workspace}")
-        print(f"◇ PLAN  {task.goal}")
+        print(renderer.plan([task.goal]))
         if provider:
             try:
                 runtime.run_model_turn(on_text=lambda text: print(text, end="", flush=True))
@@ -57,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"session={runtime.session_id} task={runtime.task.status if runtime.task else 'idle'}")
                 continue
             task = runtime.create_task(text)
-            print(f"◇ PLAN  {task.goal}")
+            print(renderer.plan([task.goal]))
             print("V1 Core runtime initialized. Use /status or /quit.")
             runtime.stop()
     except (KeyboardInterrupt, EOFError):

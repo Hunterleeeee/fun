@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 
 from fun.events import Event, EventStore
 from fun.policy import PolicyError
+from fun.renderer import TerminalRenderer
 from fun.runtime import Runtime
 from fun.tools import Tools, file_hash
 
@@ -56,6 +57,12 @@ class CoreTests(unittest.TestCase):
             result = Tools(directory).exec("python3 -c \"print('ok')\"")
             self.assertTrue(result.ok)
             self.assertEqual(result.text, "ok")
+
+    def test_renderer_is_single_column_and_symbol_driven(self):
+        renderer = TerminalRenderer(color=False)
+        self.assertIn("◇ PLAN", renderer.plan(["inspect files"]))
+        self.assertTrue(renderer.activity("reading").startswith("◌"))
+        self.assertTrue(renderer.finding("risk").startswith("!"))
 
     def test_checkpoint_and_validation_emit_events(self):
         with TemporaryDirectory() as directory:
