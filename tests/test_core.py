@@ -187,6 +187,19 @@ class CoreTests(unittest.TestCase):
             runtime.stop()
             self.assertEqual([event.type for event in runtime.events.list()][-4:], ["task.paused", "task.resumed", "checkpoint.created", "task.stopped"])
 
+    def test_pause_does_not_mutate_when_event_persistence_fails(self):
+        class FailingStore:
+            def append(self, event):
+                raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("pause")
+            runtime.events._durable = FailingStore()
+            with self.assertRaises(OSError):
+                runtime.pause()
+            self.assertEqual(runtime.task.status, "running")
+
     def test_task_pause_resume_and_complete(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory)

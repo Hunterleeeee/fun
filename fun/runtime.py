@@ -222,8 +222,8 @@ class Runtime:
         }
         if status not in allowed.get(self.task.status, set()):
             raise RuntimeError("INVALID_TASK_TRANSITION")
-        self.task.status = status
         self.emit(event_type, self.task.id)
+        self.task.status = status
 
     def set_goal(self, goal: str) -> Task:
         if not goal.strip():
