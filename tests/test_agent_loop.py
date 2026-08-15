@@ -63,6 +63,16 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_stale_approval_rejection_does_not_clear_new_pending_tool(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("stale rejection")
+            runtime.emit("tool.executing", runtime.task.id, call_id="new", name="exec")
+            runtime.emit("approval.rejected", runtime.task.id, call_id="old", name="exec", reason="callback_denied")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.pending_tool["call_id"], "new")
+            recovered.stop()
+
     def test_stale_tool_failure_does_not_clear_new_pending_tool(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
