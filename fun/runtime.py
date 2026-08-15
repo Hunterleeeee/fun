@@ -191,9 +191,14 @@ class Runtime:
         self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, name=name, ok=result.ok, text=result.text, changed=result.changed or [])
         return result
 
+    def _ensure_running(self) -> None:
+        if not self.task or self.task.status != "running":
+            raise RuntimeError("TASK_NOT_RUNNING")
+
     def request_model(self) -> Any:
         if not self.provider or not self.task:
             raise RuntimeError("PROVIDER_NOT_CONFIGURED")
+        self._ensure_running()
         self._node("model.requested")
         return self.provider.stream(self.task.messages, tool_schemas())
 
@@ -201,6 +206,7 @@ class Runtime:
         content = ""
         calls: dict[str, dict[str, str]] = {}
         for chunk in chunks:
+            self._ensure_running()
             if chunk.get("_meta", {}).get("ttft_ms") is not None:
                 self.usage.ttft_ms = int(chunk["_meta"]["ttft_ms"])
             if isinstance(chunk.get("usage"), dict):
@@ -226,6 +232,7 @@ class Runtime:
             raise RuntimeError("NO_ACTIVE_TASK")
         self._node("tools.executing", count=len(calls))
         for call in calls:
+            self._ensure_running()
             name = call["function"]["name"]
             try:
                 arguments = json.loads(call["function"]["arguments"] or "{}")
@@ -241,6 +248,7 @@ class Runtime:
             raise RuntimeError("NO_ACTIVE_TASK")
         final_text = ""
         for _ in range(max_steps):
+            self._ensure_running()
             content, calls = self.parse_model_response(self.request_model(), on_text)
             if content:
                 final_text += content

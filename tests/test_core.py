@@ -96,6 +96,8 @@ class CoreTests(unittest.TestCase):
     def test_agent_node_event_is_renderable(self):
         renderer = TerminalRenderer(color=False)
         self.assertTrue(renderer.event("agent.node", {"node": "validation.started"}).startswith("◌"))
+        self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
+        self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
     def test_plan_step_updates_are_event_sourced(self):
         with TemporaryDirectory() as directory:

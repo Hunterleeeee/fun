@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(snapshot["diff"] or "(no working tree diff)")
                 continue
             if text == "/plan":
-                print(renderer.plan(runtime.task.plan if runtime.task else []))
+                print(renderer.plan(runtime.task.plan if runtime.task else [], runtime.task.plan_status if runtime.task else []))
                 continue
             if text == "/pause":
                 runtime.pause()
@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("Restore requires a checkpoint snapshot in the current process.")
                 continue
             task = runtime.create_task(text)
-            print(renderer.plan(task.plan))
+            print(renderer.plan(task.plan, task.plan_status))
             if provider:
                 try:
                     output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True))

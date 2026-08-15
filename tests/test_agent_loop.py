@@ -46,6 +46,15 @@ class AgentLoopTests(unittest.TestCase):
             runtime.execute_tool_calls(calls)
             self.assertIn("tools.executing", [event.payload.get("node") for event in runtime.events.list() if event.type == "agent.node"])
 
+    def test_pause_stops_before_next_provider_request(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", provider=FakeProvider())
+            runtime.create_task("pause")
+            runtime.pause()
+            with self.assertRaisesRegex(RuntimeError, "TASK_NOT_RUNNING"):
+                runtime.run_model_turn()
+            self.assertEqual(runtime.provider.calls, 0)
+
     def test_tool_schemas_are_structured(self):
         schemas = tool_schemas()
         self.assertEqual({item["function"]["name"] for item in schemas}, {"explore", "read", "edit", "exec"})

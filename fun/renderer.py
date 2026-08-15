@@ -12,11 +12,13 @@ class TerminalRenderer:
     def activity(self, text: str) -> str:
         return f"◌ {text}"
 
-    def plan(self, steps: list[str]) -> str:
+    def plan(self, steps: list[str], statuses: list[str] | None = None) -> str:
         lines = ["◇ PLAN"]
+        statuses = statuses or []
+        markers = {"done": "✓", "active": "●", "blocked": "×", "pending": "○"}
         for index, step in enumerate(steps):
-            marker = "●" if index == 0 else "○"
-            lines.append(f"  {marker} {step}")
+            status = statuses[index] if index < len(statuses) else ("active" if index == 0 else "pending")
+            lines.append(f"  {markers.get(status, '○')} {step}")
         return "\n".join(lines)
 
     def finding(self, text: str) -> str:
