@@ -17,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("goal", nargs="?", help="A one-shot task goal")
     parser.add_argument("--workspace", default=os.getcwd())
     parser.add_argument("--approval", choices=("ask", "smart", "auto"), default="smart")
-    parser.add_argument("--version", action="version", version="fun 1.0.0a5")
+    parser.add_argument("--version", action="version", version="fun 1.0.0a6")
     parser.add_argument("--base-url", default=os.getenv("FUN_API_URL"))
     parser.add_argument("--api-key", default=os.getenv("FUN_API_KEY"))
     parser.add_argument("--model", default=os.getenv("FUN_MODEL"))

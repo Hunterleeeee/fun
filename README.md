@@ -7,7 +7,7 @@
 一个安全优先、可恢复、Runtime-first 的终端 Coding Agent。
 
 [![CI](https://github.com/Hunterleeeee/fun/actions/workflows/ci.yml/badge.svg)](https://github.com/Hunterleeeee/fun/actions/workflows/ci.yml)
-[![Alpha](https://img.shields.io/badge/status-alpha-f5b642.svg)](https://github.com/Hunterleeeee/fun/releases/tag/v1.0.0a5)
+[![Alpha](https://img.shields.io/badge/status-alpha-f5b642.svg)](https://github.com/Hunterleeeee/fun/releases/tag/v1.0.0a6)
 [![Release](https://img.shields.io/github/v/release/Hunterleeeee/fun?include_prereleases&label=latest%20alpha)](https://github.com/Hunterleeeee/fun/releases)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
@@ -51,7 +51,7 @@ Coding should feel good.
 
 ### 安装
 
-当前公开 Alpha：**v1.0.0a5**。推荐从 [GitHub Releases](https://github.com/Hunterleeeee/fun/releases/tag/v1.0.0a5) 下载 wheel / sdist，并使用 `SHA256SUMS` 校验；也可以直接安装源码：
+当前公开 Alpha：**v1.0.0a6**。推荐从 [GitHub Releases](https://github.com/Hunterleeeee/fun/releases/tag/v1.0.0a6) 下载 wheel / sdist，并使用 `SHA256SUMS` 校验；也可以直接安装源码：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Hunterleeeee/fun/main/install.sh | sh
@@ -211,7 +211,7 @@ python3 -m compileall -q fun tests
 python3 -m pip install -e .
 ```
 
-每次提交都会通过 GitHub Actions 的 Python 3.11 / 3.12 测试矩阵和 package install smoke test。package smoke 会校验 artifact checksum，并分别验证 wheel 及 sdist 构建/安装。发布由版本 tag 触发，并附带 wheel、sdist 和 SHA256 checksums；当前最新 Alpha 为 `v1.0.0a5`。`main` 上的后续修复会在下一次 Alpha tag 发布后进入可下载 artifact，Release 包不会假装包含未发布提交。
+每次提交都会通过 GitHub Actions 的 Python 3.11 / 3.12 测试矩阵和 package install smoke test。package smoke 会校验 artifact checksum，并分别验证 wheel 及 sdist 构建/安装。发布由版本 tag 触发，并附带 wheel、sdist 和 SHA256 checksums；当前最新 Alpha 为 `v1.0.0a6`。`main` 上的后续修复会在下一次 Alpha tag 发布后进入可下载 artifact，Release 包不会假装包含未发布提交。当前 `v1.0.0a6` 包含最新的 Runtime 生命周期与恢复可靠性修复。
 
 详细契约和设计：
 

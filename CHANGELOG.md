@@ -4,6 +4,10 @@
 
 - Future work will be tracked here.
 
+## 1.0.0a6 - Alpha
+
+- Added durable store cleanup on every terminal Runtime path and expanded recovery/concurrency regression coverage.
+
 ## 1.0.0a5 - Alpha
 
 - Hardened event replay against sequence races, conflicting recovery batches, and concurrent event creation.
