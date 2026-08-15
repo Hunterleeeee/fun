@@ -304,6 +304,8 @@ class Runtime:
             result = ToolResult(False, str(exc))
             self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
             self.task.pending_tool = None
+            self.emit("agent.node", self.task.id, node="ready")
+            self.task.agent_state = "ready"
             return result
         write_operation = name in {"edit", "exec"}
         risk = self.policy.risk_for(name, write=write_operation)
@@ -316,6 +318,8 @@ class Runtime:
                 self.task.pending_tool = None
                 result = ToolResult(False, "APPROVAL_REQUIRED", risk)
                 self.emit("tool.failed", self.task.id, call_id=call_id, name=name, ok=False, text=result.text, changed=[])
+                self.emit("agent.node", self.task.id, node="ready")
+                self.task.agent_state = "ready"
                 return result
         registered: dict[str, Callable[..., ToolResult]] = {
             "explore": self.tools.explore,
@@ -327,6 +331,9 @@ class Runtime:
         if method is None:
             result = ToolResult(False, "UNSUPPORTED_TOOL")
             self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
+            self.emit("agent.node", self.task.id, node="ready")
+            self.task.agent_state = "ready"
+            self.task.pending_tool = None
             return result
         self.emit("tool.executing", self.task.id, call_id=call_id, name=name)
         try:

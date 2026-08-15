@@ -63,6 +63,17 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_schema_failure_replays_ready_state(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("schema failure")
+            result = runtime.run_tool("read", path=3)
+            self.assertFalse(result.ok)
+            self.assertEqual(runtime.task.agent_state, "ready")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.agent_state, "ready")
+            recovered.stop()
+
     def test_tool_result_clears_pending_tool(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto")
