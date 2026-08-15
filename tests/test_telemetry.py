@@ -22,6 +22,17 @@ class TelemetryTests(unittest.TestCase):
                 runtime.complete("done")
             send.assert_not_called()
 
+    def test_runtime_reports_coarse_model_family(self):
+        telemetry = TelemetryClient(enabled=True, endpoint="http://127.0.0.1:1/telemetry", install="test")
+        with mock.patch.object(telemetry, "send", return_value=True) as send:
+            import tempfile
+            with tempfile.TemporaryDirectory() as directory:
+                runtime = Runtime(directory, telemetry=telemetry, model="private-provider/gpt-4o:secret")
+                runtime.create_task("model metric")
+                runtime.complete("done")
+            self.assertEqual(send.call_args.args[0]["model_family"], "gpt-4o")
+            self.assertNotIn("private-provider", str(send.call_args.args[0]))
+
     def test_runtime_reports_stopped_once(self):
         telemetry = TelemetryClient(enabled=True, endpoint="http://127.0.0.1:1/telemetry", install="test")
         with mock.patch.object(telemetry, "send", return_value=True) as send:

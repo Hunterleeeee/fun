@@ -59,7 +59,11 @@ def main(argv: list[str] | None = None) -> int:
             return input(f"? Allow {name} ({risk})? [y/N] ").strip().lower() in {"y", "yes"}
         except (EOFError, KeyboardInterrupt):
             return False
-    runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir, approve=approve)
+    telemetry = None
+    if saved.telemetry and saved.telemetry_endpoint:
+        from .telemetry import TelemetryClient
+        telemetry = TelemetryClient(enabled=True, endpoint=saved.telemetry_endpoint)
+    runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
     renderer = TerminalRenderer(color=sys.stdout.isatty())
     if args.goal:
         task = runtime.create_task(args.goal)

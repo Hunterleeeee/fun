@@ -41,7 +41,7 @@ class Task:
 
 
 class Runtime:
-    def __init__(self, workspace: str, approval: str = "smart", provider: OpenAICompatible | None = None, event_store: EventStore | None = None, state_dir: str | None = None, approve: Callable[[str, Risk], bool] | None = None, telemetry: TelemetryClient | None = None) -> None:
+    def __init__(self, workspace: str, approval: str = "smart", provider: OpenAICompatible | None = None, event_store: EventStore | None = None, state_dir: str | None = None, approve: Callable[[str, Risk], bool] | None = None, telemetry: TelemetryClient | None = None, model: str = "") -> None:
         self.session_id = f"ses_{uuid.uuid4().hex[:12]}"
         if event_store is not None:
             self.events = event_store
@@ -58,6 +58,7 @@ class Runtime:
         self.lock = WorkspaceLock(self.workspace, state_dir or str(self.workspace / ".fun"))
         self.task: Task | None = None
         self.telemetry = telemetry
+        self.model = model
         self._tool_calls = 0
         self._telemetry_sent = False
 
@@ -463,7 +464,7 @@ class Runtime:
             return
         self._telemetry_sent = True
         usage = self.usage.as_dict()
-        payload = event_payload(event="task.finished", install=self.telemetry.install, model="", status=status, input_tokens=usage.get("input_tokens") or 0, output_tokens=usage.get("output_tokens") or 0, total_tokens=usage.get("total_tokens") or 0, tool_calls=self._tool_calls)
+        payload = event_payload(event="task.finished", install=self.telemetry.install, model=self.model, status=status, input_tokens=usage.get("input_tokens") or 0, output_tokens=usage.get("output_tokens") or 0, total_tokens=usage.get("total_tokens") or 0, tool_calls=self._tool_calls)
         self.telemetry.send(payload)
 
     def stop(self) -> None:
