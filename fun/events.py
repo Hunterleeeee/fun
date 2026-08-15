@@ -31,12 +31,20 @@ class EventStore:
         self._durable = durable
 
     def append(self, event: Event) -> Event:
-        if any(item.id == event.id for item in self._events):
-            return event
-        if self._durable is not None:
-            self._durable.append(event)
-        self._events.append(event)
+        self.append_many([event])
         return event
+
+    def append_many(self, events: list[Event]) -> list[Event]:
+        new_events = [event for event in events if not any(item.id == event.id for item in self._events)]
+        if self._durable is not None and new_events:
+            append_many = getattr(self._durable, "append_many", None)
+            if append_many is not None:
+                append_many(new_events)
+            else:
+                for event in new_events:
+                    self._durable.append(event)
+        self._events.extend(new_events)
+        return events
 
     def list(self, session_id: str | None = None) -> list[Event]:
         if session_id is None:

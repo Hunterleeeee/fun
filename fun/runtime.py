@@ -191,12 +191,17 @@ class Runtime:
         candidate.agent_state = "planning"
         candidate.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
         try:
-            self.emit("task.created", candidate.id, goal=goal)
-            self.emit("plan.created", candidate.id, steps=candidate.plan)
+            events = [
+                Event("task.created", self.session_id, candidate.id, {"goal": goal}),
+                Event("plan.created", self.session_id, candidate.id, {"steps": candidate.plan}),
+                Event("task.started", self.session_id, candidate.id, {}),
+                Event("agent.node", self.session_id, candidate.id, {"node": "ready"}),
+            ]
+            self.events.append_many(events)
+            candidate.status = "running"
+            candidate.agent_state = "ready"
             self.task = candidate
-            self._transition("running", "task.started")
             self._task_started_at = time.monotonic()
-            self._node("ready")
             return candidate
         except Exception:
             if acquired:

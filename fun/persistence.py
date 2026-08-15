@@ -21,12 +21,21 @@ class SQLiteEventStore:
         self.connection.commit()
 
     def append(self, event: Event) -> Event:
-        self.connection.execute(
-            "INSERT OR IGNORE INTO events(seq,id,type,session_id,task_id,timestamp,payload) VALUES(?,?,?,?,?,?,?)",
-            (event.seq, event.id, event.type, event.session_id, event.task_id, event.timestamp, json.dumps(event.payload)),
-        )
-        self.connection.commit()
+        self.append_many([event])
         return event
+
+    def append_many(self, events: list[Event]) -> list[Event]:
+        try:
+            for event in events:
+                self.connection.execute(
+                    "INSERT OR IGNORE INTO events(seq,id,type,session_id,task_id,timestamp,payload) VALUES(?,?,?,?,?,?,?)",
+                    (event.seq, event.id, event.type, event.session_id, event.task_id, event.timestamp, json.dumps(event.payload)),
+                )
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return events
 
     def list(self, session_id: str | None = None) -> list[dict[str, Any]]:
         query = "SELECT seq,id,type,session_id,task_id,timestamp,payload FROM events"
