@@ -322,8 +322,8 @@ class Runtime:
                     raise TypeError("approval callback must return bool")
             except Exception as exc:
                 self.emit("approval.failed", self.task.id, call_id=call_id, name=name, error_type=type(exc).__name__, error_tag="APPROVAL_CALLBACK_FAILED")
-                self.task.pending_tool = None
                 self._ready_after_tool()
+                self.task.pending_tool = None
                 raise
             self.emit("approval.resolved", self.task.id, call_id=call_id, name=name, allowed=allowed)
             if not allowed:
