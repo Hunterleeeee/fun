@@ -76,6 +76,20 @@ class AgentLoopTests(unittest.TestCase):
             self.assertIn("tool.completed", event_types)
             self.assertIn("model.completed", event_types)
 
+    def test_model_node_failure_does_not_change_agent_state(self):
+        class FailingStore:
+            def append(self, event):
+                if event.type == "agent.node":
+                    raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", provider=PlanProvider())
+            runtime.create_task("model node atomic")
+            runtime.events._durable = FailingStore()
+            with self.assertRaises(OSError):
+                runtime.request_model()
+            self.assertEqual(runtime.task.agent_state, "ready")
+
     def test_model_nodes_can_be_called_independently(self):
         with TemporaryDirectory() as directory:
             Path(directory, "hello.txt").write_text("hello\n", encoding="utf-8")

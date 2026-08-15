@@ -454,8 +454,8 @@ class Runtime:
 
     def _node(self, node: str, **payload: object) -> None:
         if self.task:
-            self.task.agent_state = node
             self.emit("agent.node", self.task.id, node=node, **payload)
+            self.task.agent_state = node
 
     def validate(self, command: str) -> ToolResult:
         """Run validation and record evidence for a bounded repair loop."""
