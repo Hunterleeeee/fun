@@ -50,10 +50,12 @@ class CoreTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)
             runtime.create_task("recover side effect")
-            runtime._node("tool.executing")
+            runtime.emit("tool.executing", runtime.task.id, call_id="call_1", name="exec", arguments={"command": "echo hi"})
             recovered = Runtime.recover(directory, directory, runtime.session_id)
             self.assertEqual(recovered.task.status, "recovery_required")
             self.assertEqual(recovered.task.recovery_reason, "tool.executing")
+            self.assertEqual(recovered.task.pending_tool["name"], "exec")
+            self.assertEqual(recovered.task.pending_tool["arguments"]["command"], "echo hi")
             with self.assertRaisesRegex(RuntimeError, "TASK_NOT_RUNNING"):
                 recovered.run_model_turn()
             recovered.acknowledge_recovery("resume")

@@ -31,6 +31,7 @@ class Task:
     status: str = "created"
     agent_state: str = "idle"
     recovery_reason: str | None = None
+    pending_tool: dict[str, Any] | None = None
     plan: list[str] = field(default_factory=list)
     plan_status: list[str] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
@@ -111,10 +112,14 @@ class Runtime:
                 self.task.agent_state = "completed"
             elif event.type == "approval.pending":
                 self.task.agent_state = "approval.pending"
+                self.task.pending_tool = dict(event.payload)
             elif event.type == "tool.executing":
                 self.task.agent_state = "tool.executing"
+                self.task.pending_tool = dict(event.payload)
             elif event.type in {"tool.completed", "tool.failed", "approval.resolved"}:
                 self.task.agent_state = "ready"
+                if event.type != "approval.resolved":
+                    self.task.pending_tool = None
             elif event.type in {"validation.completed", "validation.failed"}:
                 self.task.validation = {"ok": bool(event.payload.get("ok")), "command": event.payload.get("command", ""), "text": event.payload.get("text", "")}
 
@@ -187,6 +192,7 @@ class Runtime:
         if plan_index is not None and self.task.plan_status[plan_index] == "pending":
             self.update_plan_step(plan_index, "active", f"tool:{name}")
         call_id = f"tool_{uuid.uuid4().hex[:10]}"
+        self.task.pending_tool = {"call_id": call_id, "name": name, "arguments": dict(kwargs)}
         self.emit("tool.requested", self.task.id, call_id=call_id, name=name, arguments=kwargs)
         try:
             kwargs = validate_tool_arguments(name, kwargs)

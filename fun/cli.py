@@ -89,7 +89,8 @@ def main(argv: list[str] | None = None) -> int:
                 recovery = runtime.task.recovery_reason if runtime.task else None
                 print(f"session={runtime.session_id} task={status} agent={agent_state} policy={runtime.policy.mode.value}")
                 if recovery:
-                    print(f"! recovery required: {recovery} (use /recover or /stop)")
+                    pending = runtime.task.pending_tool or {}
+                    print(f"! recovery required: {recovery} · {pending.get('name', 'unknown tool')} (use /recover resume|stop)")
                 print(runtime.usage.summary())
                 continue
             if text == "/usage":
@@ -110,9 +111,10 @@ def main(argv: list[str] | None = None) -> int:
                 runtime.resume()
                 print("● running")
                 continue
-            if text == "/recover":
-                runtime.acknowledge_recovery("resume")
-                print("● recovery acknowledged; running")
+            if text.startswith("/recover"):
+                action = text.split(maxsplit=1)[1] if len(text.split()) > 1 else "resume"
+                runtime.acknowledge_recovery(action)
+                print(f"● recovery acknowledged; {action}")
                 continue
             if text == "/stop":
                 runtime.stop()
