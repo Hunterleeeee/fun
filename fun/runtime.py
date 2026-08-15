@@ -321,9 +321,18 @@ class Runtime:
                 if not isinstance(allowed, bool):
                     raise TypeError("approval callback must return bool")
             except Exception as exc:
-                self.emit("approval.failed", self.task.id, call_id=call_id, name=name, error_type=type(exc).__name__, error_tag="APPROVAL_CALLBACK_FAILED")
-                self.emit("tool.failed", self.task.id, call_id=call_id, name=name, ok=False, error_type=type(exc).__name__, error_tag="APPROVAL_CALLBACK_FAILED")
-                self._ready_after_tool()
+                failure_type = type(exc).__name__
+                failures = [
+                    Event("approval.failed", self.session_id, self.task.id, {"call_id": call_id, "name": name, "error_type": failure_type, "error_tag": "APPROVAL_CALLBACK_FAILED"}),
+                    Event("tool.failed", self.session_id, self.task.id, {"call_id": call_id, "name": name, "ok": False, "error_type": failure_type, "error_tag": "APPROVAL_CALLBACK_FAILED"}),
+                ]
+                self.events.append_many(failures)
+                pending = self.task.pending_tool
+                try:
+                    self._ready_after_tool()
+                except Exception:
+                    self.task.pending_tool = pending
+                    raise
                 self.task.pending_tool = None
                 raise
             self.emit("approval.resolved", self.task.id, call_id=call_id, name=name, allowed=allowed)

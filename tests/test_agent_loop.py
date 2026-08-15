@@ -63,6 +63,22 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_approval_failure_facts_are_atomic(self):
+        class FailingBatch:
+            def append_many(self, events):
+                raise OSError("disk full")
+
+        def broken(name, risk):
+            raise RuntimeError("callback")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "smart", approve=broken)
+            runtime.create_task("approval facts")
+            runtime.events._durable = FailingBatch()
+            with self.assertRaises(OSError):
+                runtime.run_tool("exec", command="echo hi")
+            self.assertIsNone(runtime.task.pending_tool)
+
     def test_approval_failure_ready_persistence_keeps_pending_until_ready(self):
         class FailingStore:
             def append(self, event):
