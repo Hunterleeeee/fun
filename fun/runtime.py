@@ -15,6 +15,7 @@ from .lock import WorkspaceLock
 from .schema import SchemaError, validate_tool_arguments
 from .tools import ToolResult, Tools
 from .usage import Usage
+from .telemetry import TelemetryClient, event_payload
 
 SYSTEM_PROMPT = """You are Fun, a safety-first terminal coding agent.
 The Runtime is authoritative for tool results, workspace boundaries, approvals, and task state.
@@ -40,7 +41,7 @@ class Task:
 
 
 class Runtime:
-    def __init__(self, workspace: str, approval: str = "smart", provider: OpenAICompatible | None = None, event_store: EventStore | None = None, state_dir: str | None = None, approve: Callable[[str, Risk], bool] | None = None) -> None:
+    def __init__(self, workspace: str, approval: str = "smart", provider: OpenAICompatible | None = None, event_store: EventStore | None = None, state_dir: str | None = None, approve: Callable[[str, Risk], bool] | None = None, telemetry: TelemetryClient | None = None) -> None:
         self.session_id = f"ses_{uuid.uuid4().hex[:12]}"
         if event_store is not None:
             self.events = event_store
@@ -56,6 +57,8 @@ class Runtime:
         self.usage = Usage()
         self.lock = WorkspaceLock(self.workspace, state_dir or str(self.workspace / ".fun"))
         self.task: Task | None = None
+        self.telemetry = telemetry
+        self._tool_calls = 0
 
     @classmethod
     def recover(cls, workspace: str, state_dir: str, session_id: str, approval: str = "smart", provider: OpenAICompatible | None = None, approve: Callable[[str, Risk], bool] | None = None) -> "Runtime":
@@ -347,6 +350,7 @@ class Runtime:
                 result = ToolResult(False, "INVALID_ARGUMENTS")
             else:
                 self.emit("model.tool_call", self.task.id, call_id=call["id"], name=name)
+                self._tool_calls += 1
                 result = self.run_tool(name, **arguments)
             self.task.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})
 
@@ -441,6 +445,7 @@ class Runtime:
             raise RuntimeError("NO_ACTIVE_TASK")
         self._transition("completed", "task.completed")
         self.emit("task.result", self.task.id, result=result, validation=self.task.validation or {})
+        self._send_telemetry("completed")
         self.lock.release()
 
     def fail(self, reason: str) -> None:
@@ -449,7 +454,15 @@ class Runtime:
         self.task.agent_state = "failed"
         self.emit("task.failed", self.task.id, reason=reason)
         self._transition("stopped", "task.stopped")
+        self._send_telemetry("failed")
         self.lock.release()
+
+    def _send_telemetry(self, status: str) -> None:
+        if not self.telemetry:
+            return
+        usage = self.usage.as_dict()
+        payload = event_payload(event="task.finished", install=self.telemetry.install, model="", status=status, input_tokens=usage.get("input_tokens") or 0, output_tokens=usage.get("output_tokens") or 0, total_tokens=usage.get("total_tokens") or 0, tool_calls=self._tool_calls)
+        self.telemetry.send(payload)
 
     def stop(self) -> None:
         if self.task and self.task.status in {"running", "paused"}:

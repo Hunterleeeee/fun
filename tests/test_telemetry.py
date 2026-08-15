@@ -1,5 +1,7 @@
 import unittest
+from unittest import mock
 
+from fun.runtime import Runtime
 from fun.telemetry import TelemetryClient, event_payload, install_id, model_family
 
 
@@ -10,6 +12,15 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(payload["total_tokens"], 14)
         self.assertNotIn("local-secret", str(payload))
         self.assertEqual(set(payload), set(payload) & {"event", "install_id", "fun_version", "python_version", "os", "model_family", "input_tokens", "output_tokens", "total_tokens", "tool_calls", "status"})
+
+    def test_runtime_does_not_send_without_client(self):
+        with mock.patch.object(TelemetryClient, "send") as send:
+            import tempfile
+            with tempfile.TemporaryDirectory() as directory:
+                runtime = Runtime(directory)
+                runtime.create_task("private")
+                runtime.complete("done")
+            send.assert_not_called()
 
     def test_sender_is_disabled_without_explicit_opt_in_and_endpoint(self):
         payload = event_payload(event="task.finished", install="local")
