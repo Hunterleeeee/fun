@@ -37,6 +37,7 @@ class Task:
     plan: list[str] = field(default_factory=list)
     plan_status: list[str] = field(default_factory=list)
     plan_error: str | None = None
+    plan_error_summary: dict[str, Any] | None = None
     messages: list[dict[str, Any]] = field(default_factory=list)
     validation: dict[str, Any] | None = None
     repair_attempts: int = 0
@@ -109,8 +110,11 @@ class Runtime:
                 self.task.plan_status = list(event.payload.get("statuses", ["pending"] * len(self.task.plan)))
             elif event.type == "plan.replaced":
                 self.task.plan_error = None
+                self.task.plan_error_summary = None
             elif event.type == "plan.rejected":
                 self.task.plan_error = str(event.payload.get("reason", "INVALID_PLAN"))
+                summary = event.payload.get("summary")
+                self.task.plan_error_summary = dict(summary) if isinstance(summary, dict) else None
             elif event.type == "plan.step_updated":
                 index = event.payload.get("index")
                 if isinstance(index, int) and 0 <= index < len(self.task.plan_status):
@@ -380,6 +384,8 @@ class Runtime:
                 if self.task:
                     self.task.plan_error = str(exc)
                 summary = {"count": len(proposed_plan), "types": [type(step).__name__ for step in proposed_plan[:7]], "lengths": [len(step) if isinstance(step, str) else None for step in proposed_plan[:7]]}
+                if self.task:
+                    self.task.plan_error_summary = summary
                 self.emit("plan.rejected", self.task.id if self.task else None, reason=str(exc), summary=summary)
         self._node("response.parsed", content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated)
         return content, parsed

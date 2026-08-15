@@ -202,6 +202,7 @@ class CoreTests(unittest.TestCase):
             runtime.emit("plan.rejected", runtime.task.id, reason="INVALID_PLAN", summary={"count": 2, "types": ["str", "int"], "lengths": [3, None]})
             recovered = Runtime.recover(directory, directory, runtime.session_id, approval="auto")
             self.assertEqual(recovered.task.plan_error, "INVALID_PLAN")
+            self.assertEqual(recovered.task.plan_error_summary["count"], 2)
             recovered.stop()
 
     def test_dynamic_plan_replaces_and_replays_latest_steps(self):

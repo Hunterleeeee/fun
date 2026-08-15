@@ -47,6 +47,7 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(runtime.task.plan, original)
             self.assertIn("plan.rejected", [event.type for event in runtime.events.list()])
             self.assertEqual(runtime.task.plan_error, "INVALID_PLAN")
+            self.assertEqual(runtime.task.plan_error_summary["count"], 3)
             rejected = next(event for event in runtime.events.list() if event.type == "plan.rejected")
             self.assertEqual(rejected.payload["summary"]["count"], 3)
             self.assertNotIn("Kept the safe plan", str(rejected.payload))

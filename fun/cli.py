@@ -167,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
                     print("  action: /recover discard | /recover mark_failed | /recover resume | /recover stop")
                 if runtime.task and runtime.task.plan_error:
                     print(f"! plan rejected: {runtime.task.plan_error}")
+                    if runtime.task.plan_error_summary:
+                        print(f"  proposal: {runtime.task.plan_error_summary}")
                 print(runtime.usage.summary())
                 continue
             if text == "/usage":
