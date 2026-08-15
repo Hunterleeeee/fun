@@ -80,7 +80,7 @@ Fun 让模型负责提出下一步动作，让 Runtime 负责事实、安全和�
 - OpenAI-compatible streaming Agent Loop
 - `explore` / `read` / `edit` / `exec`
 - Ask / Smart / Auto approval
-- Workspace boundary and Safe Exec limits
+- Workspace boundary and Safe Exec limits (no shell execution)
 - SQLite Event Store and Runtime Replay
 - Checkpoint / restore foundations
 - Pause / resume / stop

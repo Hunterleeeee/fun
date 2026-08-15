@@ -4,6 +4,7 @@ import difflib
 import hashlib
 import os
 import re
+import shlex
 import signal
 import subprocess
 from dataclasses import dataclass
@@ -120,10 +121,16 @@ class Tools:
         safe_env = {key: os.environ[key] for key in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR") if key in os.environ}
         safe_env["PWD"] = str(self.guard.root)
         try:
+            argv = shlex.split(command)
+        except ValueError as exc:
+            return ToolResult(False, f"INVALID_COMMAND: {exc}", risk)
+        if not argv:
+            return ToolResult(False, "INVALID_COMMAND: empty command", risk)
+        try:
             completed = subprocess.Popen(
-                command,
+                argv,
                 cwd=self.guard.root,
-                shell=True,
+                shell=False,
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

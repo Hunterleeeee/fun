@@ -261,6 +261,20 @@ class CoreTests(unittest.TestCase):
             self.assertFalse(timeout.ok)
             self.assertIn("COMMAND_TIMEOUT", timeout.text)
 
+    def test_exec_does_not_invoke_a_shell(self):
+        with TemporaryDirectory() as directory:
+            marker = Path(directory) / "injected"
+            result = Tools(directory).exec(f"echo safe; touch {marker}")
+            self.assertTrue(result.ok)
+            self.assertFalse(marker.exists())
+            self.assertEqual(result.text, "safe; touch " + str(marker))
+
+    def test_exec_rejects_invalid_command_syntax(self):
+        with TemporaryDirectory() as directory:
+            result = Tools(directory).exec("python3 -c 'unterminated")
+            self.assertFalse(result.ok)
+            self.assertIn("INVALID_COMMAND", result.text)
+
     def test_exec_runs_inside_workspace(self):
         with TemporaryDirectory() as directory:
             result = Tools(directory).exec("python3 -c \"print('ok')\"")
