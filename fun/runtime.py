@@ -115,9 +115,6 @@ class Runtime:
                 if event.type == "plan.replaced":
                     self.task.plan_error = None
                     self.task.plan_error_summary = None
-            elif event.type == "plan.replaced":
-                self.task.plan_error = None
-                self.task.plan_error_summary = None
             elif event.type == "plan.rejected":
                 self.task.plan_error = str(event.payload.get("reason", "INVALID_PLAN"))
                 summary = event.payload.get("summary")

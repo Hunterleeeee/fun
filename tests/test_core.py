@@ -461,6 +461,16 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(recovered.task.plan_error_summary["count"], 2)
             recovered.stop()
 
+    def test_replay_response_parsed_clears_previous_failure(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("response ordering")
+            runtime.emit("response.failed", runtime.task.id, error_type="ValueError", error_tag="MALFORMED_RESPONSE", summary={"content_length": 0})
+            runtime.emit("response.parsed", runtime.task.id, content_length=2, tool_calls=0, plan_updated=False, summary={"content_length": 2, "tool_calls": 0})
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertIsNone(recovered.task.response_error)
+            recovered.stop()
+
     def test_replayed_plan_replacement_clears_rejection(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
