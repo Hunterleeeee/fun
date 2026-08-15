@@ -57,7 +57,8 @@ class OpenAICompatible:
         try:
             with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
                 headers = getattr(response, "headers", None)
-                content_type = headers.get("Content-Type", "") if headers is not None else ""
+                raw_content_type = headers.get("Content-Type", "") if headers is not None else ""
+                content_type = raw_content_type if isinstance(raw_content_type, str) else ""
                 if content_type and "text/event-stream" not in content_type.lower():
                     raise ProviderError("PROVIDER_UNEXPECTED_CONTENT_TYPE")
                 first = True

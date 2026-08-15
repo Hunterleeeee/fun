@@ -121,6 +121,23 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["choices"][0]["delta"]["content"], "ok")
 
+    def test_provider_tolerates_non_string_content_type_header(self):
+        class Headers:
+            def get(self, name, default=""):
+                return None
+        class Response:
+            headers = Headers()
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def __iter__(self):
+                yield b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
+
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with patch("urllib.request.urlopen", return_value=Response()):
+            self.assertEqual(len(list(provider.stream([], []))), 1)
+
     def test_provider_rejects_non_sse_response_without_body(self):
         class Headers:
             def get(self, name, default=""):
