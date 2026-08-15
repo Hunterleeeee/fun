@@ -16,6 +16,27 @@ def runtime_usage_summary():
 
 
 class CoreTests(unittest.TestCase):
+    def test_cross_process_recovery_persists_followup_tool_events(self):
+        with TemporaryDirectory() as directory:
+            first = Runtime(directory, "auto", state_dir=directory)
+            first.create_task("cross process recovery")
+            session_id = first.session_id
+            first.lock.release()
+            first.events._durable.close()
+            child = subprocess.run([
+                "python3", "-c",
+                "from fun.runtime import Runtime; import sys; r=Runtime.recover(sys.argv[1], sys.argv[1], sys.argv[2], approval='auto'); r.run_tool('explore', path='.'); r.stop()",
+                directory, session_id,
+            ], check=False, capture_output=True, text=True)
+            self.assertEqual(child.returncode, 0, child.stderr)
+            recovered = Runtime.recover(directory, directory, session_id, approval="auto")
+            event_types = [event.type for event in recovered.events.list(session_id)]
+            self.assertEqual(event_types.count("tool.requested"), 1)
+            self.assertEqual(event_types.count("tool.executing"), 1)
+            self.assertEqual(event_types.count("tool.completed"), 1)
+            self.assertGreaterEqual(len(event_types), 8)
+            recovered.stop()
+
     def test_recovered_store_continues_persisting_new_events(self):
         with TemporaryDirectory() as directory:
             first = Runtime(directory, "auto", state_dir=directory)
