@@ -49,6 +49,13 @@ jobs:
         run: python -m build --version
       - name: Build distributions
         run: python -m build
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: fun-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
       - name: Install wheel in isolated environment
         run: |
           python -m venv /tmp/fun-ci-venv
