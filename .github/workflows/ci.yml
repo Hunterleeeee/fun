@@ -110,6 +110,12 @@ jobs:
           sdist="${sdists[0]}"
           echo "Installing sdist: $sdist"
           tar -tzf "$sdist" | sed -n '1,12p'
-          /tmp/fun-ci-sdist-venv/bin/python -m pip install --verbose --no-deps --no-build-isolation "$sdist"
+          rm -rf /tmp/fun-ci-sdist-wheel
+          mkdir -p /tmp/fun-ci-sdist-wheel
+          /tmp/fun-ci-sdist-venv/bin/python -m pip wheel --verbose --no-deps --no-build-isolation "$sdist" --wheel-dir /tmp/fun-ci-sdist-wheel
+          wheels=(/tmp/fun-ci-sdist-wheel/*.whl)
+          test "${#wheels[@]}" -eq 1
+          echo "Installing rebuilt wheel: ${wheels[0]}"
+          /tmp/fun-ci-sdist-venv/bin/python -m pip install --verbose --no-deps "${wheels[0]}"
           /tmp/fun-ci-sdist-venv/bin/python -c "import fun"
           /tmp/fun-ci-sdist-venv/bin/fun --help
