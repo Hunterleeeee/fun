@@ -106,6 +106,9 @@ class Runtime:
                 self.task.status = "completed"
             elif event.type == "task.stopped":
                 self.task.status = "stopped"
+            elif event.type == "task.failed":
+                self.task.agent_state = "failed"
+                self.task.recovery_reason = str(event.payload.get("reason", "unknown"))
             elif event.type == "recovery.required":
                 self.task.status = "recovery_required"
                 self.task.recovery_reason = str(event.payload.get("reason", "unknown"))

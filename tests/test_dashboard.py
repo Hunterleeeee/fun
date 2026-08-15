@@ -31,6 +31,7 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(snapshot["output_tokens"], 12)
             self.assertEqual(snapshot["total_tokens"], 42)
             self.assertEqual(snapshot["failed"], 1)
+            self.assertEqual(snapshot["stopped"], 0)
             self.assertEqual(snapshot["recent"][0]["type"], "task.failed")
             self.assertEqual(snapshot["session_usage"][0]["session_id"], "s2")
             self.assertEqual(snapshot["session_usage"][0]["total_tokens"], 27)

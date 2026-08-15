@@ -96,12 +96,17 @@ class CoreTests(unittest.TestCase):
 
     def test_failed_task_preserves_failure_fact(self):
         with TemporaryDirectory() as directory:
-            runtime = Runtime(directory)
+            runtime = Runtime(directory, state_dir=directory)
             runtime.create_task("will fail")
             runtime.fail("provider unavailable")
             self.assertEqual(runtime.task.agent_state, "failed")
             self.assertIn("task.failed", [event.type for event in runtime.events.list()])
             self.assertEqual(runtime.events.list()[-2].payload["reason"], "provider unavailable")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.status, "stopped")
+            self.assertEqual(recovered.task.agent_state, "failed")
+            self.assertEqual(recovered.task.recovery_reason, "provider unavailable")
+            recovered.stop()
 
     def test_goal_creation_matches_normal_task_lifecycle(self):
         with TemporaryDirectory() as directory:
