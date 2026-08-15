@@ -169,6 +169,10 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"! plan rejected: {runtime.task.plan_error}")
                     if runtime.task.plan_error_summary:
                         print(f"  proposal: {runtime.task.plan_error_summary}")
+                if runtime.task and runtime.task.failure_reason:
+                    print(f"! failed: {runtime.task.failure_reason[:240]}")
+                if runtime.task and runtime.task.result is not None:
+                    print(f"result: {runtime.task.result[:240]}")
                 print(runtime.usage.summary())
                 continue
             if text == "/usage":
