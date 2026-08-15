@@ -38,6 +38,22 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_provider_stream_rejects_malformed_event_without_body(self):
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def __iter__(self):
+                yield b'data: not-secret-json\n'
+
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with patch("urllib.request.urlopen", return_value=Response()):
+            with self.assertRaises(ProviderError) as context:
+                list(provider.stream([], []))
+        self.assertEqual(context.exception.error_tag, "PROVIDER_MALFORMED_EVENT")
+        self.assertNotIn("not-secret-json", str(context.exception))
+
     def test_provider_stream_handles_split_sse_lines(self):
         class Response:
             def __enter__(self):

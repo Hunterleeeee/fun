@@ -57,8 +57,8 @@ class OpenAICompatible:
                             line = line[5:].strip()
                         try:
                             item = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
+                        except json.JSONDecodeError as exc:
+                            raise ProviderError("PROVIDER_MALFORMED_EVENT", cause=exc) from exc
                         if first:
                             item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
                             first = False
@@ -69,12 +69,14 @@ class OpenAICompatible:
                         line = line[5:].strip()
                     try:
                         item = json.loads(line)
-                    except json.JSONDecodeError:
-                        item = None
+                    except json.JSONDecodeError as exc:
+                        raise ProviderError("PROVIDER_MALFORMED_EVENT", cause=exc) from exc
                     if item is not None:
                         if first:
                             item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
                         yield item
+        except ProviderError:
+            raise
         except TimeoutError as exc:
             raise ProviderError("PROVIDER_TIMEOUT", cause=exc) from exc
         except urllib.error.HTTPError as exc:
