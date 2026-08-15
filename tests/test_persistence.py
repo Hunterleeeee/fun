@@ -7,6 +7,20 @@ from fun.persistence import SQLiteEventStore
 
 
 class PersistenceTests(unittest.TestCase):
+    def test_event_store_load_advances_sequence_after_recovery(self):
+        from fun.events import EventStore
+
+        historical = [
+            Event("task.created", "ses_1", "task_1", id="evt_old_1", seq=41),
+            Event("plan.created", "ses_1", "task_1", id="evt_old_2", seq=42),
+        ]
+        store = EventStore()
+        store.load(historical)
+        fresh = Event("task.started", "ses_1", "task_1")
+        store.append(fresh)
+        self.assertGreater(fresh.seq, 42)
+        self.assertEqual([event.seq for event in store.replay("ses_1")], [41, 42, fresh.seq])
+
     def test_sqlite_event_store_batch_is_atomic(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "events.db")
