@@ -37,6 +37,15 @@ class CoreTests(unittest.TestCase):
             self.assertIn("hello.txt", tools.explore().text)
             self.assertIn("world", tools.read("hello.txt").text)
 
+    def test_runtime_recovers_agent_state_from_events(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("recover state")
+            runtime._node("tools.executing")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.agent_state, "tools.executing")
+            recovered.stop()
+
     def test_runtime_recovers_task_from_events(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)
@@ -106,7 +115,7 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertEqual(
                 [event.type for event in runtime.events.list()],
-                ["task.created", "plan.created", "task.started", "tool.requested", "tool.completed"],
+                ["task.created", "plan.created", "task.started", "agent.node", "tool.requested", "tool.completed"],
             )
             runtime.stop()
             self.assertEqual(runtime.task.status, "stopped")

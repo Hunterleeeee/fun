@@ -28,6 +28,7 @@ class AgentLoopTests(unittest.TestCase):
             output = runtime.run_model_turn()
             self.assertEqual(output, "The file was inspected.")
             self.assertEqual(provider.calls, 2)
+            self.assertEqual(runtime.task.agent_state, "response.parsed")
             event_types = [event.type for event in runtime.events.list()]
             self.assertIn("model.tool_call", event_types)
             self.assertIn("tool.completed", event_types)

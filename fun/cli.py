@@ -85,7 +85,8 @@ def main(argv: list[str] | None = None) -> int:
                 break
             if text == "/status":
                 status = runtime.task.status if runtime.task else "idle"
-                print(f"session={runtime.session_id} task={status} policy={runtime.policy.mode.value}")
+                agent_state = runtime.task.agent_state if runtime.task else "idle"
+                print(f"session={runtime.session_id} task={status} agent={agent_state} policy={runtime.policy.mode.value}")
                 print(runtime.usage.summary())
                 continue
             if text == "/usage":
@@ -119,8 +120,18 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             task = runtime.create_task(text)
             print(renderer.plan(task.plan))
-            print("V1 Core runtime initialized. Use /status, /plan, /pause, /stop, or /quit.")
-            runtime.stop()
+            if provider:
+                try:
+                    output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True))
+                    runtime.complete(output)
+                    print()
+                except Exception as exc:
+                    print(f"\n× {exc}", file=sys.stderr)
+                    runtime.stop()
+                    continue
+            else:
+                print("Model not configured. Use --configure or set FUN_API_URL, FUN_API_KEY, and FUN_MODEL.")
+                runtime.stop()
     except (KeyboardInterrupt, EOFError):
         print()
     return 0

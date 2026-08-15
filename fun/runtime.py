@@ -29,6 +29,7 @@ class Task:
     id: str
     goal: str
     status: str = "created"
+    agent_state: str = "idle"
     plan: list[str] = field(default_factory=list)
     plan_status: list[str] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
@@ -84,6 +85,8 @@ class Runtime:
                 self.task.plan_status = ["pending"] * len(self.task.plan)
             elif event.type == "task.started":
                 self.task.status = "running"
+            elif event.type == "agent.node":
+                self.task.agent_state = str(event.payload.get("node", "idle"))
             elif event.type == "task.paused":
                 self.task.status = "paused"
             elif event.type == "task.resumed":
@@ -92,6 +95,8 @@ class Runtime:
                 self.task.status = "completed"
             elif event.type == "task.stopped":
                 self.task.status = "stopped"
+            elif event.type == "task.result":
+                self.task.agent_state = "completed"
             elif event.type in {"validation.completed", "validation.failed"}:
                 self.task.validation = {"ok": bool(event.payload.get("ok")), "command": event.payload.get("command", ""), "text": event.payload.get("text", "")}
 
@@ -110,10 +115,12 @@ class Runtime:
         self.task = Task(f"task_{uuid.uuid4().hex[:12]}", goal, "created")
         self.task.plan = self._initial_plan(goal)
         self.task.plan_status = ["pending"] * len(self.task.plan)
+        self.task.agent_state = "planning"
         self.task.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
         self.emit("task.created", self.task.id, goal=goal)
         self.emit("plan.created", self.task.id, steps=self.task.plan)
         self._transition("running", "task.started")
+        self._node("ready")
         return self.task
 
     def _transition(self, status: str, event_type: str) -> None:
@@ -249,6 +256,7 @@ class Runtime:
 
     def _node(self, node: str, **payload: object) -> None:
         if self.task:
+            self.task.agent_state = node
             self.emit("agent.node", self.task.id, node=node, **payload)
 
     def validate(self, command: str) -> ToolResult:
