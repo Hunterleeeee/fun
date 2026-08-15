@@ -130,6 +130,9 @@ class Runtime:
             elif event.type == "tool.executing":
                 self.task.agent_state = "tool.executing"
                 self.task.pending_tool = dict(event.payload)
+            elif event.type == "approval.rejected":
+                self.task.agent_state = "ready"
+                self.task.pending_tool = None
             elif event.type in {"tool.completed", "tool.failed", "approval.resolved"}:
                 self.task.agent_state = "ready"
                 if event.type != "approval.resolved":
@@ -221,8 +224,10 @@ class Runtime:
             allowed = self.approve(name, risk) if self.approve else False
             self.emit("approval.resolved", self.task.id, call_id=call_id, name=name, allowed=allowed)
             if not allowed:
+                self.emit("approval.rejected", self.task.id, call_id=call_id, name=name, risk=risk.value, reason="callback_denied")
+                self.task.pending_tool = None
                 result = ToolResult(False, "APPROVAL_REQUIRED", risk)
-                self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
+                self.emit("tool.failed", self.task.id, call_id=call_id, name=name, ok=False, text=result.text, changed=[])
                 return result
         registered: dict[str, Callable[..., ToolResult]] = {
             "explore": self.tools.explore,

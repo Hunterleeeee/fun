@@ -135,6 +135,7 @@ class CoreTests(unittest.TestCase):
         renderer = TerminalRenderer(color=False)
         self.assertTrue(renderer.event("agent.node", {"node": "validation.started"}).startswith("◌"))
         self.assertTrue(renderer.event("recovery.required", {"reason": "tool.executing"}).startswith("×"))
+        self.assertTrue(renderer.event("approval.rejected", {"name": "edit"}).startswith("×"))
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
@@ -198,6 +199,18 @@ class CoreTests(unittest.TestCase):
             tools = Tools(directory)
             with self.assertRaisesRegex(PolicyError, "PROTECTED_PATH"):
                 tools.read(".env")
+
+    def test_approval_rejection_is_a_terminal_tool_fact(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "a.txt"
+            path.write_text("one\n", encoding="utf-8")
+            runtime = Runtime(directory, "smart")
+            runtime.create_task("reject edit")
+            result = runtime.run_tool("edit", path="a.txt", expected_hash=file_hash(path), patch="@@ -1 +1 @@\n-one\n+two\n")
+            self.assertEqual(result.text, "APPROVAL_REQUIRED")
+            types = [event.type for event in runtime.events.list()]
+            self.assertIn("approval.rejected", types)
+            self.assertIsNone(runtime.task.pending_tool)
 
     def test_approval_boundary_blocks_medium_write_without_callback(self):
         with TemporaryDirectory() as directory:
