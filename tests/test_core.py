@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fun.events import Event, EventStore
-from fun.policy import PolicyError
+from fun.policy import ApprovalMode, Policy, PolicyError
 from fun.renderer import TerminalRenderer
 from fun.runtime import Runtime
 from fun.tools import Tools, file_hash
@@ -260,6 +260,13 @@ class CoreTests(unittest.TestCase):
             timeout = Tools(directory).exec("python3 -c \"import time; time.sleep(2)\"", timeout=0.05)
             self.assertFalse(timeout.ok)
             self.assertIn("COMMAND_TIMEOUT", timeout.text)
+
+    def test_exec_blocks_critical_argv_forms(self):
+        with TemporaryDirectory() as directory:
+            for command in ("rm -rf build", "git reset --hard HEAD", "git clean -fd", "sudo echo nope", "curl https://example.com"):
+                result = Tools(directory, Policy(ApprovalMode.ASK)).exec(command)
+                self.assertFalse(result.ok)
+                self.assertEqual(result.text, "APPROVAL_REQUIRED")
 
     def test_exec_does_not_invoke_a_shell(self):
         with TemporaryDirectory() as directory:

@@ -113,11 +113,6 @@ class Tools:
 
     def exec(self, command: str, timeout: float = 120.0) -> ToolResult:
         risk = self.policy.risk_for("exec")
-        critical_tokens = ("rm -rf", "git reset --hard", "git clean", "sudo ", "curl ", "wget ")
-        if any(token in command for token in critical_tokens):
-            if self.policy.mode != self.policy.mode.ASK:
-                return ToolResult(False, "CRITICAL_OPERATION_BLOCKED", Risk.CRITICAL)
-            return ToolResult(False, "APPROVAL_REQUIRED", Risk.CRITICAL)
         safe_env = {key: os.environ[key] for key in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR") if key in os.environ}
         safe_env["PWD"] = str(self.guard.root)
         try:
@@ -126,6 +121,15 @@ class Tools:
             return ToolResult(False, f"INVALID_COMMAND: {exc}", risk)
         if not argv:
             return ToolResult(False, "INVALID_COMMAND: empty command", risk)
+        executable = Path(argv[0]).name
+        critical = executable in {"sudo", "curl", "wget"}
+        critical = critical or (executable == "rm" and any(flag in {"-r", "-R", "-rf", "-fr"} or flag.startswith("-r") and "f" in flag for flag in argv[1:]))
+        critical = critical or (executable == "git" and len(argv) >= 3 and argv[1:3] == ["reset", "--hard"])
+        critical = critical or (executable == "git" and len(argv) >= 2 and argv[1] == "clean")
+        if critical:
+            if self.policy.mode != self.policy.mode.ASK:
+                return ToolResult(False, "CRITICAL_OPERATION_BLOCKED", Risk.CRITICAL)
+            return ToolResult(False, "APPROVAL_REQUIRED", Risk.CRITICAL)
         try:
             completed = subprocess.Popen(
                 argv,
