@@ -100,6 +100,7 @@ fun --approval auto "run the focused checks"             # 自动执行策略允
 ### 可恢复的 Runtime，而不是黑盒 Agent
 
 - SQLite Event Store：事实先持久化，再更新内存状态
+- Runtime 支持上下文管理器，`with Runtime(...)` 退出时自动关闭 durable store
 - **跨进程恢复后可继续执行**：事件 ID 使用 UUID，序列号从已恢复事件之后继续，避免重启后新事件被静默吞掉
 - Durable Store 对相同事件保持幂等，对内容冲突显式失败并回滚
 - Event Replay：重启后恢复 Task、Plan、Tool、Validation、Repair 和 Agent 节点
@@ -146,6 +147,16 @@ model.requested → response.parsed → tools.executing
 - Provider timeout / network / auth / HTTP / malformed event 分类
 - 非 SSE 响应和错误状态不会解析或持久化响应正文
 - Endpoint、API key、model、payload、timeout 配置边界校验
+
+资源安全使用示例：
+
+```python
+from fun.runtime import Runtime
+
+with Runtime(".", state_dir=".fun") as runtime:
+    runtime.create_task("run a focused validation")
+    # stop / complete / fail 也会自动释放 durable store
+```
 
 ## 常用命令
 
