@@ -65,11 +65,12 @@ jobs:
           test "${#wheels[@]}" -gt 0
           test "${#sdists[@]}" -gt 0
           version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
-          wheel_version=$(printf '%s' "$version" | tr '.-' '__')
+          wheel_version="$version"
+          wheel_normalized=$(printf '%s' "$version" | tr '.-' '__')
           sdist_version="$version"
           for artifact in "${wheels[@]}"; do
             case "$artifact" in
-              *"$wheel_version"*) ;;
+              *"$wheel_version"*|*"$wheel_normalized"*) ;;
               *) echo "Wheel version mismatch: $artifact"; exit 1 ;;
             esac
           done
