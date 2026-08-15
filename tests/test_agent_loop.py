@@ -162,6 +162,12 @@ class AgentLoopTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_ENDPOINT"):
             OpenAICompatible(ModelConfig("https://user:pass@provider.invalid", "key", "model"))
         OpenAICompatible(ModelConfig("https://[::1]/api", "key", "model"))
+        with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_ENDPOINT"):
+            OpenAICompatible(ModelConfig("https://provider.invalid:0", "key", "model"))
+        with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_ENDPOINT"):
+            OpenAICompatible(ModelConfig("https://provider.invalid:65536", "key", "model"))
+        with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_ENDPOINT"):
+            OpenAICompatible(ModelConfig("https://provider.invalid:notaport", "key", "model"))
 
     def test_provider_http_status_like_oserror_is_classified(self):
         class StatusError(OSError):
