@@ -7,8 +7,16 @@ from fun.runtime import Runtime
 
 
 class PlanProvider:
+    def __init__(self, in_delta=False):
+        self.in_delta = in_delta
+
     def stream(self, messages, tools=None):
-        yield {"plan": ["inspect", "verify"], "choices": [{"delta": {"content": "Plan updated."}}]}
+        delta = {"content": "Plan updated."}
+        if self.in_delta:
+            delta["plan"] = ["inspect", "verify"]
+            yield {"choices": [{"delta": delta}]}
+        else:
+            yield {"plan": ["inspect", "verify"], "choices": [{"delta": delta}]}
 
 
 class FakeProvider:
@@ -25,12 +33,13 @@ class FakeProvider:
 
 class AgentLoopTests(unittest.TestCase):
     def test_model_plan_proposal_replaces_runtime_plan(self):
-        with TemporaryDirectory() as directory:
-            runtime = Runtime(directory, "auto", provider=PlanProvider())
-            runtime.create_task("plan this")
-            runtime.run_model_turn()
-            self.assertEqual(runtime.task.plan, ["inspect", "verify"])
-            self.assertIn("plan.replaced", [event.type for event in runtime.events.list()])
+        for provider in (PlanProvider(), PlanProvider(in_delta=True)):
+            with TemporaryDirectory() as directory:
+                runtime = Runtime(directory, "auto", provider=provider)
+                runtime.create_task("plan this")
+                runtime.run_model_turn()
+                self.assertEqual(runtime.task.plan, ["inspect", "verify"])
+                self.assertIn("plan.replaced", [event.type for event in runtime.events.list()])
 
     def test_model_tool_loop_returns_final_text_and_records_facts(self):
         with TemporaryDirectory() as directory:

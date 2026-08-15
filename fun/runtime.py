@@ -351,6 +351,8 @@ class Runtime:
                 proposed_plan = chunk["plan"]
             choice = (chunk.get("choices") or [{}])[0]
             delta = choice.get("delta") or {}
+            if isinstance(delta.get("plan"), list):
+                proposed_plan = delta["plan"]
             if delta.get("content"):
                 content += delta["content"]
                 if on_text:
