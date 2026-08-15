@@ -244,6 +244,21 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "closed"):
                 durable.list()
 
+    def test_recovery_context_stop_replays_as_stopped(self):
+        with TemporaryDirectory() as directory:
+            first = Runtime(directory, state_dir=directory)
+            first.create_task("recovery replay")
+            session_id = first.session_id
+            first.events.append(Event("tool.executing", first.session_id, first.task.id, {"call_id": "call_replay", "name": "explore"}))
+            first.lock.release()
+            first.close()
+            with Runtime.recover(directory, directory, session_id):
+                pass
+            replayed = Runtime.recover(directory, directory, session_id)
+            self.assertEqual(replayed.task.status, "stopped")
+            self.assertNotEqual(replayed.task.status, "recovery_required")
+            replayed.close()
+
     def test_runtime_context_manager_releases_recovery_lock(self):
         with TemporaryDirectory() as directory:
             first = Runtime(directory, state_dir=directory)
