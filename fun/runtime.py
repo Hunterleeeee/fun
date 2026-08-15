@@ -387,6 +387,22 @@ class Runtime:
         content = ""
         calls: dict[str, dict[str, str]] = {}
         proposed_plan: list[str] | None = None
+        try:
+            return self._parse_model_chunks(chunks, on_text)
+        except Exception as exc:
+            if self.task:
+                try:
+                    self.emit("response.failed", self.task.id, error=str(exc))
+                    self.emit("agent.node", self.task.id, node="ready")
+                    self.task.agent_state = "ready"
+                except Exception:
+                    pass
+            raise
+
+    def _parse_model_chunks(self, chunks: Any, on_text: Callable[[str], None] | None = None) -> tuple[str, list[dict[str, Any]]]:
+        content = ""
+        calls: dict[str, dict[str, str]] = {}
+        proposed_plan: list[str] | None = None
         for chunk in chunks:
             self._ensure_running()
             if chunk.get("_meta", {}).get("ttft_ms") is not None:

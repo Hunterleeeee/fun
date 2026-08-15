@@ -76,6 +76,15 @@ class AgentLoopTests(unittest.TestCase):
             self.assertIn("tool.completed", event_types)
             self.assertIn("model.completed", event_types)
 
+    def test_malformed_response_records_failure_and_ready(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("malformed response")
+            with self.assertRaises(AttributeError):
+                runtime.parse_model_response([None])
+            self.assertEqual(runtime.task.agent_state, "ready")
+            self.assertIn("response.failed", [event.type for event in runtime.events.list()])
+
     def test_provider_failure_records_model_failed_and_ready(self):
         class BrokenProvider:
             def stream(self, messages, tools=None):
