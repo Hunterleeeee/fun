@@ -58,7 +58,7 @@ jobs:
       - name: Build distributions
         run: python -m build
       - name: Generate distribution checksums
-        run: sha256sum dist/* > dist/SHA256SUMS
+        run: (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS)
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
