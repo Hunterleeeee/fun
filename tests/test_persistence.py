@@ -28,6 +28,19 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(rows[0]["type"], "task.created")
             store.close()
 
+    def test_sqlite_event_store_rejects_seq_conflict_and_rolls_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "events.db")
+            first = Event("task.created", "ses_1", "task_1", id="evt_one", seq=7)
+            store.append(first)
+            conflicting = Event("plan.created", "ses_1", "task_1", id="evt_two", seq=7)
+            with self.assertRaisesRegex(Exception, "UNIQUE"):
+                store.append(conflicting)
+            rows = store.list("ses_1")
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["id"], "evt_one")
+            store.close()
+
     def test_sqlite_event_store_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "events.db")
