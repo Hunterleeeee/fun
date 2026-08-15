@@ -37,6 +37,14 @@ class CoreTests(unittest.TestCase):
             self.assertGreaterEqual(len(event_types), 8)
             recovered.stop()
 
+    def test_event_store_rejects_duplicate_sequences_in_batch(self):
+        store = EventStore()
+        first = Event("one", "session", id="one", seq=10)
+        second = Event("two", "session", id="two", seq=10)
+        with self.assertRaisesRegex(ValueError, "DUPLICATE_EVENT_SEQ"):
+            store.append_many([first, second])
+        self.assertEqual(store.list(), [])
+
     def test_event_store_rejects_duplicate_ids_in_batch(self):
         store = EventStore()
         first = Event("one", "session", id="same")
