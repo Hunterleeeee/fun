@@ -18,6 +18,7 @@ Fun 1.0 development is starting. The current tree contains the V1 Core runtime f
 - Event-based runtime state.
 - Diff, validation, checkpoint, stop, and recovery foundations.
 - Single-column streaming terminal UI.
+- Interactive REPL runs the same bounded Agent Loop as one-shot tasks when a provider is configured.
 
 V1.x will add Anthropic native support, model discovery, web search, inject/queue, automatic compaction, and richer recovery.
 
@@ -47,6 +48,7 @@ python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install -e .
 fun --help
+fun
 fun "inspect the project"
 ```
 
