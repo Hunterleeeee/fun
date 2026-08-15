@@ -15,6 +15,15 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(len(store.list("ses_1")), 2)
             store.close()
 
+    def test_sqlite_event_store_duplicate_event_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "events.db")
+            event = Event("task.created", "ses_1", "task_1", {"goal": "same"}, id="evt_same", seq=1)
+            store.append(event)
+            store.append(event)
+            self.assertEqual(len(store.list("ses_1")), 1)
+            store.close()
+
     def test_sqlite_event_store_rejects_id_conflict_and_rolls_back(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "events.db")
