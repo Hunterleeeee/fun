@@ -668,10 +668,18 @@ class Runtime:
             return
         self._telemetry_sent = True
 
+    def close(self) -> None:
+        durable = getattr(self.events, "_durable", None)
+        close = getattr(durable, "close", None)
+        if callable(close):
+            close()
+
     def stop(self) -> None:
-        if self.task and self.task.status in {"running", "paused"}:
-            self._transition("stopped", "task.stopped")
-            try:
+        try:
+            if self.task and self.task.status in {"running", "paused"}:
+                self._transition("stopped", "task.stopped")
                 self._send_telemetry("stopped")
-            finally:
+        finally:
+            if self.task and self.task.status in {"stopped", "failed", "completed"}:
                 self.lock.release()
+            self.close()
