@@ -94,6 +94,14 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(recovered.task.status, "paused")
             recovered.stop()
 
+    def test_goal_creation_matches_normal_task_lifecycle(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory)
+            task = runtime.set_goal("run the focused tests")
+            self.assertEqual(task.status, "running")
+            self.assertEqual(runtime.events.list()[-2].type, "task.started")
+            runtime.stop()
+
     def test_goal_can_be_read_and_replaced_after_stop(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory)

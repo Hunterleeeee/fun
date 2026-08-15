@@ -76,6 +76,21 @@ def main(argv: list[str] | None = None) -> int:
     print("Coding should feel good.")
     print(f"Workspace: {runtime.tools.guard.root}")
     print("Type a task, or Ctrl-C to exit.")
+
+    def run_interactive_task(task: object) -> None:
+        print(renderer.plan(task.plan, task.plan_status))
+        if provider:
+            try:
+                output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True))
+                runtime.complete(output)
+                print()
+            except Exception as exc:
+                print(f"\n× {exc}", file=sys.stderr)
+                runtime.stop()
+        else:
+            print("Model not configured. Use --configure or set FUN_API_URL, FUN_API_KEY, and FUN_MODEL.")
+            runtime.stop()
+
     try:
         while True:
             text = input("\n> ").strip()
@@ -89,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             if text.startswith("/goal "):
                 try:
                     task = runtime.set_goal(text[6:].strip())
-                    print(renderer.plan(task.plan, task.plan_status))
+                    run_interactive_task(task)
                 except Exception as exc:
                     print(f"× {exc}", file=sys.stderr)
                 continue
@@ -140,19 +155,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("Restore requires a checkpoint snapshot in the current process.")
                 continue
             task = runtime.create_task(text)
-            print(renderer.plan(task.plan, task.plan_status))
-            if provider:
-                try:
-                    output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True))
-                    runtime.complete(output)
-                    print()
-                except Exception as exc:
-                    print(f"\n× {exc}", file=sys.stderr)
-                    runtime.stop()
-                    continue
-            else:
-                print("Model not configured. Use --configure or set FUN_API_URL, FUN_API_KEY, and FUN_MODEL.")
-                runtime.stop()
+            run_interactive_task(task)
     except (KeyboardInterrupt, EOFError):
         print()
     return 0
