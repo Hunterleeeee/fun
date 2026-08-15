@@ -29,7 +29,7 @@ Requires Python 3.11+.
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
-fun --help
+python -m fun --help
 fun "inspect the project"
 ```
 
