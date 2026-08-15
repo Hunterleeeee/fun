@@ -461,6 +461,8 @@ class Runtime:
         self.emit("response.parsed", self.task.id, content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated, summary={"content_length": len(content), "tool_calls": len(parsed)})
         self._node("response.parsed", content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated)
         self.task.response_error = None
+        self.emit("agent.node", self.task.id, node="ready")
+        self.task.agent_state = "ready"
         return content, parsed
 
     def execute_tool_calls(self, calls: list[dict[str, Any]]) -> None:

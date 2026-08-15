@@ -72,7 +72,7 @@ class AgentLoopTests(unittest.TestCase):
             output = runtime.run_model_turn()
             self.assertEqual(output, "The file was inspected.")
             self.assertEqual(provider.calls, 2)
-            self.assertEqual(runtime.task.agent_state, "response.parsed")
+            self.assertEqual(runtime.task.agent_state, "ready")
             event_types = [event.type for event in runtime.events.list()]
             self.assertIn("model.tool_call", event_types)
             self.assertIn("tool.completed", event_types)
@@ -111,6 +111,15 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(failed.payload["summary"]["chunk_types"], ["NoneType"])
             self.assertNotIn("malformed response", str(failed.payload))
             self.assertNotIn("None has no attribute", str(failed.payload))
+
+    def test_successful_response_replays_ready_agent_state(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("ready replay")
+            runtime.parse_model_response([{"choices": [{"delta": {"content": "ok"}}]}])
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.agent_state, "ready")
+            recovered.stop()
 
     def test_successful_response_clears_previous_response_error(self):
         with TemporaryDirectory() as directory:
