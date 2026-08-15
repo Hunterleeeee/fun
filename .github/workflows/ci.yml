@@ -68,7 +68,9 @@ jobs:
           sdists=(dist/*.tar.gz)
           test "${#wheels[@]}" -gt 0
           test "${#sdists[@]}" -gt 0
-          (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS)
+          (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS && sha256sum -c SHA256SUMS)
+      - name: List built distributions
+        run: ls -la dist
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
