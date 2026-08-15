@@ -33,6 +33,7 @@ class Task:
     status: str = "created"
     agent_state: str = "idle"
     recovery_reason: str | None = None
+    failure_reason: str | None = None
     pending_tool: dict[str, Any] | None = None
     plan: list[str] = field(default_factory=list)
     plan_status: list[str] = field(default_factory=list)
@@ -136,8 +137,9 @@ class Runtime:
             elif event.type == "task.stopped":
                 self.task.status = "stopped"
             elif event.type == "task.failed":
+                reason = str(event.payload.get("reason", "unknown"))
                 self.task.agent_state = "failed"
-                self.task.recovery_reason = str(event.payload.get("reason", "unknown"))
+                self.task.failure_reason = reason
             elif event.type == "recovery.required":
                 self.task.status = "recovery_required"
                 self.task.recovery_reason = str(event.payload.get("reason", "unknown"))
@@ -533,6 +535,7 @@ class Runtime:
         stopped = Event("task.stopped", self.session_id, self.task.id, {})
         self.events.append_many([failed, stopped])
         self.task.agent_state = "failed"
+        self.task.failure_reason = reason
         self.task.status = "stopped"
         try:
             self._send_telemetry("failed")

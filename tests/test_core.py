@@ -126,6 +126,17 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(recovered.task.status, "paused")
             recovered.stop()
 
+    def test_failed_task_reason_replays_after_restart(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("failure replay")
+            runtime.fail("provider unavailable")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.status, "stopped")
+            self.assertEqual(recovered.task.failure_reason, "provider unavailable")
+            self.assertIsNone(recovered.task.recovery_reason)
+            recovered.stop()
+
     def test_failed_task_preserves_failure_fact(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)
@@ -137,7 +148,8 @@ class CoreTests(unittest.TestCase):
             recovered = Runtime.recover(directory, directory, runtime.session_id)
             self.assertEqual(recovered.task.status, "stopped")
             self.assertEqual(recovered.task.agent_state, "failed")
-            self.assertEqual(recovered.task.recovery_reason, "provider unavailable")
+            self.assertEqual(recovered.task.failure_reason, "provider unavailable")
+            self.assertIsNone(recovered.task.recovery_reason)
             recovered.stop()
 
     def test_goal_creation_matches_normal_task_lifecycle(self):
