@@ -85,6 +85,8 @@ jobs:
           shopt -s nullglob
           wheels=(dist/*.whl)
           sdists=(dist/*.tar.gz)
+          test "${#wheels[@]}" -gt 0
+          test "${#sdists[@]}" -gt 0
           (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS)
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
