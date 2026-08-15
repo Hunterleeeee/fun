@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import platform
+import json
+import urllib.error
+import urllib.request
 import uuid
 from typing import Any
 
@@ -46,3 +49,23 @@ def event_payload(*, event: str, install: str, model: str = "", status: str | No
     if duration_ms is not None:
         payload["duration_ms"] = max(0, int(duration_ms))
     return {key: value for key, value in payload.items() if key in ALLOWED_FIELDS}
+
+
+class TelemetryClient:
+    """Best-effort opt-in sender for an operator-controlled private endpoint."""
+
+    def __init__(self, enabled: bool = False, endpoint: str = "", install: str | None = None) -> None:
+        self.enabled = bool(enabled and endpoint.strip())
+        self.endpoint = endpoint.strip()
+        self.install = install_id(install)
+
+    def send(self, payload: dict[str, Any]) -> bool:
+        if not self.enabled:
+            return False
+        safe = {key: value for key, value in payload.items() if key in ALLOWED_FIELDS}
+        try:
+            request = urllib.request.Request(self.endpoint, data=json.dumps(safe).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(request, timeout=2) as response:
+                return 200 <= response.status < 300
+        except (OSError, urllib.error.URLError, ValueError):
+            return False
