@@ -40,6 +40,7 @@ class Task:
     plan_error: str | None = None
     plan_error_summary: dict[str, Any] | None = None
     result: str | None = None
+    response_error: dict[str, Any] | None = None
     messages: list[dict[str, Any]] = field(default_factory=list)
     validation: dict[str, Any] | None = None
     repair_attempts: int = 0
@@ -159,6 +160,8 @@ class Runtime:
             elif event.type == "task.result":
                 self.task.result = str(event.payload.get("result", ""))
                 self.task.agent_state = "completed"
+            elif event.type == "response.failed":
+                self.task.response_error = {key: event.payload.get(key) for key in ("error_type", "error_tag", "summary") if key in event.payload}
             elif event.type == "approval.pending":
                 self.task.agent_state = "approval.pending"
                 self.task.pending_tool = dict(event.payload)
@@ -393,7 +396,9 @@ class Runtime:
         except Exception as exc:
             if self.task:
                 try:
-                    self.emit("response.failed", self.task.id, error_type=type(exc).__name__, error_tag="MALFORMED_RESPONSE", summary=stats)
+                    failure = {"error_type": type(exc).__name__, "error_tag": "MALFORMED_RESPONSE", "summary": stats}
+                    self.emit("response.failed", self.task.id, **failure)
+                    self.task.response_error = failure
                     self.emit("agent.node", self.task.id, node="ready")
                     self.task.agent_state = "ready"
                 except Exception:

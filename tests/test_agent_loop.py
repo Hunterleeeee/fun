@@ -88,6 +88,7 @@ class AgentLoopTests(unittest.TestCase):
             with self.assertRaises(AttributeError):
                 runtime.run_model_turn()
             failed = next(event for event in runtime.events.list() if event.type == "response.failed")
+            self.assertEqual(runtime.task.response_error["error_type"], "AttributeError")
             self.assertEqual(failed.payload["error_type"], "AttributeError")
             self.assertEqual(failed.payload["error_tag"], "MALFORMED_RESPONSE")
             self.assertEqual(failed.payload["summary"]["content_length"], 7)
@@ -108,6 +109,17 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(failed.payload["summary"]["chunk_types"], ["NoneType"])
             self.assertNotIn("malformed response", str(failed.payload))
             self.assertNotIn("None has no attribute", str(failed.payload))
+
+    def test_malformed_response_error_replays(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("response replay")
+            with self.assertRaises(AttributeError):
+                runtime.parse_model_response([None])
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.response_error["error_tag"], "MALFORMED_RESPONSE")
+            self.assertEqual(recovered.task.agent_state, "ready")
+            recovered.stop()
 
     def test_provider_failure_records_model_failed_and_ready(self):
         class BrokenProvider:
