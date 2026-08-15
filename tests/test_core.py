@@ -214,6 +214,22 @@ class CoreTests(unittest.TestCase):
             self.assertIsNone(recovered.task.recovery_reason)
             recovered.stop()
 
+    def test_terminal_runtime_paths_close_durable_store(self):
+        with TemporaryDirectory() as directory:
+            completed = Runtime(directory, state_dir=directory)
+            completed.create_task("complete close")
+            durable = completed.events._durable
+            completed.complete("done")
+            with self.assertRaisesRegex(Exception, "closed"):
+                durable.list()
+
+            failed = Runtime(directory, state_dir=directory)
+            failed.create_task("fail close")
+            durable = failed.events._durable
+            failed.fail("nope")
+            with self.assertRaisesRegex(Exception, "closed"):
+                durable.list()
+
     def test_runtime_stop_closes_durable_store_and_is_idempotent(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)

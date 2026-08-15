@@ -642,6 +642,7 @@ class Runtime:
             self._send_telemetry("completed")
         finally:
             self.lock.release()
+            self.close()
 
     def fail(self, reason: str) -> None:
         if not self.task or self.task.status not in {"running", "paused"}:
@@ -656,6 +657,7 @@ class Runtime:
             self._send_telemetry("failed")
         finally:
             self.lock.release()
+            self.close()
 
     def _send_telemetry(self, status: str) -> None:
         if not self.telemetry or self._telemetry_sent:
