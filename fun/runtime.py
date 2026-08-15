@@ -174,6 +174,10 @@ class Runtime:
                     self.task.pending_tool = None
             elif event.type in {"validation.completed", "validation.failed"}:
                 self.task.validation = {"ok": bool(event.payload.get("ok")), "command": event.payload.get("command", ""), "text": event.payload.get("text", "")}
+            elif event.type in {"repair.started", "repair.completed", "repair.failed", "repair.blocked"}:
+                attempt = event.payload.get("attempts", event.payload.get("attempt", 0))
+                if isinstance(attempt, int):
+                    self.task.repair_attempts = max(self.task.repair_attempts, attempt)
 
     def emit(self, event_type: str, task_id: str | None = None, **payload: object) -> Event:
         event = Event(event_type, self.session_id, task_id, dict(payload))
@@ -475,6 +479,7 @@ class Runtime:
             return ToolResult(False, "REPAIR_BUDGET_EXCEEDED")
         self.task.repair_attempts += 1
         self._node("repair.started", attempt=self.task.repair_attempts)
+        self.emit("repair.started", self.task.id, attempt=self.task.repair_attempts)
         result = self.validate(command)
         self.emit("repair.completed" if result.ok else "repair.failed", self.task.id, attempt=self.task.repair_attempts, ok=result.ok)
         return result

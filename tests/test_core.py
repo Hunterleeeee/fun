@@ -303,6 +303,18 @@ class CoreTests(unittest.TestCase):
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
+    def test_repair_attempts_replay_and_remain_bounded(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("repair replay")
+            runtime.repair("false", max_attempts=1)
+            recovered = Runtime.recover(directory, directory, runtime.session_id, approval="auto")
+            self.assertEqual(recovered.task.repair_attempts, 1)
+            blocked = recovered.repair("true", max_attempts=1)
+            self.assertFalse(blocked.ok)
+            self.assertEqual(blocked.text, "REPAIR_BUDGET_EXCEEDED")
+            recovered.stop()
+
     def test_rejected_plan_error_replays(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
