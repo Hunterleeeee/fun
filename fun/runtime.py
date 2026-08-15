@@ -52,6 +52,46 @@ class Runtime:
         self.lock = WorkspaceLock(self.workspace, state_dir or str(self.workspace / ".fun"))
         self.task: Task | None = None
 
+    @classmethod
+    def recover(cls, workspace: str, state_dir: str, session_id: str, approval: str = "smart", provider: OpenAICompatible | None = None, approve: Callable[[str, Risk], bool] | None = None) -> "Runtime":
+        durable = SQLiteEventStore(Path(state_dir) / "events.db")
+        store = EventStore(durable)
+        store.load(durable.events(session_id))
+        runtime = cls(workspace, approval, provider, event_store=store, state_dir=state_dir, approve=approve)
+        events = store.replay(session_id)
+        task_events = [event for event in events if event.task_id]
+        if task_events:
+            task_id = task_events[-1].task_id
+            created = next((event for event in task_events if event.type == "task.created" and event.task_id == task_id), None)
+            if created:
+                runtime.task = Task(task_id, str(created.payload.get("goal", "")))
+                runtime._replay_task(task_events)
+                if runtime.task.status in {"running", "paused"}:
+                    if not runtime.lock.adopt_if_owned():
+                        runtime.lock.acquire()
+        return runtime
+
+    def _replay_task(self, events: list[Event]) -> None:
+        if not self.task:
+            return
+        for event in events:
+            if event.task_id != self.task.id:
+                continue
+            if event.type == "plan.created":
+                self.task.plan = list(event.payload.get("steps", []))
+            elif event.type == "task.started":
+                self.task.status = "running"
+            elif event.type == "task.paused":
+                self.task.status = "paused"
+            elif event.type == "task.resumed":
+                self.task.status = "running"
+            elif event.type == "task.completed":
+                self.task.status = "completed"
+            elif event.type == "task.stopped":
+                self.task.status = "stopped"
+            elif event.type in {"validation.completed", "validation.failed"}:
+                self.task.validation = {"ok": bool(event.payload.get("ok")), "command": event.payload.get("command", ""), "text": event.payload.get("text", "")}
+
     def emit(self, event_type: str, task_id: str | None = None, **payload: object) -> Event:
         event = Event(event_type, self.session_id, task_id, dict(payload))
         stored = self.events.append(event)

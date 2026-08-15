@@ -4,6 +4,7 @@ import difflib
 import hashlib
 import os
 import re
+import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,6 +66,8 @@ def _apply_unified_patch(old_text: str, patch: str) -> str | None:
 
 
 class Tools:
+    MAX_OUTPUT = 256 * 1024
+
     def __init__(self, workspace: str | Path, policy: Policy | None = None) -> None:
         self.guard = WorkspaceGuard(workspace)
         self.policy = policy or Policy()
@@ -114,18 +117,31 @@ class Tools:
             if self.policy.mode != self.policy.mode.ASK:
                 return ToolResult(False, "CRITICAL_OPERATION_BLOCKED", Risk.CRITICAL)
             return ToolResult(False, "APPROVAL_REQUIRED", Risk.CRITICAL)
+        safe_env = {key: os.environ[key] for key in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR") if key in os.environ}
+        safe_env["PWD"] = str(self.guard.root)
         try:
-            completed = subprocess.run(
+            completed = subprocess.Popen(
                 command,
                 cwd=self.guard.root,
                 shell=True,
                 text=True,
-                capture_output=True,
-                timeout=timeout,
-                env={**os.environ, "PWD": str(self.guard.root)},
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                env=safe_env,
             )
-        except subprocess.TimeoutExpired as exc:
-            output = ((exc.stdout or "") + (exc.stderr or "")).strip()
-            return ToolResult(False, f"COMMAND_TIMEOUT\n{output}".strip(), risk)
-        output = (completed.stdout + completed.stderr).strip()
+            try:
+                stdout, stderr = completed.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(completed.pid, signal.SIGKILL)
+                stdout, stderr = completed.communicate()
+                output = (stdout + stderr).strip()[: self.MAX_OUTPUT]
+                return ToolResult(False, f"COMMAND_TIMEOUT\n{output}".strip(), risk, exit_code=None)
+        except OSError as exc:
+            return ToolResult(False, f"EXEC_FAILED: {exc}", risk)
+        output = (stdout + stderr).strip()
+        truncated = len(output) > self.MAX_OUTPUT
+        output = output[: self.MAX_OUTPUT]
+        if truncated:
+            output += "\n[OUTPUT_TRUNCATED]"
         return ToolResult(completed.returncode == 0, output, risk, exit_code=completed.returncode)

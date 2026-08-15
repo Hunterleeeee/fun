@@ -41,6 +41,10 @@ class SQLiteEventStore:
             for row in rows
         ]
 
+    def events(self, session_id: str | None = None) -> list[Event]:
+        rows = self.list(session_id)
+        return [Event(row["type"], row["session_id"], row["task_id"], row["payload"], row["id"], row["seq"], row["timestamp"]) for row in rows]
+
     def checkpoint(self) -> None:
         self.connection.commit()
 

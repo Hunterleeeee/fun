@@ -43,5 +43,10 @@ class EventStore:
             return list(self._events)
         return [event for event in self._events if event.session_id == session_id]
 
+    def load(self, events: list[Event]) -> None:
+        for event in sorted(events, key=lambda item: item.seq):
+            if not any(item.id == event.id for item in self._events):
+                self._events.append(event)
+
     def replay(self, session_id: str) -> list[Event]:
         return sorted(self.list(session_id), key=lambda event: event.seq)

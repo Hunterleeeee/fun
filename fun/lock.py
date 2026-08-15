@@ -38,6 +38,16 @@ class WorkspaceLock:
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return True
 
+    def adopt_if_owned(self) -> bool:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            if int(data.get("pid", 0)) == os.getpid():
+                self.held = True
+                return True
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return False
+        return False
+
     def release(self) -> None:
         if self.held:
             try:

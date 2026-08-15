@@ -32,6 +32,16 @@ class CoreTests(unittest.TestCase):
             self.assertIn("hello.txt", tools.explore().text)
             self.assertIn("world", tools.read("hello.txt").text)
 
+    def test_runtime_recovers_task_from_events(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            task = runtime.create_task("recover me")
+            runtime.pause()
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.id, task.id)
+            self.assertEqual(recovered.task.status, "paused")
+            recovered.stop()
+
     def test_runtime_can_persist_events(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)
@@ -99,6 +109,15 @@ class CoreTests(unittest.TestCase):
             result = runtime.run_tool("edit", path="a.txt", expected_hash=file_hash(path), patch="@@ -1 +1 @@\n-one\n+two\n")
             self.assertFalse(result.ok)
             self.assertEqual(result.text, "APPROVAL_REQUIRED")
+
+    def test_exec_limits_output_and_timeout(self):
+        with TemporaryDirectory() as directory:
+            result = Tools(directory).exec("python3 -c \"print('x' * 300000)\"")
+            self.assertTrue(result.ok)
+            self.assertIn("OUTPUT_TRUNCATED", result.text)
+            timeout = Tools(directory).exec("python3 -c \"import time; time.sleep(2)\"", timeout=0.05)
+            self.assertFalse(timeout.ok)
+            self.assertIn("COMMAND_TIMEOUT", timeout.text)
 
     def test_exec_runs_inside_workspace(self):
         with TemporaryDirectory() as directory:
