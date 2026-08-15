@@ -1,4 +1,5 @@
 import subprocess
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -36,6 +37,15 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(event_types.count("tool.completed"), 1)
             self.assertGreaterEqual(len(event_types), 8)
             recovered.stop()
+
+    def test_event_sequence_generation_is_thread_safe(self):
+        events = []
+        threads = [threading.Thread(target=lambda: events.append(Event("threaded", "session"))) for _ in range(100)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len({event.seq for event in events}), 100)
 
     def test_event_store_rejects_duplicate_sequences_in_batch(self):
         store = EventStore()

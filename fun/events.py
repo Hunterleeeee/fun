@@ -2,18 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Any
 from uuid import uuid4
 
 
 _next_event_seq = 1
+_event_seq_lock = Lock()
 
 
 def next_event_seq() -> int:
     global _next_event_seq
-    seq = _next_event_seq
-    _next_event_seq += 1
-    return seq
+    with _event_seq_lock:
+        seq = _next_event_seq
+        _next_event_seq += 1
+        return seq
 
 
 def now_iso() -> str:
@@ -107,7 +110,8 @@ class EventStore:
                 existing_by_seq[event.seq] = event
                 additions.append(event)
         highest_seq = max((event.seq for event in events), default=0)
-        _next_event_seq = max(_next_event_seq, highest_seq + 1)
+        with _event_seq_lock:
+            _next_event_seq = max(_next_event_seq, highest_seq + 1)
         self._events.extend(additions)
 
     def replay(self, session_id: str) -> list[Event]:
