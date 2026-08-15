@@ -79,6 +79,15 @@ class CoreTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.text, "UNSUPPORTED_TOOL")
 
+    def test_plan_step_updates_are_event_sourced(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("plan")
+            runtime.update_plan_step(0, "active", "started inspection")
+            runtime.update_plan_step(0, "done", "files inspected")
+            self.assertEqual(runtime.task.plan_status[0], "done")
+            self.assertEqual(runtime.events.list()[-1].type, "plan.step_updated")
+
     def test_runtime_emits_tool_events(self):
         with TemporaryDirectory() as directory:
             (Path(directory) / "hello.txt").write_text("hello\n", encoding="utf-8")
