@@ -45,42 +45,56 @@ class OpenAICompatible:
             with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
                 first = True
                 buffer = ""
+                data_parts: list[str] = []
                 for raw in response:
                     buffer += raw.decode(errors="replace")
                     lines = buffer.splitlines(keepends=True)
-                    buffer = lines.pop() if lines and not lines[-1].endswith(("\\n", "\\r")) else ""
+                    buffer = lines.pop() if lines and not lines[-1].endswith(("\n", "\r")) else ""
                     for raw_line in lines:
                         line = raw_line.strip()
-                        if not line or line.startswith(":"):
+                        if not line:
+                            if data_parts:
+                                payload = "\n".join(data_parts)
+                                data_parts = []
+                                try:
+                                    item = json.loads(payload)
+                                except json.JSONDecodeError as exc:
+                                    raise ProviderError("PROVIDER_MALFORMED_EVENT", cause=exc) from exc
+                                if first:
+                                    item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
+                                    first = False
+                                yield item
                             continue
-                        if not line.startswith("data:"):
+                        if line.startswith(":") or not line.startswith("data:"):
                             continue
-                        line = line[5:].strip()
-                        if line == "[DONE]":
+                        value = line[5:].strip()
+                        if value == "[DONE]":
+                            if data_parts:
+                                try:
+                                    item = json.loads("\n".join(data_parts))
+                                except json.JSONDecodeError as exc:
+                                    raise ProviderError("PROVIDER_MALFORMED_EVENT", cause=exc) from exc
+                                data_parts = []
+                                if first:
+                                    item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
+                                    first = False
+                                yield item
                             continue
-                        try:
-                            item = json.loads(line)
-                        except json.JSONDecodeError as exc:
-                            raise ProviderError("PROVIDER_MALFORMED_EVENT", cause=exc) from exc
-                        if first:
-                            item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
-                            first = False
-                        yield item
-                if buffer.strip() and not buffer.strip().startswith(":"):
+                        data_parts.append(value)
+                if buffer.strip():
                     line = buffer.strip()
-                    if not line.startswith("data:"):
-                        return
-                    line = line[5:].strip()
-                    if line == "[DONE]":
-                        return
+                    if line.startswith("data:"):
+                        value = line[5:].strip()
+                        if value != "[DONE]":
+                            data_parts.append(value)
+                if data_parts:
                     try:
-                        item = json.loads(line)
+                        item = json.loads("\n".join(data_parts))
                     except json.JSONDecodeError as exc:
                         raise ProviderError("PROVIDER_MALFORMED_EVENT", cause=exc) from exc
-                    if item is not None:
-                        if first:
-                            item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
-                        yield item
+                    if first:
+                        item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
+                    yield item
         except ProviderError:
             raise
         except TimeoutError as exc:

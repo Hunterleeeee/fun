@@ -38,6 +38,23 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_provider_stream_joins_multiline_data_events(self):
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def __iter__(self):
+                yield b'data: {"choices": [\n'
+                yield b'data: {"delta": {"content": "ok"}}]}\n'
+                yield b'\n'
+                yield b'data: [DONE]\n\n'
+
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with patch("urllib.request.urlopen", return_value=Response()):
+            items = list(provider.stream([], []))
+        self.assertEqual(items[0]["choices"][0]["delta"]["content"], "ok")
+
     def test_provider_stream_ignores_sse_comments_and_accepts_done_spacing(self):
         class Response:
             def __enter__(self):
