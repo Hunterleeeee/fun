@@ -121,6 +121,38 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["choices"][0]["delta"]["content"], "ok")
 
+    def test_provider_normalizes_status_types_safely(self):
+        class Response:
+            status = "401"
+            headers = {}
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def __iter__(self):
+                yield b'secret'
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with patch("urllib.request.urlopen", return_value=Response()):
+            with self.assertRaises(ProviderError) as context:
+                list(provider.stream([], []))
+        self.assertEqual(context.exception.error_tag, "PROVIDER_AUTH_FAILED")
+
+    def test_provider_rejects_invalid_status_type(self):
+        class Response:
+            status = "unknown"
+            headers = {}
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def __iter__(self):
+                yield b'secret'
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        with patch("urllib.request.urlopen", return_value=Response()):
+            with self.assertRaises(ProviderError) as context:
+                list(provider.stream([], []))
+        self.assertEqual(context.exception.error_tag, "PROVIDER_INVALID_STATUS")
+
     def test_provider_rejects_non_success_status_without_body(self):
         class Headers:
             def get(self, name, default=""):

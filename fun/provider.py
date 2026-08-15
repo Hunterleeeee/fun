@@ -56,8 +56,16 @@ class OpenAICompatible:
         started = time.monotonic()
         try:
             with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
-                status = getattr(response, "status", getattr(response, "code", 200))
-                if isinstance(status, int) and status >= 400:
+                raw_status = getattr(response, "status", getattr(response, "code", 200))
+                if isinstance(raw_status, bool):
+                    raise ProviderError("PROVIDER_INVALID_STATUS")
+                try:
+                    status = int(raw_status)
+                except (TypeError, ValueError) as exc:
+                    raise ProviderError("PROVIDER_INVALID_STATUS", cause=exc) from exc
+                if not 100 <= status <= 599:
+                    raise ProviderError("PROVIDER_INVALID_STATUS")
+                if status >= 400:
                     tag = "PROVIDER_AUTH_FAILED" if status in {401, 403} else "PROVIDER_HTTP_FAILED"
                     raise ProviderError(tag)
                 headers = getattr(response, "headers", None)
