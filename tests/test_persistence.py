@@ -20,6 +20,9 @@ class PersistenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "CONFLICTING_EVENT_SEQ"):
             store.load(batch)
         self.assertEqual(store.list(), [original])
+        fresh = Event("fresh", "ses_1")
+        store.append(fresh)
+        self.assertGreater(fresh.seq, 20)
 
     def test_event_store_load_rejects_conflicts_without_mutation(self):
         from fun.events import EventStore
