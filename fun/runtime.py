@@ -31,7 +31,7 @@ class Task:
 
 
 class Runtime:
-    def __init__(self, workspace: str, approval: str = "smart", provider: OpenAICompatible | None = None, event_store: EventStore | None = None, state_dir: str | None = None) -> None:
+    def __init__(self, workspace: str, approval: str = "smart", provider: OpenAICompatible | None = None, event_store: EventStore | None = None, state_dir: str | None = None, approve: Callable[[str, Risk], bool] | None = None) -> None:
         self.session_id = f"ses_{uuid.uuid4().hex[:12]}"
         if event_store is not None:
             self.events = event_store
@@ -42,6 +42,7 @@ class Runtime:
         self.workspace = Path(workspace).expanduser().resolve()
         self.policy = Policy(ApprovalMode(approval))
         self.tools = Tools(workspace, self.policy)
+        self.approve = approve
         self.provider = provider
         self.task: Task | None = None
 
@@ -65,7 +66,8 @@ class Runtime:
         risk = self.policy.risk_for(name, write=write_operation)
         if self.policy.requires_approval(risk):
             self.emit("approval.required", self.task.id, name=name, risk=risk.value)
-            if self.policy.mode != ApprovalMode.AUTO:
+            allowed = self.approve(name, risk) if self.approve else False
+            if not allowed:
                 result = ToolResult(False, "APPROVAL_REQUIRED", risk)
                 self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
                 return result

@@ -27,7 +27,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.base_url and args.api_key and args.model:
         provider = OpenAICompatible(ModelConfig(args.base_url, args.api_key, args.model))
     state_dir = os.getenv("FUN_STATE_DIR", str(os.path.expanduser("~/.fun")))
-    runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir)
+    def approve(name: str, risk: object) -> bool:
+        if not sys.stdin.isatty():
+            return False
+        try:
+            return input(f"? Allow {name} ({risk})? [y/N] ").strip().lower() in {"y", "yes"}
+        except (EOFError, KeyboardInterrupt):
+            return False
+    runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir, approve=approve)
     renderer = TerminalRenderer(color=sys.stdout.isatty())
     if args.goal:
         task = runtime.create_task(args.goal)
