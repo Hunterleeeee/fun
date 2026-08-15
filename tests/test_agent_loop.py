@@ -76,6 +76,20 @@ class AgentLoopTests(unittest.TestCase):
             self.assertIn("tool.completed", event_types)
             self.assertIn("model.completed", event_types)
 
+    def test_provider_failure_records_model_failed_and_ready(self):
+        class BrokenProvider:
+            def stream(self, messages, tools=None):
+                raise RuntimeError("provider down")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", provider=BrokenProvider())
+            runtime.create_task("provider failure")
+            with self.assertRaisesRegex(RuntimeError, "provider down"):
+                runtime.request_model()
+            self.assertEqual(runtime.task.agent_state, "ready")
+            self.assertIn("model.failed", [event.type for event in runtime.events.list()])
+            self.assertEqual(runtime.events.list()[-1].payload["node"], "ready")
+
     def test_model_node_failure_does_not_change_agent_state(self):
         class FailingStore:
             def append(self, event):

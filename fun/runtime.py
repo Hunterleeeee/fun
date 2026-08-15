@@ -372,7 +372,16 @@ class Runtime:
             raise RuntimeError("PROVIDER_NOT_CONFIGURED")
         self._ensure_running()
         self._node("model.requested")
-        return self.provider.stream(self.task.messages, tool_schemas())
+        try:
+            return self.provider.stream(self.task.messages, tool_schemas())
+        except Exception as exc:
+            try:
+                self.emit("model.failed", self.task.id, error=str(exc))
+                self.emit("agent.node", self.task.id, node="ready")
+                self.task.agent_state = "ready"
+            except Exception:
+                pass
+            raise
 
     def parse_model_response(self, chunks: Any, on_text: Callable[[str], None] | None = None) -> tuple[str, list[dict[str, Any]]]:
         content = ""
