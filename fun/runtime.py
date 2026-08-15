@@ -387,24 +387,29 @@ class Runtime:
         content = ""
         calls: dict[str, dict[str, str]] = {}
         proposed_plan: list[str] | None = None
+        stats = {"content_length": 0, "tool_calls": 0, "chunk_types": []}
         try:
-            return self._parse_model_chunks(chunks, on_text)
+            return self._parse_model_chunks(chunks, on_text, stats)
         except Exception as exc:
             if self.task:
                 try:
-                    self.emit("response.failed", self.task.id, error=str(exc), summary={"content_length": 0, "tool_calls": 0})
+                    self.emit("response.failed", self.task.id, error=str(exc), summary=stats)
                     self.emit("agent.node", self.task.id, node="ready")
                     self.task.agent_state = "ready"
                 except Exception:
                     pass
             raise
 
-    def _parse_model_chunks(self, chunks: Any, on_text: Callable[[str], None] | None = None) -> tuple[str, list[dict[str, Any]]]:
+    def _parse_model_chunks(self, chunks: Any, on_text: Callable[[str], None] | None = None, stats: dict[str, Any] | None = None) -> tuple[str, list[dict[str, Any]]]:
         content = ""
         calls: dict[str, dict[str, str]] = {}
         proposed_plan: list[str] | None = None
         for chunk in chunks:
             self._ensure_running()
+            if stats is not None:
+                chunk_type = type(chunk).__name__
+                if chunk_type not in stats["chunk_types"] and len(stats["chunk_types"]) < 4:
+                    stats["chunk_types"].append(chunk_type)
             if chunk.get("_meta", {}).get("ttft_ms") is not None:
                 self.usage.ttft_ms = int(chunk["_meta"]["ttft_ms"])
             if isinstance(chunk.get("usage"), dict):
@@ -417,9 +422,13 @@ class Runtime:
                 proposed_plan = delta["plan"]
             if delta.get("content"):
                 content += delta["content"]
+                if stats is not None:
+                    stats["content_length"] = len(content)
                 if on_text:
                     on_text(delta["content"])
             for call in delta.get("tool_calls") or []:
+                if stats is not None:
+                    stats["tool_calls"] = len(calls) + 1
                 entry = calls.setdefault(str(call.get("index", 0)), {"name": "", "arguments": "", "id": ""})
                 entry["id"] += call.get("id", "")
                 function = call.get("function") or {}

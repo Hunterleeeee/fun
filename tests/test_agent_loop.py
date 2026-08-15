@@ -85,7 +85,9 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(runtime.task.agent_state, "ready")
             self.assertIn("response.failed", [event.type for event in runtime.events.list()])
             failed = next(event for event in runtime.events.list() if event.type == "response.failed")
-            self.assertEqual(failed.payload["summary"], {"content_length": 0, "tool_calls": 0})
+            self.assertEqual(failed.payload["summary"]["content_length"], 0)
+            self.assertEqual(failed.payload["summary"]["tool_calls"], 0)
+            self.assertEqual(failed.payload["summary"]["chunk_types"], ["NoneType"])
             self.assertNotIn("malformed response", str(failed.payload))
 
     def test_provider_failure_records_model_failed_and_ready(self):
