@@ -105,6 +105,6 @@ jobs:
           /tmp/fun-ci-sdist-venv/bin/python -m pip install --upgrade pip
           /tmp/fun-ci-sdist-venv/bin/python -m pip install "setuptools>=68,<81" wheel
           /tmp/fun-ci-sdist-venv/bin/python -m pip --version
-          /tmp/fun-ci-sdist-venv/bin/python -m pip install --no-deps --no-build-isolation dist/*.tar.gz
+          /tmp/fun-ci-sdist-venv/bin/python -m pip install --verbose --no-deps --no-build-isolation ./dist/*.tar.gz
           /tmp/fun-ci-sdist-venv/bin/python -c "import fun"
           /tmp/fun-ci-sdist-venv/bin/fun --help
