@@ -257,6 +257,8 @@ class CoreTests(unittest.TestCase):
                 lock = recovered.lock
             self.assertFalse(lock.held)
             self.assertFalse(lock.path.exists())
+            self.assertEqual(recovered.task.status, "stopped")
+            self.assertIn("task.stopped", [event.type for event in recovered.events.list(session_id)])
 
     def test_runtime_context_manager_releases_active_lock(self):
         with TemporaryDirectory() as directory:

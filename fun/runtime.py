@@ -78,7 +78,7 @@ class Runtime:
         if self.task and self.task.status in {"running", "paused"}:
             self.stop()
         elif self.task and self.task.status == "recovery_required":
-            self.lock.release()
+            self.acknowledge_recovery("stop")
             self.close()
         else:
             self.close()
