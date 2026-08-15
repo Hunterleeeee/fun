@@ -71,6 +71,18 @@ class PersistenceTests(unittest.TestCase):
         self.assertGreater(fresh.seq, 42)
         self.assertEqual([event.seq for event in store.replay("ses_1")], [41, 42, fresh.seq])
 
+    def test_sqlite_event_store_supports_multiple_connections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.db"
+            first = SQLiteEventStore(path)
+            second = SQLiteEventStore(path)
+            first.append(Event("first", "ses_1", id="evt_first", seq=1))
+            second.append(Event("second", "ses_1", id="evt_second", seq=2))
+            self.assertEqual(len(first.list("ses_1")), 2)
+            self.assertEqual(len(second.list("ses_1")), 2)
+            first.close()
+            second.close()
+
     def test_sqlite_event_store_configures_busy_timeout(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "events.db")
