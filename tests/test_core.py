@@ -108,6 +108,24 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(runtime.task.plan_status[0], "done")
             self.assertEqual(runtime.events.list()[-1].type, "plan.step_updated")
 
+    def test_tool_execution_advances_plan_step(self):
+        with TemporaryDirectory() as directory:
+            (Path(directory) / "hello.txt").write_text("hello\n", encoding="utf-8")
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("inspect")
+            runtime.run_tool("read", path="hello.txt")
+            self.assertEqual(runtime.task.plan_status[0], "done")
+            self.assertTrue(any(event.type == "plan.step_updated" for event in runtime.events.list()))
+
+    def test_plan_step_status_replays(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("inspect")
+            runtime.update_plan_step(0, "active", "reading")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.plan_status[0], "active")
+            recovered.stop()
+
     def test_runtime_emits_tool_events(self):
         with TemporaryDirectory() as directory:
             (Path(directory) / "hello.txt").write_text("hello\n", encoding="utf-8")
@@ -117,7 +135,7 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertEqual(
                 [event.type for event in runtime.events.list()],
-                ["task.created", "plan.created", "task.started", "agent.node", "tool.requested", "tool.completed"],
+                ["task.created", "plan.created", "task.started", "agent.node", "plan.step_updated", "tool.requested", "tool.completed", "plan.step_updated"],
             )
             runtime.stop()
             self.assertEqual(runtime.task.status, "stopped")
@@ -198,7 +216,7 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(result.ok)
             snapshot = runtime.checkpoint("test")
             self.assertEqual(snapshot["label"], "test")
-            self.assertEqual([event.type for event in runtime.events.list()][-4:], ["tool.requested", "tool.completed", "validation.completed", "checkpoint.created"])
+            self.assertEqual([event.type for event in runtime.events.list()][-5:], ["tool.completed", "plan.step_updated", "plan.step_updated", "validation.completed", "checkpoint.created"])
 
     def test_edit_applies_hash_checked_patch_in_auto_mode(self):
         with TemporaryDirectory() as directory:

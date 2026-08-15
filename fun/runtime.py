@@ -83,6 +83,10 @@ class Runtime:
             if event.type == "plan.created":
                 self.task.plan = list(event.payload.get("steps", []))
                 self.task.plan_status = ["pending"] * len(self.task.plan)
+            elif event.type == "plan.step_updated":
+                index = event.payload.get("index")
+                if isinstance(index, int) and 0 <= index < len(self.task.plan_status):
+                    self.task.plan_status[index] = str(event.payload.get("status", "pending"))
             elif event.type == "task.started":
                 self.task.status = "running"
             elif event.type == "agent.node":
@@ -153,9 +157,20 @@ class Runtime:
         self.task.plan_status[index] = status
         self.emit("plan.step_updated", self.task.id, index=index, status=status, evidence=evidence)
 
+    def _active_plan_index(self) -> int | None:
+        if not self.task:
+            return None
+        for index, status in enumerate(self.task.plan_status):
+            if status in {"active", "pending"}:
+                return index
+        return None
+
     def run_tool(self, name: str, **kwargs: object) -> ToolResult:
         if not self.task or self.task.status != "running":
             raise RuntimeError("NO_ACTIVE_TASK")
+        plan_index = self._active_plan_index()
+        if plan_index is not None and self.task.plan_status[plan_index] == "pending":
+            self.update_plan_step(plan_index, "active", f"tool:{name}")
         self.emit("tool.requested", self.task.id, name=name, arguments=kwargs)
         try:
             kwargs = validate_tool_arguments(name, kwargs)
@@ -189,6 +204,8 @@ class Runtime:
             self.emit("tool.failed", self.task.id, name=name, error=str(exc))
             raise
         self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, name=name, ok=result.ok, text=result.text, changed=result.changed or [])
+        if plan_index is not None:
+            self.update_plan_step(plan_index, "done" if result.ok else "blocked", result.text[:500])
         return result
 
     def _ensure_running(self) -> None:
@@ -274,6 +291,9 @@ class Runtime:
         self._node("validation.started", command=command)
         self.emit("validation.started", self.task.id, command=command)
         result = self.run_tool("exec", command=command)
+        if self.task.plan_status:
+            index = len(self.task.plan_status) - 1
+            self.update_plan_step(index, "done" if result.ok else "blocked", result.text[:500])
         self.task.validation = {"ok": result.ok, "command": command, "text": result.text}
         self.emit("validation.completed" if result.ok else "validation.failed", self.task.id, ok=result.ok, command=command, text=result.text)
         return result
