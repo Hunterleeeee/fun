@@ -199,7 +199,7 @@ class CoreTests(unittest.TestCase):
             runtime = Runtime(directory, "auto", state_dir=directory)
             runtime.create_task("bad plan")
             runtime.task.plan_error = "INVALID_PLAN"
-            runtime.emit("plan.rejected", runtime.task.id, reason="INVALID_PLAN")
+            runtime.emit("plan.rejected", runtime.task.id, reason="INVALID_PLAN", summary={"count": 2, "types": ["str", "int"], "lengths": [3, None]})
             recovered = Runtime.recover(directory, directory, runtime.session_id, approval="auto")
             self.assertEqual(recovered.task.plan_error, "INVALID_PLAN")
             recovered.stop()

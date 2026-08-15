@@ -379,7 +379,8 @@ class Runtime:
             except RuntimeError as exc:
                 if self.task:
                     self.task.plan_error = str(exc)
-                self.emit("plan.rejected", self.task.id if self.task else None, reason=str(exc))
+                summary = {"count": len(proposed_plan), "types": [type(step).__name__ for step in proposed_plan[:7]], "lengths": [len(step) if isinstance(step, str) else None for step in proposed_plan[:7]]}
+                self.emit("plan.rejected", self.task.id if self.task else None, reason=str(exc), summary=summary)
         self._node("response.parsed", content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated)
         return content, parsed
 
