@@ -229,6 +229,34 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(recovered.task.plan, ["valid step"])
             recovered.stop()
 
+    def test_transactional_durable_adapter_rolls_back_batch(self):
+        class TransactionalStore:
+            def __init__(self):
+                self.events = []
+                self.pending = []
+
+            def begin(self):
+                self.pending = []
+
+            def append(self, event):
+                if len(self.pending) == 1:
+                    raise OSError("disk full")
+                self.pending.append(event)
+
+            def commit(self):
+                self.events.extend(self.pending)
+                self.pending = []
+
+            def rollback(self):
+                self.pending = []
+
+        durable = TransactionalStore()
+        store = EventStore(durable)
+        with self.assertRaises(OSError):
+            store.append_many([Event("a", "s"), Event("b", "s")])
+        self.assertEqual(durable.events, [])
+        self.assertEqual(store.list(), [])
+
     def test_plan_replace_does_not_mutate_when_event_persistence_fails(self):
         class FailingStore:
             def append(self, event):

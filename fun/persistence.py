@@ -20,6 +20,15 @@ class SQLiteEventStore:
         )
         self.connection.commit()
 
+    def begin(self) -> None:
+        self.connection.execute("BEGIN")
+
+    def commit(self) -> None:
+        self.connection.commit()
+
+    def rollback(self) -> None:
+        self.connection.rollback()
+
     def append(self, event: Event) -> Event:
         self.append_many([event])
         return event
