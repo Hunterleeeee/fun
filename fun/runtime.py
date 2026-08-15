@@ -514,8 +514,10 @@ class Runtime:
     def complete(self, result: str = "") -> None:
         if not self.task or self.task.status != "running":
             raise RuntimeError("NO_ACTIVE_TASK")
-        self._transition("completed", "task.completed")
-        self.emit("task.result", self.task.id, result=result, validation=self.task.validation or {})
+        completed = Event("task.completed", self.session_id, self.task.id, {})
+        task_result = Event("task.result", self.session_id, self.task.id, {"result": result, "validation": self.task.validation or {}})
+        self.events.append_many([completed, task_result])
+        self.task.status = "completed"
         self._send_telemetry("completed")
         self.lock.release()
 
