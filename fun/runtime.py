@@ -75,7 +75,10 @@ class Runtime:
         return self
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
-        self.close()
+        if self.task and self.task.status in {"running", "paused"}:
+            self.stop()
+        else:
+            self.close()
 
     @classmethod
     def recover(cls, workspace: str, state_dir: str, session_id: str, approval: str = "smart", provider: OpenAICompatible | None = None, approve: Callable[[str, Risk], bool] | None = None) -> "Runtime":

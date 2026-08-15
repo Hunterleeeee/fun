@@ -244,6 +244,14 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "closed"):
                 durable.list()
 
+    def test_runtime_context_manager_releases_active_lock(self):
+        with TemporaryDirectory() as directory:
+            with Runtime(directory, state_dir=directory) as runtime:
+                runtime.create_task("active context")
+                lock = runtime.lock
+            self.assertFalse(lock.held)
+            self.assertFalse(lock.path.exists())
+
     def test_runtime_context_manager_closes_store_on_success_and_error(self):
         with TemporaryDirectory() as directory:
             with Runtime(directory, state_dir=directory) as runtime:
