@@ -175,6 +175,9 @@ class Runtime:
             elif event.type == "approval.rejected":
                 self.task.agent_state = "ready"
                 self.task.pending_tool = None
+            elif event.type == "approval.failed":
+                self.task.agent_state = "ready"
+                self.task.pending_tool = None
             elif event.type in {"tool.completed", "tool.failed", "approval.resolved"}:
                 self.task.agent_state = "ready"
                 if event.type != "approval.resolved":
