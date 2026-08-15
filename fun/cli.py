@@ -26,7 +26,8 @@ def main(argv: list[str] | None = None) -> int:
     provider = None
     if args.base_url and args.api_key and args.model:
         provider = OpenAICompatible(ModelConfig(args.base_url, args.api_key, args.model))
-    runtime = Runtime(args.workspace, args.approval, provider)
+    state_dir = os.getenv("FUN_STATE_DIR", str(os.path.expanduser("~/.fun")))
+    runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir)
     renderer = TerminalRenderer(color=sys.stdout.isatty())
     if args.goal:
         task = runtime.create_task(args.goal)

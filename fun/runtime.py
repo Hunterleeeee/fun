@@ -9,7 +9,8 @@ from typing import Any, Callable, Iterator
 
 from .events import Event, EventStore
 from .policy import ApprovalMode, Policy, Risk
-from .provider import OpenAICompatible, ModelConfig, tool_schemas
+from .persistence import SQLiteEventStore
+from .provider import OpenAICompatible, tool_schemas
 from .tools import ToolResult, Tools
 
 SYSTEM_PROMPT = """You are Fun, a safety-first terminal coding agent.
@@ -30,9 +31,14 @@ class Task:
 
 
 class Runtime:
-    def __init__(self, workspace: str, approval: str = "smart", provider: OpenAICompatible | None = None, event_store: EventStore | None = None) -> None:
+    def __init__(self, workspace: str, approval: str = "smart", provider: OpenAICompatible | None = None, event_store: EventStore | None = None, state_dir: str | None = None) -> None:
         self.session_id = f"ses_{uuid.uuid4().hex[:12]}"
-        self.events = event_store or EventStore()
+        if event_store is not None:
+            self.events = event_store
+        elif state_dir is not None:
+            self.events = EventStore(SQLiteEventStore(Path(state_dir) / "events.db"))
+        else:
+            self.events = EventStore()
         self.workspace = Path(workspace).expanduser().resolve()
         self.policy = Policy(ApprovalMode(approval))
         self.tools = Tools(workspace, self.policy)

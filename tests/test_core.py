@@ -31,6 +31,13 @@ class CoreTests(unittest.TestCase):
             self.assertIn("hello.txt", tools.explore().text)
             self.assertIn("world", tools.read("hello.txt").text)
 
+    def test_runtime_can_persist_events(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("persist")
+            self.assertGreaterEqual(len(runtime.events.list()), 2)
+            self.assertTrue((Path(directory) / "events.db").exists())
+
     def test_runtime_emits_tool_events(self):
         with TemporaryDirectory() as directory:
             (Path(directory) / "hello.txt").write_text("hello\n", encoding="utf-8")
