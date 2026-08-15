@@ -18,6 +18,17 @@ class PersistenceTests(unittest.TestCase):
         store.append(fresh)
         self.assertGreater(fresh.seq, 9)
 
+    def test_event_store_load_does_not_rewind_sequence(self):
+        from fun.events import EventStore
+
+        store = EventStore()
+        current = Event("current", "ses_1", seq=500)
+        store.append(current)
+        store.load([Event("old", "ses_1", id="evt_old", seq=3)])
+        fresh = Event("fresh", "ses_1")
+        store.append(fresh)
+        self.assertGreater(fresh.seq, 500)
+
     def test_event_store_load_advances_sequence_after_recovery(self):
         from fun.events import EventStore
 
