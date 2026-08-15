@@ -205,6 +205,18 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(recovered.task.plan_error_summary["count"], 2)
             recovered.stop()
 
+    def test_replayed_plan_replacement_clears_rejection(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("replace error")
+            runtime.emit("plan.rejected", runtime.task.id, reason="INVALID_PLAN", summary={"count": 1})
+            runtime.replace_plan(["valid step"])
+            recovered = Runtime.recover(directory, directory, runtime.session_id, approval="auto")
+            self.assertIsNone(recovered.task.plan_error)
+            self.assertIsNone(recovered.task.plan_error_summary)
+            self.assertEqual(recovered.task.plan, ["valid step"])
+            recovered.stop()
+
     def test_dynamic_plan_replaces_and_replays_latest_steps(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)

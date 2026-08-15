@@ -108,6 +108,9 @@ class Runtime:
             if event.type in {"plan.created", "plan.replaced"}:
                 self.task.plan = list(event.payload.get("steps", []))
                 self.task.plan_status = list(event.payload.get("statuses", ["pending"] * len(self.task.plan)))
+                if event.type == "plan.replaced":
+                    self.task.plan_error = None
+                    self.task.plan_error_summary = None
             elif event.type == "plan.replaced":
                 self.task.plan_error = None
                 self.task.plan_error_summary = None
