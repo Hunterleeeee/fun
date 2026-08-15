@@ -392,7 +392,7 @@ class Runtime:
         except Exception as exc:
             if self.task:
                 try:
-                    self.emit("response.failed", self.task.id, error=str(exc))
+                    self.emit("response.failed", self.task.id, error=str(exc), summary={"content_length": 0, "tool_calls": 0})
                     self.emit("agent.node", self.task.id, node="ready")
                     self.task.agent_state = "ready"
                 except Exception:
