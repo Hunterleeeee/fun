@@ -470,6 +470,8 @@ class Runtime:
         if self.task.plan_status:
             index = len(self.task.plan_status) - 1
             self.update_plan_step(index, "done" if result.ok else "blocked", result.text[:500])
+        self.emit("agent.node", self.task.id, node="ready")
+        self.task.agent_state = "ready"
         return result
 
     def repair(self, command: str, max_attempts: int = 2) -> ToolResult:

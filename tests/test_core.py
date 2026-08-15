@@ -420,6 +420,15 @@ class CoreTests(unittest.TestCase):
                 runtime.repair("false")
             self.assertEqual(runtime.task.repair_attempts, 0)
 
+    def test_validation_recovery_returns_agent_to_ready(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("validation ready")
+            runtime.validate("true")
+            recovered = Runtime.recover(directory, directory, runtime.session_id, approval="auto")
+            self.assertEqual(recovered.task.agent_state, "ready")
+            recovered.stop()
+
     def test_repair_attempts_replay_and_remain_bounded(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
@@ -686,7 +695,7 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(result.ok)
             snapshot = runtime.checkpoint("test")
             self.assertEqual(snapshot["label"], "test")
-            self.assertEqual([event.type for event in runtime.events.list()][-5:], ["tool.completed", "plan.step_updated", "validation.completed", "plan.step_updated", "checkpoint.created"])
+            self.assertEqual([event.type for event in runtime.events.list()][-6:], ["tool.completed", "plan.step_updated", "validation.completed", "plan.step_updated", "agent.node", "checkpoint.created"])
 
     def test_edit_applies_hash_checked_patch_in_auto_mode(self):
         with TemporaryDirectory() as directory:
