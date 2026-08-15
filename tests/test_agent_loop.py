@@ -110,6 +110,21 @@ class AgentLoopTests(unittest.TestCase):
             self.assertNotIn("malformed response", str(failed.payload))
             self.assertNotIn("None has no attribute", str(failed.payload))
 
+    def test_model_failure_error_replays(self):
+        class BrokenProvider:
+            def stream(self, messages, tools=None):
+                raise RuntimeError("secret provider response")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", provider=BrokenProvider(), state_dir=directory)
+            runtime.create_task("model replay")
+            with self.assertRaises(RuntimeError):
+                runtime.request_model()
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.model_error["error_type"], "RuntimeError")
+            self.assertNotIn("secret provider response", str(recovered.task.model_error))
+            recovered.stop()
+
     def test_malformed_response_error_replays(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
@@ -132,6 +147,7 @@ class AgentLoopTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "provider down"):
                 runtime.request_model()
             self.assertEqual(runtime.task.agent_state, "ready")
+            self.assertEqual(runtime.task.model_error["error_tag"], "MODEL_REQUEST_FAILED")
             self.assertIn("model.failed", [event.type for event in runtime.events.list()])
             self.assertEqual(runtime.events.list()[-1].payload["node"], "ready")
 

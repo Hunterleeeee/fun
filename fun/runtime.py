@@ -41,6 +41,7 @@ class Task:
     plan_error_summary: dict[str, Any] | None = None
     result: str | None = None
     response_error: dict[str, Any] | None = None
+    model_error: dict[str, Any] | None = None
     messages: list[dict[str, Any]] = field(default_factory=list)
     validation: dict[str, Any] | None = None
     repair_attempts: int = 0
@@ -157,6 +158,8 @@ class Runtime:
                 elif action == "stop":
                     self.task.status = "stopped"
                     self.task.recovery_reason = None
+            elif event.type == "model.failed":
+                self.task.model_error = {key: event.payload.get(key) for key in ("error_type", "error_tag") if key in event.payload}
             elif event.type == "task.result":
                 self.task.result = str(event.payload.get("result", ""))
                 self.task.agent_state = "completed"
@@ -379,7 +382,9 @@ class Runtime:
             return self.provider.stream(self.task.messages, tool_schemas())
         except Exception as exc:
             try:
-                self.emit("model.failed", self.task.id, error=str(exc))
+                failure = {"error_type": type(exc).__name__, "error_tag": "MODEL_REQUEST_FAILED"}
+                self.emit("model.failed", self.task.id, **failure)
+                self.task.model_error = failure
                 self.emit("agent.node", self.task.id, node="ready")
                 self.task.agent_state = "ready"
             except Exception:
