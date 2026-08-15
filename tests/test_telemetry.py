@@ -70,6 +70,26 @@ class TelemetryTests(unittest.TestCase):
             runtime.stop()
             self.assertFalse(runtime.lock.held)
 
+    def test_telemetry_retries_after_transient_failure(self):
+        class FlakyTelemetry:
+            install = "anon"
+            def __init__(self):
+                self.calls = 0
+            def send(self, payload):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("network")
+                return True
+
+        telemetry = FlakyTelemetry()
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Runtime(directory, telemetry=telemetry)
+            runtime.create_task("retry telemetry")
+            runtime.stop()
+            runtime._send_telemetry("stopped")
+            self.assertEqual(telemetry.calls, 2)
+            self.assertTrue(runtime._telemetry_sent)
+
     def test_runtime_reports_stopped_once(self):
         telemetry = TelemetryClient(enabled=True, endpoint="http://127.0.0.1:1/telemetry", install="test")
         with mock.patch.object(telemetry, "send", return_value=True) as send:
