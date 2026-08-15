@@ -489,7 +489,10 @@ class Runtime:
             except Exception:
                 pass
             raise
-        self.emit("repair.completed" if result.ok else "repair.failed", self.task.id, attempt=attempt, ok=result.ok)
+        try:
+            self.emit("repair.completed" if result.ok else "repair.failed", self.task.id, attempt=attempt, ok=result.ok)
+        except Exception:
+            pass
         return result
 
     def checkpoint(self, label: str = "manual") -> dict[str, object]:

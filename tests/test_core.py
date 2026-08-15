@@ -303,6 +303,21 @@ class CoreTests(unittest.TestCase):
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
+    def test_repair_result_survives_terminal_fact_persistence_failure(self):
+        class FailingAfterValidation:
+            def append(self, event):
+                if event.type in {"repair.completed", "repair.failed"}:
+                    raise OSError("terminal fact unavailable")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("repair terminal")
+            runtime.events._durable = FailingAfterValidation()
+            result = runtime.repair("false")
+            self.assertFalse(result.ok)
+            self.assertEqual(runtime.task.repair_attempts, 1)
+            self.assertIsNotNone(runtime.task.validation)
+
     def test_repair_preserves_original_error_if_failure_fact_fails(self):
         class FailingStore:
             def append(self, event):
