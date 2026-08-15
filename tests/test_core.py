@@ -230,6 +230,13 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "closed"):
                 durable.list()
 
+    def test_memory_runtime_close_is_idempotent(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory)
+            runtime.close()
+            runtime.close()
+            self.assertTrue(runtime._closed)
+
     def test_runtime_stop_closes_durable_store_and_is_idempotent(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)
