@@ -4,6 +4,10 @@
 
 - Future work will be tracked here.
 
+## 1.0.0a5 - Alpha
+
+- Hardened event replay against sequence races, conflicting recovery batches, and concurrent event creation.
+
 ## 1.0.0a4 - Alpha
 
 - Hardened cross-process event persistence, CI packaging, checksum validation, and release diagnostics.
