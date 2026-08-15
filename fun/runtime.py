@@ -518,8 +518,10 @@ class Runtime:
         task_result = Event("task.result", self.session_id, self.task.id, {"result": result, "validation": self.task.validation or {}})
         self.events.append_many([completed, task_result])
         self.task.status = "completed"
-        self._send_telemetry("completed")
-        self.lock.release()
+        try:
+            self._send_telemetry("completed")
+        finally:
+            self.lock.release()
 
     def fail(self, reason: str) -> None:
         if not self.task or self.task.status not in {"running", "paused"}:
@@ -527,8 +529,10 @@ class Runtime:
         self.emit("task.failed", self.task.id, reason=reason)
         self.task.agent_state = "failed"
         self._transition("stopped", "task.stopped")
-        self._send_telemetry("failed")
-        self.lock.release()
+        try:
+            self._send_telemetry("failed")
+        finally:
+            self.lock.release()
 
     def _send_telemetry(self, status: str) -> None:
         if not self.telemetry or self._telemetry_sent:
@@ -537,10 +541,15 @@ class Runtime:
         usage = self.usage.as_dict()
         duration_ms = None if self._task_started_at is None else int(max(0.0, time.monotonic() - self._task_started_at) * 1000)
         payload = event_payload(event="task.finished", install=self.telemetry.install, model=self.model, status=status, input_tokens=usage.get("input_tokens") or 0, output_tokens=usage.get("output_tokens") or 0, total_tokens=usage.get("total_tokens") or 0, tool_calls=self._tool_calls, duration_ms=duration_ms)
-        self.telemetry.send(payload)
+        try:
+            self.telemetry.send(payload)
+        except Exception:
+            return
 
     def stop(self) -> None:
         if self.task and self.task.status in {"running", "paused"}:
             self._transition("stopped", "task.stopped")
-            self._send_telemetry("stopped")
-            self.lock.release()
+            try:
+                self._send_telemetry("stopped")
+            finally:
+                self.lock.release()

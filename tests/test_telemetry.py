@@ -1,3 +1,4 @@
+import tempfile
 import unittest
 from unittest import mock
 
@@ -56,6 +57,18 @@ class TelemetryTests(unittest.TestCase):
                 runtime.complete("done")
             self.assertEqual(send.call_args.args[0]["model_family"], "gpt-4o")
             self.assertNotIn("private-provider", str(send.call_args.args[0]))
+
+    def test_terminal_lock_releases_when_telemetry_raises(self):
+        class BrokenTelemetry:
+            install = "anon"
+            def send(self, payload):
+                raise RuntimeError("network")
+
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", telemetry=BrokenTelemetry())
+            runtime.create_task("stop")
+            runtime.stop()
+            self.assertFalse(runtime.lock.held)
 
     def test_runtime_reports_stopped_once(self):
         telemetry = TelemetryClient(enabled=True, endpoint="http://127.0.0.1:1/telemetry", install="test")
