@@ -53,11 +53,19 @@ jobs:
         run: python -m build
       - name: Verify distribution versions
         run: |
-          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"].replace(".", "-"))')
-          for artifact in dist/*.whl dist/*.tar.gz; do
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          wheel_version=$(printf '%s' "$version" | tr '.-' '__')
+          sdist_version="$version"
+          for artifact in dist/*.whl; do
             case "$artifact" in
-              *"$version"*) ;;
-              *) echo "Version mismatch: $artifact"; exit 1 ;;
+              *"$wheel_version"*) ;;
+              *) echo "Wheel version mismatch: $artifact"; exit 1 ;;
+            esac
+          done
+          for artifact in dist/*.tar.gz; do
+            case "$artifact" in
+              *"$sdist_version"*) ;;
+              *) echo "Sdist version mismatch: $artifact"; exit 1 ;;
             esac
           done
       - name: Generate checksums
