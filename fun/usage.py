@@ -19,13 +19,13 @@ class Usage:
         completion = raw.get("completion_tokens")
         total = raw.get("total_tokens")
         if isinstance(prompt, int):
-            self.input_tokens = prompt
+            self.input_tokens = (self.input_tokens or 0) + prompt
         if isinstance(completion, int):
-            self.output_tokens = completion
+            self.output_tokens = (self.output_tokens or 0) + completion
         if isinstance(total, int):
-            self.total_tokens = total
-        elif self.input_tokens is not None and self.output_tokens is not None:
-            self.total_tokens = self.input_tokens + self.output_tokens
+            self.total_tokens = (self.total_tokens or 0) + total
+        elif isinstance(prompt, int) or isinstance(completion, int):
+            self.total_tokens = (self.input_tokens or 0) + (self.output_tokens or 0)
         self.precision = "exact" if any(isinstance(value, int) for value in (prompt, completion, total)) else "estimated"
         if ttft_ms is not None:
             self.ttft_ms = ttft_ms

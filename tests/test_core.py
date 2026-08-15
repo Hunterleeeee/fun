@@ -16,6 +16,14 @@ def runtime_usage_summary():
 
 
 class CoreTests(unittest.TestCase):
+    def test_usage_accumulates_multiple_provider_responses(self):
+        usage = Usage()
+        usage.merge_provider({"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14})
+        usage.merge_provider({"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10})
+        self.assertEqual(usage.input_tokens, 17)
+        self.assertEqual(usage.output_tokens, 7)
+        self.assertEqual(usage.total_tokens, 24)
+
     def test_event_store_is_idempotent(self):
         store = EventStore()
         event = Event("task.created", "ses_1", "task_1")
