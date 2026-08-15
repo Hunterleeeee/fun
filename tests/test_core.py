@@ -244,6 +244,20 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "closed"):
                 durable.list()
 
+    def test_explicit_recovery_stop_closes_store(self):
+        with TemporaryDirectory() as directory:
+            first = Runtime(directory, state_dir=directory)
+            first.create_task("recovery explicit stop")
+            session_id = first.session_id
+            first.events.append(Event("tool.executing", first.session_id, first.task.id, {"call_id": "call_explicit", "name": "explore"}))
+            first.lock.release()
+            first.close()
+            recovered = Runtime.recover(directory, directory, session_id)
+            durable = recovered.events._durable
+            recovered.acknowledge_recovery("stop")
+            with self.assertRaisesRegex(Exception, "closed"):
+                durable.list()
+
     def test_recovery_context_stop_replays_as_stopped(self):
         with TemporaryDirectory() as directory:
             first = Runtime(directory, state_dir=directory)

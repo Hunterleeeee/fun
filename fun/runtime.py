@@ -400,6 +400,7 @@ class Runtime:
         if action == "stop":
             self._transition("stopped", "task.stopped")
             self.lock.release()
+            self.close()
         elif action == "discard":
             self.task.pending_tool = None
             self.task.agent_state = "ready"
