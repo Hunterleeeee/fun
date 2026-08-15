@@ -6,6 +6,11 @@ from fun.provider import tool_schemas
 from fun.runtime import Runtime
 
 
+class PlanProvider:
+    def stream(self, messages, tools=None):
+        yield {"plan": ["inspect", "verify"], "choices": [{"delta": {"content": "Plan updated."}}]}
+
+
 class FakeProvider:
     def __init__(self):
         self.calls = 0
@@ -19,6 +24,14 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_model_plan_proposal_replaces_runtime_plan(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", provider=PlanProvider())
+            runtime.create_task("plan this")
+            runtime.run_model_turn()
+            self.assertEqual(runtime.task.plan, ["inspect", "verify"])
+            self.assertIn("plan.replaced", [event.type for event in runtime.events.list()])
+
     def test_model_tool_loop_returns_final_text_and_records_facts(self):
         with TemporaryDirectory() as directory:
             Path(directory, "hello.txt").write_text("hello\n", encoding="utf-8")

@@ -340,12 +340,15 @@ class Runtime:
     def parse_model_response(self, chunks: Any, on_text: Callable[[str], None] | None = None) -> tuple[str, list[dict[str, Any]]]:
         content = ""
         calls: dict[str, dict[str, str]] = {}
+        proposed_plan: list[str] | None = None
         for chunk in chunks:
             self._ensure_running()
             if chunk.get("_meta", {}).get("ttft_ms") is not None:
                 self.usage.ttft_ms = int(chunk["_meta"]["ttft_ms"])
             if isinstance(chunk.get("usage"), dict):
                 self.usage.merge_provider(chunk["usage"], self.usage.ttft_ms)
+            if isinstance(chunk.get("plan"), list):
+                proposed_plan = chunk["plan"]
             choice = (chunk.get("choices") or [{}])[0]
             delta = choice.get("delta") or {}
             if delta.get("content"):
@@ -359,7 +362,9 @@ class Runtime:
                 entry["name"] += function.get("name", "")
                 entry["arguments"] += function.get("arguments", "")
         parsed = [{"id": item["id"], "type": "function", "function": {"name": item["name"], "arguments": item["arguments"]}} for item in calls.values()]
-        self._node("response.parsed", content_length=len(content), tool_calls=len(parsed))
+        if proposed_plan is not None:
+            self.replace_plan(proposed_plan)
+        self._node("response.parsed", content_length=len(content), tool_calls=len(parsed), plan_updated=proposed_plan is not None)
         return content, parsed
 
     def execute_tool_calls(self, calls: list[dict[str, Any]]) -> None:
