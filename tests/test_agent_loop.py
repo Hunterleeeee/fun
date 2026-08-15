@@ -6,6 +6,11 @@ from fun.provider import tool_schemas
 from fun.runtime import Runtime
 
 
+class InvalidPlanProvider:
+    def stream(self, messages, tools=None):
+        yield {"plan": ["", 4, "valid"], "choices": [{"delta": {"content": "Kept the safe plan."}}]}
+
+
 class PlanProvider:
     def __init__(self, in_delta=False):
         self.in_delta = in_delta
@@ -32,6 +37,16 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_invalid_model_plan_is_rejected_without_breaking_turn(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", provider=InvalidPlanProvider())
+            runtime.create_task("keep plan")
+            original = list(runtime.task.plan)
+            output = runtime.run_model_turn()
+            self.assertEqual(output, "Kept the safe plan.")
+            self.assertEqual(runtime.task.plan, original)
+            self.assertIn("plan.rejected", [event.type for event in runtime.events.list()])
+
     def test_model_plan_proposal_replaces_runtime_plan(self):
         for provider in (PlanProvider(), PlanProvider(in_delta=True)):
             with TemporaryDirectory() as directory:

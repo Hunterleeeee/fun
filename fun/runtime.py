@@ -221,7 +221,9 @@ class Runtime:
     def replace_plan(self, steps: list[str]) -> None:
         if not self.task or self.task.status != "running":
             raise RuntimeError("NO_ACTIVE_TASK")
-        normalized = [step.strip() for step in steps if isinstance(step, str) and step.strip()]
+        if not isinstance(steps, list) or any(not isinstance(step, str) or not step.strip() for step in steps):
+            raise RuntimeError("INVALID_PLAN")
+        normalized = [step.strip() for step in steps]
         if not normalized or len(normalized) > 7:
             raise RuntimeError("INVALID_PLAN")
         previous = list(self.task.plan)
@@ -364,9 +366,14 @@ class Runtime:
                 entry["name"] += function.get("name", "")
                 entry["arguments"] += function.get("arguments", "")
         parsed = [{"id": item["id"], "type": "function", "function": {"name": item["name"], "arguments": item["arguments"]}} for item in calls.values()]
+        plan_updated = False
         if proposed_plan is not None:
-            self.replace_plan(proposed_plan)
-        self._node("response.parsed", content_length=len(content), tool_calls=len(parsed), plan_updated=proposed_plan is not None)
+            try:
+                self.replace_plan(proposed_plan)
+                plan_updated = True
+            except RuntimeError as exc:
+                self.emit("plan.rejected", self.task.id if self.task else None, reason=str(exc))
+        self._node("response.parsed", content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated)
         return content, parsed
 
     def execute_tool_calls(self, calls: list[dict[str, Any]]) -> None:
