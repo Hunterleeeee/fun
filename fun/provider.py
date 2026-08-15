@@ -44,7 +44,7 @@ class OpenAICompatible:
             raise ValueError("INVALID_PROVIDER_API_KEY")
         if not isinstance(config.timeout, (int, float)) or isinstance(config.timeout, bool) or not math.isfinite(config.timeout) or config.timeout <= 0:
             raise ValueError("INVALID_PROVIDER_TIMEOUT")
-        if not isinstance(config.max_payload_bytes, int) or isinstance(config.max_payload_bytes, bool) or config.max_payload_bytes <= 0:
+        if not isinstance(config.max_payload_bytes, int) or isinstance(config.max_payload_bytes, bool) or not 1 <= config.max_payload_bytes <= 16 * 1024 * 1024:
             raise ValueError("INVALID_PROVIDER_PAYLOAD_LIMIT")
         self.config = config
 

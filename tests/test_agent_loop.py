@@ -313,7 +313,7 @@ class AgentLoopTests(unittest.TestCase):
         for api_key in ("", "   ", None, 123):
             with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_API_KEY"):
                 OpenAICompatible(ModelConfig("https://provider.invalid", api_key, "model"))
-        for max_payload in (0, -1, True, 1.5):
+        for max_payload in (0, -1, True, 1.5, 16 * 1024 * 1024 + 1):
             with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_PAYLOAD_LIMIT"):
                 OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model", max_payload_bytes=max_payload))
         for timeout in (0, -1, float("nan"), float("inf"), True):
