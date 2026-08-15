@@ -522,6 +522,21 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(recovered.task.agent_state, "ready")
             recovered.stop()
 
+    def test_provider_error_tag_replays_without_response_body(self):
+        class BrokenProvider:
+            def stream(self, messages, tools=None):
+                raise ProviderError("PROVIDER_AUTH_FAILED", cause=RuntimeError("secret body"))
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", provider=BrokenProvider(), state_dir=directory)
+            runtime.create_task("provider tag")
+            with self.assertRaises(ProviderError):
+                runtime.request_model()
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.model_error["error_tag"], "PROVIDER_AUTH_FAILED")
+            self.assertNotIn("secret body", str(recovered.task.model_error))
+            recovered.stop()
+
     def test_provider_failure_records_model_failed_and_ready(self):
         class BrokenProvider:
             def stream(self, messages, tools=None):

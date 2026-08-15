@@ -414,7 +414,7 @@ class Runtime:
             return self.provider.stream(self.task.messages, tool_schemas())
         except Exception as exc:
             try:
-                failure = {"error_type": type(exc).__name__, "error_tag": "MODEL_REQUEST_FAILED"}
+                failure = {"error_type": type(exc).__name__, "error_tag": getattr(exc, "error_tag", "MODEL_REQUEST_FAILED")}
                 self.emit("model.failed", self.task.id, **failure)
                 self.task.model_error = failure
                 self.emit("agent.node", self.task.id, node="ready")
