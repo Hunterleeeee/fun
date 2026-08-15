@@ -65,6 +65,10 @@ Inject / Queue
 
 `fun-harness-ui.svg` 是早期探索稿；当前设计以 `fun-harness-ui-v2.svg` 和 Runtime 规格中的单栏布局为准。
 
+## Alpha 发布验收
+
+[`alpha-release-checklist.md`](alpha-release-checklist.md) 记录当前 `v1.0.0a6` 及后续 Alpha 的本地测试、CI、artifact 和 tag 验收门槛。
+
 ## 开源发布前检查
 
 在公开发布前还必须创建并维护：

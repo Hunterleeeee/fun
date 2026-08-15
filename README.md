@@ -216,6 +216,7 @@ python3 -m pip install -e .
 详细契约和设计：
 
 - [`docs/README.md`](docs/README.md)
+- [`docs/alpha-release-checklist.md`](docs/alpha-release-checklist.md) — Alpha tag、CI 和 artifact 验收清单
 - [`docs/fun-v1-contract.md`](docs/fun-v1-contract.md)
 - [`docs/fun-runtime-spec.md`](docs/fun-runtime-spec.md)
 - [`SECURITY.md`](SECURITY.md)
