@@ -63,6 +63,7 @@ jobs:
         run: python -m build
       - name: Generate distribution checksums
         run: |
+          test -d dist
           shopt -s nullglob
           for unexpected in dist/*; do
             case "$unexpected" in
@@ -74,6 +75,7 @@ jobs:
           sdists=(dist/*.tar.gz)
           test "${#wheels[@]}" -gt 0
           test "${#sdists[@]}" -gt 0
+          echo "wheel_count=${#wheels[@]} sdist_count=${#sdists[@]}"
           (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: List built distributions
         run: ls -la dist
