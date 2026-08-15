@@ -92,6 +92,18 @@ class CoreTests(unittest.TestCase):
             self.assertIsNone(replayed.task.pending_tool)
             replayed.stop()
 
+    def test_runtime_recovers_cumulative_usage_from_events(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("usage")
+            runtime.emit("model.completed", runtime.task.id, usage={"input_tokens": 10, "output_tokens": 4, "total_tokens": 14})
+            runtime.emit("model.completed", runtime.task.id, usage={"input_tokens": 7, "output_tokens": 3, "total_tokens": 10})
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.usage.input_tokens, 17)
+            self.assertEqual(recovered.usage.output_tokens, 7)
+            self.assertEqual(recovered.usage.total_tokens, 24)
+            recovered.stop()
+
     def test_runtime_recovers_task_from_events(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)

@@ -72,6 +72,15 @@ class Runtime:
         runtime = cls(workspace, approval, provider, event_store=store, state_dir=state_dir, approve=approve)
         runtime.session_id = session_id
         events = store.replay(session_id)
+        for event in events:
+            if event.type == "model.completed":
+                usage = event.payload.get("usage")
+                if isinstance(usage, dict):
+                    runtime.usage.merge_provider({
+                        "prompt_tokens": usage.get("input_tokens", usage.get("prompt_tokens")),
+                        "completion_tokens": usage.get("output_tokens", usage.get("completion_tokens")),
+                        "total_tokens": usage.get("total_tokens"),
+                    })
         task_events = [event for event in events if event.task_id]
         if task_events:
             task_id = task_events[-1].task_id
