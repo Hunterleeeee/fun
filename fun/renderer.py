@@ -34,8 +34,10 @@ class TerminalRenderer:
         payload = payload or {}
         if event_type in {"plan.created", "task.started", "agent.node"}:
             return self.activity(str(payload.get("node", event_type.replace(".", " "))))
-        if event_type in {"tool.requested", "model.tool_call"}:
+        if event_type in {"tool.requested", "model.tool_call", "tool.executing"}:
             return self.activity(str(payload.get("name", event_type)))
+        if event_type == "approval.pending":
+            return self.finding(f"approval required: {payload.get('name', 'tool')}")
         if event_type in {"tool.completed", "validation.completed", "checkpoint.restored"}:
             return self.success(str(payload.get("text", event_type)))
         if event_type in {"tool.failed", "validation.failed", "checkpoint.restore_failed"}:

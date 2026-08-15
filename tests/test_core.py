@@ -126,6 +126,19 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(recovered.task.plan_status[0], "active")
             recovered.stop()
 
+    def test_tool_lifecycle_events_are_explicit(self):
+        with TemporaryDirectory() as directory:
+            (Path(directory) / "hello.txt").write_text("hello\n", encoding="utf-8")
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("inspect")
+            runtime.run_tool("read", path="hello.txt")
+            types = [event.type for event in runtime.events.list()]
+            self.assertIn("tool.requested", types)
+            self.assertIn("tool.executing", types)
+            self.assertIn("tool.completed", types)
+            call_ids = [event.payload.get("call_id") for event in runtime.events.list() if event.type.startswith("tool.")]
+            self.assertEqual(len(set(call_ids)), 1)
+
     def test_runtime_emits_tool_events(self):
         with TemporaryDirectory() as directory:
             (Path(directory) / "hello.txt").write_text("hello\n", encoding="utf-8")
@@ -135,7 +148,7 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertEqual(
                 [event.type for event in runtime.events.list()],
-                ["task.created", "plan.created", "task.started", "agent.node", "plan.step_updated", "tool.requested", "tool.completed", "plan.step_updated"],
+                ["task.created", "plan.created", "task.started", "agent.node", "plan.step_updated", "tool.requested", "tool.executing", "tool.completed", "plan.step_updated"],
             )
             runtime.stop()
             self.assertEqual(runtime.task.status, "stopped")

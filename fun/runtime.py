@@ -101,6 +101,12 @@ class Runtime:
                 self.task.status = "stopped"
             elif event.type == "task.result":
                 self.task.agent_state = "completed"
+            elif event.type == "approval.pending":
+                self.task.agent_state = "approval.pending"
+            elif event.type == "tool.executing":
+                self.task.agent_state = "tool.executing"
+            elif event.type in {"tool.completed", "tool.failed", "approval.resolved"}:
+                self.task.agent_state = "ready"
             elif event.type in {"validation.completed", "validation.failed"}:
                 self.task.validation = {"ok": bool(event.payload.get("ok")), "command": event.payload.get("command", ""), "text": event.payload.get("text", "")}
 
@@ -171,7 +177,8 @@ class Runtime:
         plan_index = self._active_plan_index()
         if plan_index is not None and self.task.plan_status[plan_index] == "pending":
             self.update_plan_step(plan_index, "active", f"tool:{name}")
-        self.emit("tool.requested", self.task.id, name=name, arguments=kwargs)
+        call_id = f"tool_{uuid.uuid4().hex[:10]}"
+        self.emit("tool.requested", self.task.id, call_id=call_id, name=name, arguments=kwargs)
         try:
             kwargs = validate_tool_arguments(name, kwargs)
         except SchemaError as exc:
@@ -181,8 +188,9 @@ class Runtime:
         write_operation = name in {"edit", "exec"}
         risk = self.policy.risk_for(name, write=write_operation)
         if self.policy.requires_approval(risk):
-            self.emit("approval.required", self.task.id, name=name, risk=risk.value)
+            self.emit("approval.pending", self.task.id, call_id=call_id, name=name, risk=risk.value)
             allowed = self.approve(name, risk) if self.approve else False
+            self.emit("approval.resolved", self.task.id, call_id=call_id, name=name, allowed=allowed)
             if not allowed:
                 result = ToolResult(False, "APPROVAL_REQUIRED", risk)
                 self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
@@ -198,12 +206,13 @@ class Runtime:
             result = ToolResult(False, "UNSUPPORTED_TOOL")
             self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
             return result
+        self.emit("tool.executing", self.task.id, call_id=call_id, name=name)
         try:
             result = method(**kwargs)
         except Exception as exc:
             self.emit("tool.failed", self.task.id, name=name, error=str(exc))
             raise
-        self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, name=name, ok=result.ok, text=result.text, changed=result.changed or [])
+        self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, call_id=call_id, name=name, ok=result.ok, text=result.text, changed=result.changed or [])
         if plan_index is not None:
             self.update_plan_step(plan_index, "done" if result.ok else "blocked", result.text[:500])
         return result
