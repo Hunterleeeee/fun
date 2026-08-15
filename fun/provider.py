@@ -48,8 +48,19 @@ class OpenAICompatible:
                 data_parts: list[str] = []
                 for raw in response:
                     buffer += raw.decode(errors="replace")
-                    lines = buffer.splitlines(keepends=True)
-                    buffer = lines.pop() if lines and not lines[-1].endswith(("\n", "\r")) else ""
+                    lines: list[str] = []
+                    while True:
+                        newline_positions = [position for position in (buffer.find("\n"), buffer.find("\r")) if position >= 0]
+                        if not newline_positions:
+                            break
+                        position = min(newline_positions)
+                        if buffer[position] == "\r" and position + 1 == len(buffer):
+                            break
+                        end = position + 1
+                        if buffer[position] == "\r" and end < len(buffer) and buffer[end] == "\n":
+                            end += 1
+                        lines.append(buffer[:position])
+                        buffer = buffer[end:]
                     for raw_line in lines:
                         line = raw_line.strip()
                         if not line:
