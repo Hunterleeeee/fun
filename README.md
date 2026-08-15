@@ -23,17 +23,40 @@ V1.x will add Anthropic native support, model discovery, web search, inject/queu
 
 ## Quick start
 
-Requires Python 3.11+.
+### One-line installer
+
+Requires Python 3.11+ and Git. The installer creates an isolated environment under `~/.fun`, installs Fun, and links the `fun` command into `~/.local/bin`.
 
 ```bash
-python -m venv .venv
+curl -fsSL https://raw.githubusercontent.com/Hunterleeeee/fun/main/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+fun
+```
+
+If `~/.local/bin` is already on your PATH, the last two commands become simply:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Hunterleeeee/fun/main/install.sh | sh
+fun
+```
+
+### Manual install
+
+```bash
+python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e .
-python -m fun --help
+python3 -m pip install -e .
+fun --help
 fun "inspect the project"
 ```
 
-The current bootstrap command initializes the runtime and displays the task boundary. Provider credentials and the full model loop are intentionally being added behind the public contracts in `docs/`.
+Configure an OpenAI-compatible provider interactively:
+
+```bash
+fun --configure
+```
+
+The current alpha starts a local Runtime and displays the task boundary. Provider credentials and the full model loop are implemented behind the public contracts in `docs/`.
 
 ## Documentation
 
