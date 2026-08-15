@@ -481,7 +481,8 @@ class Runtime:
         attempt = self.task.repair_attempts + 1
         self.emit("repair.started", self.task.id, attempt=attempt)
         self.task.repair_attempts = attempt
-        self._node("repair.started", attempt=attempt)
+        self.emit("agent.node", self.task.id, node="repair.started", attempt=attempt)
+        self.task.agent_state = "repair.started"
         try:
             result = self.validate(command)
         except Exception as exc:

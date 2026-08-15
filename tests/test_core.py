@@ -345,6 +345,21 @@ class CoreTests(unittest.TestCase):
                 runtime.validate("true")
             self.assertIsNone(runtime.task.validation)
 
+    def test_repair_node_failure_does_not_change_agent_state(self):
+        class FailingStore:
+            def append(self, event):
+                if event.type == "agent.node":
+                    raise OSError("disk full")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("repair node atomic")
+            runtime.events._durable = FailingStore()
+            with self.assertRaises(OSError):
+                runtime.repair("true")
+            self.assertEqual(runtime.task.agent_state, "ready")
+            self.assertEqual(runtime.task.repair_attempts, 1)
+
     def test_repair_result_survives_terminal_fact_persistence_failure(self):
         class FailingAfterValidation:
             def append(self, event):
