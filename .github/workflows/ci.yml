@@ -100,7 +100,7 @@ jobs:
           python -m venv /tmp/fun-ci-venv
           /tmp/fun-ci-venv/bin/python -m pip install --upgrade pip
           /tmp/fun-ci-venv/bin/python -m pip --version
-          /tmp/fun-ci-venv/bin/python -m pip install --no-deps dist/*.whl
+          /tmp/fun-ci-venv/bin/python -m pip install --no-index --no-deps dist/*.whl
           /tmp/fun-ci-venv/bin/python -c "import fun"
           /tmp/fun-ci-venv/bin/fun --help
       - name: Install sdist in isolated environment
@@ -118,10 +118,10 @@ jobs:
           tar -tzf "$sdist" | sed -n '1,12p'
           rm -rf /tmp/fun-ci-sdist-wheel
           mkdir -p /tmp/fun-ci-sdist-wheel
-          /tmp/fun-ci-sdist-venv/bin/python -m pip wheel --verbose --no-deps --no-build-isolation "$sdist" --wheel-dir /tmp/fun-ci-sdist-wheel
+          /tmp/fun-ci-sdist-venv/bin/python -m pip wheel --verbose --no-index --no-deps --no-build-isolation "$sdist" --wheel-dir /tmp/fun-ci-sdist-wheel
           wheels=(/tmp/fun-ci-sdist-wheel/*.whl)
           test "${#wheels[@]}" -eq 1
           echo "Installing rebuilt wheel: ${wheels[0]}"
-          /tmp/fun-ci-sdist-venv/bin/python -m pip install --verbose --no-deps "${wheels[0]}"
+          /tmp/fun-ci-sdist-venv/bin/python -m pip install --verbose --no-index --no-deps "${wheels[0]}"
           /tmp/fun-ci-sdist-venv/bin/python -c "import fun"
           /tmp/fun-ci-sdist-venv/bin/fun --help
