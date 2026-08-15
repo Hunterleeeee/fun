@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#07111f"/><stop offset="1" stop-color="#0d1b2e"/></linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7dd3fc"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity=".28"/></filter>
+    <style>
+      .sans{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+      .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+      .title{fill:#e5f6ff;font-size:22px;font-weight:700}.text{fill:#d5e7f2;font-size:16px}.muted{fill:#7893a6;font-size:14px}.small{fill:#9fb6c5;font-size:13px}.cyan{fill:#7dd3fc}.green{fill:#86efac}.yellow{fill:#fde68a}.red{fill:#fda4af}.line{stroke:#20344a;stroke-width:1}.panel{fill:#101f32;stroke:#203b54;stroke-width:1}.chip{fill:#17354a;stroke:#2d6685;stroke-width:1}
+    </style>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <rect x="32" y="28" width="1536" height="76" rx="16" fill="#0d1b2c" stroke="#24465e" filter="url(#shadow)"/>
+  <circle cx="72" cy="66" r="19" fill="url(#brand)"/><path d="M64 66h16M72 58v16" stroke="#07111f" stroke-width="3" stroke-linecap="round"/>
+  <text x="106" y="62" class="sans title">FUN HARNESS</text><text x="106" y="84" class="sans muted">Coding should feel good.</text>
+  <text x="460" y="58" class="sans small">WORKSPACE</text><text x="460" y="82" class="mono text">~/projects/fun</text>
+  <text x="750" y="58" class="sans small">MODEL</text><text x="750" y="82" class="mono text">deepseek-v4  ·  high</text>
+  <text x="1035" y="58" class="sans small">POLICY</text><text x="1035" y="82" class="mono cyan">SMART</text>
+  <text x="1195" y="58" class="sans small">CONTEXT</text><text x="1195" y="82" class="mono text">48.2k / 128k  ·  38%</text>
+  <rect x="32" y="128" width="1010" height="700" rx="16" class="panel" filter="url(#shadow)"/>
+  <rect x="1060" y="128" width="508" height="700" rx="16" class="panel" filter="url(#shadow)"/>
+  <text x="60" y="168" class="sans title">PROCESS</text><circle cx="169" cy="162" r="6" fill="#86efac"/><text x="184" y="168" class="sans small">RUNNING</text>
+  <line x1="60" y1="188" x2="1014" y2="188" class="line"/>
+  <rect x="60" y="214" width="930" height="74" rx="12" fill="#132b40" stroke="#2c6c8c"/>
+  <circle cx="88" cy="251" r="11" fill="#86efac"/><path d="M82 251l4 4 8-9" stroke="#0a1a25" stroke-width="2" fill="none"/>
+  <text x="116" y="242" class="sans text">Task · 修复订单创建接口的测试失败</text><text x="116" y="266" class="sans small">Plan 3 / 7  ·  当前步骤：修复 repository 调用</text>
+  <text x="952" y="252" class="mono cyan" text-anchor="end">2m 41s</text>
+  <text x="60" y="326" class="sans small">PLAN</text>
+  <text x="60" y="360" class="sans green">✓</text><text x="88" y="360" class="sans text">理解项目结构</text><text x="330" y="360" class="sans muted">completed</text>
+  <text x="60" y="394" class="sans green">✓</text><text x="88" y="394" class="sans text">定位失败测试</text><text x="330" y="394" class="sans muted">completed</text>
+  <circle cx="68" cy="428" r="7" fill="#38bdf8"/><text x="88" y="434" class="sans text">修复 repository 调用</text><text x="330" y="434" class="sans cyan">active</text>
+  <text x="60" y="468" class="sans muted">○</text><text x="88" y="468" class="sans muted">运行支付与订单测试</text><text x="330" y="468" class="sans muted">pending</text>
+  <text x="60" y="502" class="sans muted">○</text><text x="88" y="502" class="sans muted">检查 diff</text><text x="330" y="502" class="sans muted">pending</text>
+  <text x="60" y="536" class="sans muted">○</text><text x="88" y="536" class="sans muted">汇总结果</text><text x="330" y="536" class="sans muted">pending</text>
+  <line x1="60" y1="564" x2="1014" y2="564" class="line"/>
+  <text x="60" y="600" class="sans small">WORKING SUMMARY</text>
+  <rect x="60" y="620" width="930" height="106" rx="12" fill="#0b1726"/>
+  <text x="82" y="650" class="sans text">目标</text><text x="170" y="650" class="sans small">定位订单创建测试失败原因</text>
+  <text x="82" y="676" class="sans text">观察</text><text x="170" y="676" class="sans small">UserRepository mock 返回 undefined</text>
+  <text x="82" y="702" class="sans text">下一步</text><text x="170" y="702" class="sans cyan">检查 repository 接口和 mock</text>
+  <text x="82" y="728" class="sans small">风险：只读操作，不会修改文件</text>
+  <text x="1088" y="168" class="sans title">INFO</text><text x="1460" y="168" class="sans small" text-anchor="end">LIVE</text>
+  <line x1="1088" y1="188" x2="1540" y2="188" class="line"/>
+  <text x="1088" y="226" class="sans small">WORKSPACE</text><text x="1088" y="254" class="mono text">~/projects/fun</text><text x="1088" y="280" class="mono cyan">main*</text>
+  <line x1="1088" y1="302" x2="1540" y2="302" class="line"/>
+  <text x="1088" y="338" class="sans small">CHANGED FILES · 4</text>
+  <text x="1088" y="368" class="mono text">M  src/order/create.ts</text><text x="1088" y="394" class="mono text">M  src/order/repository.ts</text><text x="1088" y="420" class="mono muted">+2 more files</text>
+  <line x1="1088" y1="444" x2="1540" y2="444" class="line"/>
+  <text x="1088" y="480" class="sans small">VALIDATION</text><text x="1088" y="512" class="sans green">✓ Typecheck</text><text x="1088" y="542" class="sans green">✓ Order tests 8 passed</text><text x="1088" y="572" class="sans yellow">● Payment tests running</text>
+  <line x1="1088" y1="596" x2="1540" y2="596" class="line"/>
+  <text x="1088" y="632" class="sans small">USAGE</text><text x="1088" y="662" class="mono text">86.4k in · 14.8k out</text><text x="1088" y="688" class="mono text">38 tok/s · TTFT 1.2s</text><text x="1088" y="714" class="mono text">Tools 23 · Total 2m 41s</text>
+  <line x1="1088" y1="738" x2="1540" y2="738" class="line"/><text x="1088" y="774" class="sans small">QUEUE · 2</text><text x="1088" y="800" class="sans text">1. Add regression test</text><text x="1088" y="822" class="sans muted">2. Update README</text>
+  <rect x="32" y="854" width="1536" height="112" rx="16" fill="#0d1b2c" stroke="#24465e" filter="url(#shadow)"/>
+  <text x="60" y="888" class="sans small">MESSAGE</text><text x="60" y="923" class="sans text">继续检查 mock，但不要修改文件</text>
+  <rect x="1000" y="884" width="112" height="42" rx="10" class="chip"/><text x="1056" y="911" class="sans cyan" text-anchor="middle">INJECT</text>
+  <rect x="1122" y="884" width="112" height="42" rx="10" fill="#17354a" stroke="#2d6685"/><text x="1178" y="911" class="sans cyan" text-anchor="middle">QUEUE</text>
+  <rect x="1244" y="884" width="136" height="42" rx="10" fill="#38bdf8"/><text x="1312" y="911" class="sans" fill="#07111f" text-anchor="middle">SEND  ↵</text>
+  <text x="60" y="950" class="mono muted">/ model  / approval  / reasoning  / diff  / status     Ctrl+Enter inject · Alt+Enter queue</text>
+</svg>

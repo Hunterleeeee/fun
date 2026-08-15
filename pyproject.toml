@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fun-harness"
+version = "1.0.0a1"
+description = "An open-source, extensible, safety-first terminal coding agent runtime."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Fun contributors" }]
+dependencies = []
+
+[project.scripts]
+fun = "fun.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["fun*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
