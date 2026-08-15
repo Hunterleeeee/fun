@@ -71,6 +71,21 @@ class PersistenceTests(unittest.TestCase):
         self.assertGreater(fresh.seq, 42)
         self.assertEqual([event.seq for event in store.replay("ses_1")], [41, 42, fresh.seq])
 
+    def test_sqlite_multiple_connections_preserve_batch_atomicity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.db"
+            first = SQLiteEventStore(path)
+            second = SQLiteEventStore(path)
+            first.append(Event("existing", "ses_1", id="evt_existing", seq=1))
+            with self.assertRaisesRegex(Exception, "UNIQUE"):
+                second.append_many([
+                    Event("first", "ses_1", id="evt_first", seq=2),
+                    Event("conflict", "ses_1", id="evt_existing", seq=3),
+                ])
+            self.assertEqual([row["id"] for row in first.list("ses_1")], ["evt_existing"])
+            first.close()
+            second.close()
+
     def test_sqlite_event_store_supports_multiple_connections(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "events.db"
