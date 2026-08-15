@@ -241,14 +241,25 @@ class Runtime:
     def acknowledge_recovery(self, action: str = "resume") -> None:
         if not self.task or self.task.status != "recovery_required":
             raise RuntimeError("RECOVERY_NOT_REQUIRED")
-        if action not in {"resume", "stop"}:
+        if action not in {"resume", "stop", "discard", "mark_failed"}:
             raise RuntimeError("INVALID_RECOVERY_ACTION")
         reason = self.task.recovery_reason or "unknown"
-        self.emit("recovery.acknowledged", self.task.id, action=action, reason=reason)
+        pending = self.task.pending_tool or {}
+        self.emit("recovery.acknowledged", self.task.id, action=action, reason=reason, call_id=pending.get("call_id"), name=pending.get("name"))
         self.task.recovery_reason = None
         if action == "stop":
             self._transition("stopped", "task.stopped")
             self.lock.release()
+        elif action == "discard":
+            self.task.pending_tool = None
+            self.task.agent_state = "ready"
+            self._transition("running", "task.resumed")
+            self.emit("recovery.discarded", self.task.id)
+        elif action == "mark_failed":
+            self.task.pending_tool = None
+            self.task.agent_state = "ready"
+            self._transition("running", "task.resumed")
+            self.emit("recovery.marked_failed", self.task.id)
         else:
             self.task.agent_state = "ready"
             self._transition("running", "task.resumed")

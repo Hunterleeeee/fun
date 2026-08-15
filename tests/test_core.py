@@ -59,8 +59,10 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(recovered.recovery_summary()["call_id"], "call_1")
             with self.assertRaisesRegex(RuntimeError, "TASK_NOT_RUNNING"):
                 recovered.run_model_turn()
-            recovered.acknowledge_recovery("resume")
+            recovered.acknowledge_recovery("mark_failed")
             self.assertEqual(recovered.task.status, "running")
+            self.assertIsNone(recovered.task.pending_tool)
+            self.assertIn("recovery.marked_failed", [event.type for event in recovered.events.list()])
             recovered.stop()
 
     def test_approval_pending_replays_arguments(self):
@@ -71,7 +73,9 @@ class CoreTests(unittest.TestCase):
             recovered = Runtime.recover(directory, directory, runtime.session_id)
             self.assertEqual(recovered.task.status, "recovery_required")
             self.assertEqual(recovered.recovery_summary()["arguments"]["path"], "a.txt")
-            recovered.acknowledge_recovery("stop")
+            recovered.acknowledge_recovery("discard")
+            self.assertIsNone(recovered.task.pending_tool)
+            self.assertIn("recovery.discarded", [event.type for event in recovered.events.list()])
 
     def test_runtime_recovers_task_from_events(self):
         with TemporaryDirectory() as directory:

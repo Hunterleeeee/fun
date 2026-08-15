@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
                     pending = runtime.recovery_summary() or {}
                     print(f"! recovery required: {recovery} · {pending.get('name', 'unknown tool')} · call={pending.get('call_id', '?')}")
                     print(f"  args: {pending.get('arguments', {})}")
-                    print("  action: /recover resume | /recover stop")
+                    print("  action: /recover discard | /recover mark_failed | /recover resume | /recover stop")
                 print(runtime.usage.summary())
                 continue
             if text == "/usage":
