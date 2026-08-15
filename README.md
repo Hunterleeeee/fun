@@ -2,6 +2,8 @@
 
 # Fun
 
+[![CI](https://github.com/Hunterleeeee/fun/actions/workflows/ci.yml/badge.svg)](https://github.com/Hunterleeeee/fun/actions/workflows/ci.yml)
+
 **Coding should feel good.**
 
 安全优先、可恢复的终端 Coding Agent。
