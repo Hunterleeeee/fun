@@ -56,11 +56,22 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(recovered.task.recovery_reason, "tool.executing")
             self.assertEqual(recovered.task.pending_tool["name"], "exec")
             self.assertEqual(recovered.task.pending_tool["arguments"]["command"], "echo hi")
+            self.assertEqual(recovered.recovery_summary()["call_id"], "call_1")
             with self.assertRaisesRegex(RuntimeError, "TASK_NOT_RUNNING"):
                 recovered.run_model_turn()
             recovered.acknowledge_recovery("resume")
             self.assertEqual(recovered.task.status, "running")
             recovered.stop()
+
+    def test_approval_pending_replays_arguments(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("approval")
+            runtime.emit("approval.pending", runtime.task.id, call_id="call_2", name="edit", risk="medium", arguments={"path": "a.txt"})
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.status, "recovery_required")
+            self.assertEqual(recovered.recovery_summary()["arguments"]["path"], "a.txt")
+            recovered.acknowledge_recovery("stop")
 
     def test_runtime_recovers_task_from_events(self):
         with TemporaryDirectory() as directory:

@@ -89,8 +89,10 @@ def main(argv: list[str] | None = None) -> int:
                 recovery = runtime.task.recovery_reason if runtime.task else None
                 print(f"session={runtime.session_id} task={status} agent={agent_state} policy={runtime.policy.mode.value}")
                 if recovery:
-                    pending = runtime.task.pending_tool or {}
-                    print(f"! recovery required: {recovery} · {pending.get('name', 'unknown tool')} (use /recover resume|stop)")
+                    pending = runtime.recovery_summary() or {}
+                    print(f"! recovery required: {recovery} · {pending.get('name', 'unknown tool')} · call={pending.get('call_id', '?')}")
+                    print(f"  args: {pending.get('arguments', {})}")
+                    print("  action: /recover resume | /recover stop")
                 print(runtime.usage.summary())
                 continue
             if text == "/usage":

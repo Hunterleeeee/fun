@@ -203,7 +203,7 @@ class Runtime:
         write_operation = name in {"edit", "exec"}
         risk = self.policy.risk_for(name, write=write_operation)
         if self.policy.requires_approval(risk):
-            self.emit("approval.pending", self.task.id, call_id=call_id, name=name, risk=risk.value)
+            self.emit("approval.pending", self.task.id, call_id=call_id, name=name, risk=risk.value, arguments=dict(kwargs))
             allowed = self.approve(name, risk) if self.approve else False
             self.emit("approval.resolved", self.task.id, call_id=call_id, name=name, allowed=allowed)
             if not allowed:
@@ -231,6 +231,12 @@ class Runtime:
         if plan_index is not None:
             self.update_plan_step(plan_index, "done" if result.ok else "blocked", result.text[:500])
         return result
+
+    def recovery_summary(self) -> dict[str, Any] | None:
+        if not self.task or self.task.status != "recovery_required":
+            return None
+        pending = self.task.pending_tool or {}
+        return {"reason": self.task.recovery_reason or "unknown", "call_id": pending.get("call_id"), "name": pending.get("name"), "arguments": pending.get("arguments", {})}
 
     def acknowledge_recovery(self, action: str = "resume") -> None:
         if not self.task or self.task.status != "recovery_required":
