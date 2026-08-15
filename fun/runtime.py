@@ -167,6 +167,8 @@ class Runtime:
                 self.task.agent_state = "completed"
             elif event.type == "response.failed":
                 self.task.response_error = {key: event.payload.get(key) for key in ("error_type", "error_tag", "summary") if key in event.payload}
+            elif event.type == "response.parsed":
+                self.task.response_error = None
             elif event.type == "approval.pending":
                 self.task.agent_state = "approval.pending"
                 self.task.pending_tool = dict(event.payload)
@@ -459,7 +461,9 @@ class Runtime:
                 if self.task:
                     self.task.plan_error_summary = summary
                 self.emit("plan.rejected", self.task.id if self.task else None, reason=str(exc), summary=summary)
+        self.emit("response.parsed", self.task.id, content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated)
         self._node("response.parsed", content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated)
+        self.task.response_error = None
         return content, parsed
 
     def execute_tool_calls(self, calls: list[dict[str, Any]]) -> None:

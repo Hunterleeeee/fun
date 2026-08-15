@@ -110,6 +110,18 @@ class AgentLoopTests(unittest.TestCase):
             self.assertNotIn("malformed response", str(failed.payload))
             self.assertNotIn("None has no attribute", str(failed.payload))
 
+    def test_successful_response_clears_previous_response_error(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("response recovery")
+            with self.assertRaises(AttributeError):
+                runtime.parse_model_response([None])
+            runtime.parse_model_response([{"choices": [{"delta": {"content": "ok"}}]}])
+            self.assertIsNone(runtime.task.response_error)
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertIsNone(recovered.task.response_error)
+            recovered.stop()
+
     def test_successful_model_turn_clears_previous_model_error(self):
         class Provider:
             def __init__(self):
