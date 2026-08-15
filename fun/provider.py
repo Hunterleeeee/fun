@@ -50,6 +50,12 @@ class OpenAICompatible:
             raise ProviderError("PROVIDER_INVALID_MESSAGES")
         if tools is not None and (not isinstance(tools, list) or any(not isinstance(tool, dict) for tool in tools)):
             raise ProviderError("PROVIDER_INVALID_TOOLS")
+        try:
+            json.dumps(messages)
+            if tools is not None:
+                json.dumps(tools)
+        except (TypeError, ValueError) as exc:
+            raise ProviderError("PROVIDER_INVALID_PAYLOAD", cause=exc) from exc
         payload: dict[str, Any] = {"model": self.config.model, "messages": messages, "stream": True}
         if tools:
             payload["tools"] = tools
