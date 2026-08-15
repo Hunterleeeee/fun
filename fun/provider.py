@@ -15,6 +15,7 @@ class ModelConfig:
     api_key: str
     model: str
     timeout: float = 120.0
+    max_payload_bytes: int = 1024 * 1024
 
 
 class ProviderError(RuntimeError):
@@ -43,6 +44,8 @@ class OpenAICompatible:
             raise ValueError("INVALID_PROVIDER_API_KEY")
         if not isinstance(config.timeout, (int, float)) or isinstance(config.timeout, bool) or not math.isfinite(config.timeout) or config.timeout <= 0:
             raise ValueError("INVALID_PROVIDER_TIMEOUT")
+        if not isinstance(config.max_payload_bytes, int) or isinstance(config.max_payload_bytes, bool) or config.max_payload_bytes <= 0:
+            raise ValueError("INVALID_PROVIDER_PAYLOAD_LIMIT")
         self.config = config
 
     def stream(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> Iterator[dict[str, Any]]:
@@ -55,7 +58,7 @@ class OpenAICompatible:
             serialized_tools = json.dumps(tools, separators=(",", ":")) if tools is not None else ""
         except (TypeError, ValueError) as exc:
             raise ProviderError("PROVIDER_INVALID_PAYLOAD", cause=exc) from exc
-        if len(serialized_messages.encode()) + len(serialized_tools.encode()) > 1024 * 1024:
+        if len(serialized_messages.encode()) + len(serialized_tools.encode()) > self.config.max_payload_bytes:
             raise ProviderError("PROVIDER_PAYLOAD_TOO_LARGE")
         payload: dict[str, Any] = {"model": self.config.model, "messages": messages, "stream": True}
         if tools:

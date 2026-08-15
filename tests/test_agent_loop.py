@@ -271,9 +271,9 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(list(provider.stream([], []))[0]["choices"][0]["delta"]["content"], "hello")
 
     def test_provider_rejects_oversized_payload(self):
-        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model"))
+        provider = OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model", max_payload_bytes=10))
         with self.assertRaises(ProviderError) as context:
-            next(provider.stream([{"content": "x" * (1024 * 1024)}]))
+            next(provider.stream([{"content": "x" * 100}]))
         self.assertEqual(context.exception.error_tag, "PROVIDER_PAYLOAD_TOO_LARGE")
 
     def test_provider_rejects_non_serializable_payload(self):
@@ -313,6 +313,9 @@ class AgentLoopTests(unittest.TestCase):
         for api_key in ("", "   ", None, 123):
             with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_API_KEY"):
                 OpenAICompatible(ModelConfig("https://provider.invalid", api_key, "model"))
+        for max_payload in (0, -1, True, 1.5):
+            with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_PAYLOAD_LIMIT"):
+                OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model", max_payload_bytes=max_payload))
         for timeout in (0, -1, float("nan"), float("inf"), True):
             with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_TIMEOUT"):
                 OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model", timeout=timeout))
