@@ -30,6 +30,7 @@ class Task:
     goal: str
     status: str = "created"
     agent_state: str = "idle"
+    recovery_reason: str | None = None
     plan: list[str] = field(default_factory=list)
     plan_status: list[str] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
@@ -69,7 +70,11 @@ class Runtime:
             if created:
                 runtime.task = Task(task_id, str(created.payload.get("goal", "")))
                 runtime._replay_task(task_events)
-                if runtime.task.status in {"running", "paused"}:
+                if runtime.task.agent_state in {"approval.pending", "tool.executing"}:
+                    runtime.task.status = "recovery_required"
+                    runtime.task.recovery_reason = runtime.task.agent_state
+                    runtime.emit("recovery.required", runtime.task.id, reason=runtime.task.recovery_reason)
+                if runtime.task.status in {"running", "paused", "recovery_required"}:
                     if not runtime.lock.adopt_if_owned():
                         runtime.lock.acquire()
         return runtime
@@ -99,6 +104,9 @@ class Runtime:
                 self.task.status = "completed"
             elif event.type == "task.stopped":
                 self.task.status = "stopped"
+            elif event.type == "recovery.required":
+                self.task.status = "recovery_required"
+                self.task.recovery_reason = str(event.payload.get("reason", "unknown"))
             elif event.type == "task.result":
                 self.task.agent_state = "completed"
             elif event.type == "approval.pending":
@@ -140,6 +148,7 @@ class Runtime:
             "created": {"running"},
             "running": {"paused", "completed", "stopped"},
             "paused": {"running", "stopped"},
+            "recovery_required": {"running", "stopped"},
             "completed": set(),
             "stopped": set(),
         }
@@ -216,6 +225,21 @@ class Runtime:
         if plan_index is not None:
             self.update_plan_step(plan_index, "done" if result.ok else "blocked", result.text[:500])
         return result
+
+    def acknowledge_recovery(self, action: str = "resume") -> None:
+        if not self.task or self.task.status != "recovery_required":
+            raise RuntimeError("RECOVERY_NOT_REQUIRED")
+        if action not in {"resume", "stop"}:
+            raise RuntimeError("INVALID_RECOVERY_ACTION")
+        reason = self.task.recovery_reason or "unknown"
+        self.emit("recovery.acknowledged", self.task.id, action=action, reason=reason)
+        self.task.recovery_reason = None
+        if action == "stop":
+            self._transition("stopped", "task.stopped")
+            self.lock.release()
+        else:
+            self.task.agent_state = "ready"
+            self._transition("running", "task.resumed")
 
     def _ensure_running(self) -> None:
         if not self.task or self.task.status != "running":

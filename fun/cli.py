@@ -86,7 +86,10 @@ def main(argv: list[str] | None = None) -> int:
             if text == "/status":
                 status = runtime.task.status if runtime.task else "idle"
                 agent_state = runtime.task.agent_state if runtime.task else "idle"
+                recovery = runtime.task.recovery_reason if runtime.task else None
                 print(f"session={runtime.session_id} task={status} agent={agent_state} policy={runtime.policy.mode.value}")
+                if recovery:
+                    print(f"! recovery required: {recovery} (use /recover or /stop)")
                 print(runtime.usage.summary())
                 continue
             if text == "/usage":
@@ -106,6 +109,10 @@ def main(argv: list[str] | None = None) -> int:
             if text == "/resume":
                 runtime.resume()
                 print("● running")
+                continue
+            if text == "/recover":
+                runtime.acknowledge_recovery("resume")
+                print("● recovery acknowledged; running")
                 continue
             if text == "/stop":
                 runtime.stop()

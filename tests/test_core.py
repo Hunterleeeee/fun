@@ -46,6 +46,20 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(recovered.task.agent_state, "tools.executing")
             recovered.stop()
 
+    def test_recovery_required_blocks_until_acknowledged(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("recover side effect")
+            runtime._node("tool.executing")
+            recovered = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(recovered.task.status, "recovery_required")
+            self.assertEqual(recovered.task.recovery_reason, "tool.executing")
+            with self.assertRaisesRegex(RuntimeError, "TASK_NOT_RUNNING"):
+                recovered.run_model_turn()
+            recovered.acknowledge_recovery("resume")
+            self.assertEqual(recovered.task.status, "running")
+            recovered.stop()
+
     def test_runtime_recovers_task_from_events(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)
@@ -96,6 +110,7 @@ class CoreTests(unittest.TestCase):
     def test_agent_node_event_is_renderable(self):
         renderer = TerminalRenderer(color=False)
         self.assertTrue(renderer.event("agent.node", {"node": "validation.started"}).startswith("◌"))
+        self.assertTrue(renderer.event("recovery.required", {"reason": "tool.executing"}).startswith("×"))
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 

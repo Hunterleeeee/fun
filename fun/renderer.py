@@ -38,6 +38,8 @@ class TerminalRenderer:
             return self.activity(str(payload.get("name", event_type)))
         if event_type == "approval.pending":
             return self.finding(f"approval required: {payload.get('name', 'tool')}")
+        if event_type == "recovery.required":
+            return self.error(f"recovery required: {payload.get('reason', 'unknown')}")
         if event_type in {"tool.completed", "validation.completed", "checkpoint.restored"}:
             return self.success(str(payload.get("text", event_type)))
         if event_type in {"tool.failed", "validation.failed", "checkpoint.restore_failed"}:
