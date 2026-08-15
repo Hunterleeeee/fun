@@ -211,7 +211,7 @@ python3 -m compileall -q fun tests
 python3 -m pip install -e .
 ```
 
-每次提交都会通过 GitHub Actions 的 Python 3.11 / 3.12 测试矩阵和 package install smoke test。package smoke 会校验 artifact checksum，并分别验证 wheel 及 sdist 构建/安装。发布由版本 tag 触发，并附带 wheel、sdist 和 SHA256 checksums；当前最新 Alpha 为 `v1.0.0a5`。
+每次提交都会通过 GitHub Actions 的 Python 3.11 / 3.12 测试矩阵和 package install smoke test。package smoke 会校验 artifact checksum，并分别验证 wheel 及 sdist 构建/安装。发布由版本 tag 触发，并附带 wheel、sdist 和 SHA256 checksums；当前最新 Alpha 为 `v1.0.0a5`。`main` 上的后续修复会在下一次 Alpha tag 发布后进入可下载 artifact，Release 包不会假装包含未发布提交。
 
 详细契约和设计：
 
