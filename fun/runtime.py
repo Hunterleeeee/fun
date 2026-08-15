@@ -36,6 +36,7 @@ class Task:
     pending_tool: dict[str, Any] | None = None
     plan: list[str] = field(default_factory=list)
     plan_status: list[str] = field(default_factory=list)
+    plan_error: str | None = None
     messages: list[dict[str, Any]] = field(default_factory=list)
     validation: dict[str, Any] | None = None
     repair_attempts: int = 0
@@ -106,6 +107,10 @@ class Runtime:
             if event.type in {"plan.created", "plan.replaced"}:
                 self.task.plan = list(event.payload.get("steps", []))
                 self.task.plan_status = list(event.payload.get("statuses", ["pending"] * len(self.task.plan)))
+            elif event.type == "plan.replaced":
+                self.task.plan_error = None
+            elif event.type == "plan.rejected":
+                self.task.plan_error = str(event.payload.get("reason", "INVALID_PLAN"))
             elif event.type == "plan.step_updated":
                 index = event.payload.get("index")
                 if isinstance(index, int) and 0 <= index < len(self.task.plan_status):
@@ -372,6 +377,8 @@ class Runtime:
                 self.replace_plan(proposed_plan)
                 plan_updated = True
             except RuntimeError as exc:
+                if self.task:
+                    self.task.plan_error = str(exc)
                 self.emit("plan.rejected", self.task.id if self.task else None, reason=str(exc))
         self._node("response.parsed", content_length=len(content), tool_calls=len(parsed), plan_updated=plan_updated)
         return content, parsed

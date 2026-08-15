@@ -165,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"! recovery required: {recovery} · {pending.get('name', 'unknown tool')} · call={pending.get('call_id', '?')}")
                     print(f"  args: {pending.get('arguments', {})}")
                     print("  action: /recover discard | /recover mark_failed | /recover resume | /recover stop")
+                if runtime.task and runtime.task.plan_error:
+                    print(f"! plan rejected: {runtime.task.plan_error}")
                 print(runtime.usage.summary())
                 continue
             if text == "/usage":

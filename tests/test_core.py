@@ -194,6 +194,16 @@ class CoreTests(unittest.TestCase):
         self.assertIn("✓ inspect", renderer.plan(["inspect"], ["done"]))
         self.assertIn("× repair", renderer.plan(["repair"], ["blocked"]))
 
+    def test_rejected_plan_error_replays(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto", state_dir=directory)
+            runtime.create_task("bad plan")
+            runtime.task.plan_error = "INVALID_PLAN"
+            runtime.emit("plan.rejected", runtime.task.id, reason="INVALID_PLAN")
+            recovered = Runtime.recover(directory, directory, runtime.session_id, approval="auto")
+            self.assertEqual(recovered.task.plan_error, "INVALID_PLAN")
+            recovered.stop()
+
     def test_dynamic_plan_replaces_and_replays_latest_steps(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)

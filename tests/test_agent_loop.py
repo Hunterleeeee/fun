@@ -46,6 +46,7 @@ class AgentLoopTests(unittest.TestCase):
             self.assertEqual(output, "Kept the safe plan.")
             self.assertEqual(runtime.task.plan, original)
             self.assertIn("plan.rejected", [event.type for event in runtime.events.list()])
+            self.assertEqual(runtime.task.plan_error, "INVALID_PLAN")
 
     def test_model_plan_proposal_replaces_runtime_plan(self):
         for provider in (PlanProvider(), PlanProvider(in_delta=True)):
