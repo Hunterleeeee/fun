@@ -63,6 +63,7 @@ class Runtime:
         store = EventStore(durable)
         store.load(durable.events(session_id))
         runtime = cls(workspace, approval, provider, event_store=store, state_dir=state_dir, approve=approve)
+        runtime.session_id = session_id
         events = store.replay(session_id)
         task_events = [event for event in events if event.task_id]
         if task_events:
@@ -71,7 +72,7 @@ class Runtime:
             if created:
                 runtime.task = Task(task_id, str(created.payload.get("goal", "")))
                 runtime._replay_task(task_events)
-                if runtime.task.agent_state in {"approval.pending", "tool.executing"}:
+                if runtime.task.status in {"running", "paused"} and runtime.task.agent_state in {"approval.pending", "tool.executing"} and not any(event.type in {"recovery.acknowledged", "recovery.discarded", "recovery.marked_failed"} for event in task_events if event.task_id == task_id and event.seq > created.seq):
                     runtime.task.status = "recovery_required"
                     runtime.task.recovery_reason = runtime.task.agent_state
                     runtime.emit("recovery.required", runtime.task.id, reason=runtime.task.recovery_reason)
@@ -108,6 +109,19 @@ class Runtime:
             elif event.type == "recovery.required":
                 self.task.status = "recovery_required"
                 self.task.recovery_reason = str(event.payload.get("reason", "unknown"))
+            elif event.type in {"recovery.discarded", "recovery.marked_failed"}:
+                self.task.status = "running"
+                self.task.pending_tool = None
+                self.task.recovery_reason = None
+                self.task.agent_state = "ready"
+            elif event.type == "recovery.acknowledged":
+                action = str(event.payload.get("action", "resume"))
+                if action in {"resume", "discard", "mark_failed"}:
+                    self.task.status = "running"
+                    self.task.recovery_reason = None
+                elif action == "stop":
+                    self.task.status = "stopped"
+                    self.task.recovery_reason = None
             elif event.type == "task.result":
                 self.task.agent_state = "completed"
             elif event.type == "approval.pending":

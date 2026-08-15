@@ -64,6 +64,9 @@ class CoreTests(unittest.TestCase):
             self.assertIsNone(recovered.task.pending_tool)
             self.assertIn("recovery.marked_failed", [event.type for event in recovered.events.list()])
             recovered.stop()
+            replayed = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(replayed.task.status, "stopped")
+            self.assertIsNone(replayed.task.pending_tool)
 
     def test_approval_pending_replays_arguments(self):
         with TemporaryDirectory() as directory:
@@ -76,6 +79,10 @@ class CoreTests(unittest.TestCase):
             recovered.acknowledge_recovery("discard")
             self.assertIsNone(recovered.task.pending_tool)
             self.assertIn("recovery.discarded", [event.type for event in recovered.events.list()])
+            replayed = Runtime.recover(directory, directory, runtime.session_id)
+            self.assertEqual(replayed.task.status, "running")
+            self.assertIsNone(replayed.task.pending_tool)
+            replayed.stop()
 
     def test_runtime_recovers_task_from_events(self):
         with TemporaryDirectory() as directory:
