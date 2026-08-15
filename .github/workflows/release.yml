@@ -28,11 +28,10 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           expected="${RELEASE_TAG#v}"
-          case "$expected" in
-            [0-9]*.[0-9]*.[0-9]*|[0-9]*.[0-9]*.[0-9]*a[0-9]*|[0-9]*.[0-9]*.[0-9]*b[0-9]*|[0-9]*.[0-9]*.[0-9]*rc[0-9]*) ;;
-            *) echo "Invalid release tag: $RELEASE_TAG"; exit 1 ;;
-          esac
+          # The package version is the canonical PEP 440 value; requiring an
+          # exact match rejects malformed or ambiguous tag spellings.
           actual=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          test -n "$expected"
           test "$expected" = "$actual"
       - name: Build distributions
         run: python -m build
