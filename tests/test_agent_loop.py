@@ -63,6 +63,15 @@ class AgentLoopTests(unittest.TestCase):
             parsed = next(event for event in runtime.events.list() if event.type == "response.parsed")
             self.assertEqual(parsed.payload["summary"]["tool_calls"], 0)
 
+    def test_tool_result_clears_pending_tool(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("tool cleanup")
+            runtime.run_tool("read", path="missing.txt")
+            self.assertIsNone(runtime.task.pending_tool)
+            runtime.run_tool("unknown")
+            self.assertIsNone(runtime.task.pending_tool)
+
     def test_invalid_tool_arguments_record_failure_without_arguments(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)

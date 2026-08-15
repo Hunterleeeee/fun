@@ -303,6 +303,7 @@ class Runtime:
         except SchemaError as exc:
             result = ToolResult(False, str(exc))
             self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
+            self.task.pending_tool = None
             return result
         write_operation = name in {"edit", "exec"}
         risk = self.policy.risk_for(name, write=write_operation)
@@ -334,6 +335,7 @@ class Runtime:
             self.emit("tool.failed", self.task.id, name=name, error_type=type(exc).__name__, error_tag="TOOL_EXECUTION_FAILED")
             raise
         self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, call_id=call_id, name=name, ok=result.ok, text=result.text, changed=result.changed or [])
+        self.task.pending_tool = None
         if plan_index is not None:
             self.update_plan_step(plan_index, "done" if result.ok else "blocked", result.text[:500])
         return result
