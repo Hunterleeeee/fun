@@ -82,6 +82,7 @@ class AgentLoopTests(unittest.TestCase):
             runtime.emit("approval.rejected", runtime.task.id, call_id="old", name="exec", reason="callback_denied")
             recovered = Runtime.recover(directory, directory, runtime.session_id)
             self.assertEqual(recovered.task.pending_tool["call_id"], "new")
+            self.assertEqual(recovered.task.agent_state, "tool.executing")
             recovered.stop()
 
     def test_stale_tool_failure_does_not_clear_new_pending_tool(self):
@@ -92,6 +93,7 @@ class AgentLoopTests(unittest.TestCase):
             runtime.emit("tool.failed", runtime.task.id, call_id="old", name="read", ok=False, error_tag="TOOL_EXECUTION_FAILED")
             recovered = Runtime.recover(directory, directory, runtime.session_id)
             self.assertEqual(recovered.task.pending_tool["call_id"], "new")
+            self.assertEqual(recovered.task.agent_state, "tool.executing")
             recovered.stop()
 
     def test_stale_approval_failure_does_not_clear_new_pending_tool(self):
@@ -101,7 +103,7 @@ class AgentLoopTests(unittest.TestCase):
             runtime.emit("approval.pending", runtime.task.id, call_id="new", name="exec", risk="medium", arguments={})
             runtime.emit("approval.failed", runtime.task.id, call_id="old", name="exec", error_type="RuntimeError", error_tag="APPROVAL_CALLBACK_FAILED")
             recovered = Runtime.recover(directory, directory, runtime.session_id)
-            self.assertEqual(recovered.task.agent_state, "ready")
+            self.assertEqual(recovered.task.agent_state, "approval.pending")
             self.assertEqual(recovered.task.pending_tool["call_id"], "new")
             recovered.stop()
 

@@ -172,25 +172,14 @@ class Runtime:
             elif event.type == "tool.executing":
                 self.task.agent_state = "tool.executing"
                 self.task.pending_tool = dict(event.payload)
-            elif event.type == "approval.rejected":
-                self.task.agent_state = "ready"
+            elif event.type in {"approval.rejected", "approval.failed", "approval.resolved", "tool.completed", "tool.failed"}:
                 pending_call = self.task.pending_tool or {}
-                if not pending_call or pending_call.get("call_id") == event.payload.get("call_id"):
-                    self.task.pending_tool = None
-            elif event.type == "approval.failed":
-                self.task.agent_state = "ready"
-                pending_call = self.task.pending_tool or {}
-                if not pending_call or pending_call.get("call_id") == event.payload.get("call_id"):
-                    self.task.pending_tool = None
-            elif event.type == "approval.resolved":
-                pending_call = self.task.pending_tool or {}
-                if not pending_call or pending_call.get("call_id") == event.payload.get("call_id"):
-                    self.task.agent_state = "ready"
-            elif event.type in {"tool.completed", "tool.failed"}:
-                self.task.agent_state = "ready"
-                pending_call = self.task.pending_tool or {}
-                if not pending_call or pending_call.get("call_id") == event.payload.get("call_id"):
-                    self.task.pending_tool = None
+                call_id = event.payload.get("call_id")
+                matches = not pending_call or pending_call.get("call_id") == call_id
+                if matches:
+                    self.task.agent_state = "ready" if event.type != "approval.resolved" else "ready"
+                    if event.type != "approval.resolved":
+                        self.task.pending_tool = None
             elif event.type in {"validation.completed", "validation.failed"}:
                 self.task.validation = {"ok": bool(event.payload.get("ok")), "command": event.payload.get("command", ""), "text": event.payload.get("text", "")}
             elif event.type in {"repair.started", "repair.completed", "repair.failed", "repair.blocked"}:
