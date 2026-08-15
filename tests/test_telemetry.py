@@ -3,7 +3,7 @@ from unittest import mock
 
 from fun.runtime import Runtime
 from fun.cli import build_parser
-from fun.telemetry import TelemetryClient, event_payload, install_id, load_or_create_install_id, model_family
+from fun.telemetry import TelemetryClient, event_payload, install_id, load_or_create_install_id, model_family, valid_endpoint
 
 
 class TelemetryTests(unittest.TestCase):
@@ -13,6 +13,13 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(payload["total_tokens"], 14)
         self.assertNotIn("local-secret", str(payload))
         self.assertEqual(set(payload), set(payload) & {"event", "install_id", "fun_version", "python_version", "os", "model_family", "input_tokens", "output_tokens", "total_tokens", "tool_calls", "status"})
+
+    def test_endpoint_must_be_http_or_https(self):
+        self.assertTrue(valid_endpoint("https://private.example/telemetry"))
+        self.assertTrue(valid_endpoint("http://127.0.0.1:9000/events"))
+        self.assertFalse(valid_endpoint("file:///tmp/events"))
+        self.assertFalse(valid_endpoint("private.example/events"))
+        self.assertFalse(TelemetryClient(enabled=True, endpoint="file:///tmp/events").enabled)
 
     def test_cli_exposes_explicit_telemetry_switches(self):
         self.assertTrue(build_parser().parse_args(["--telemetry"]).telemetry)

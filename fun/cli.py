@@ -71,7 +71,13 @@ def main(argv: list[str] | None = None) -> int:
             return False
     telemetry_enabled = saved.telemetry if args.telemetry is None else args.telemetry
     if args.telemetry is True:
-        saved.telemetry = True
+        from .telemetry import valid_endpoint
+        if not valid_endpoint(saved.telemetry_endpoint):
+            print("Telemetry requires a private http(s) endpoint. Use --configure first.", file=sys.stderr)
+            saved.telemetry = False
+            telemetry_enabled = False
+        else:
+            saved.telemetry = True
     if args.telemetry is False:
         saved.telemetry = False
         saved.telemetry_endpoint = ""

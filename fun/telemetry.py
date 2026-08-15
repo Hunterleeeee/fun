@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 
 ALLOWED_FIELDS = frozenset({
@@ -47,6 +48,11 @@ def load_or_create_install_id(state_dir: str) -> str:
     return value
 
 
+def valid_endpoint(endpoint: str) -> bool:
+    parsed = urlparse(endpoint.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
 def model_family(model: str) -> str:
     """Keep provider metrics coarse and avoid sending a model/account identifier."""
     normalized = model.strip().lower()
@@ -82,8 +88,8 @@ class TelemetryClient:
     """Best-effort opt-in sender for an operator-controlled private endpoint."""
 
     def __init__(self, enabled: bool = False, endpoint: str = "", install: str | None = None) -> None:
-        self.enabled = bool(enabled and endpoint.strip())
         self.endpoint = endpoint.strip()
+        self.enabled = bool(enabled and valid_endpoint(self.endpoint))
         self.install = install_id(install)
 
     def send(self, payload: dict[str, Any]) -> bool:
