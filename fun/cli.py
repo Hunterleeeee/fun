@@ -104,7 +104,10 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if text == "/checkpoint":
                 runtime.checkpoint()
-                print("✓ checkpoint created")
+                print(renderer.success("checkpoint created"))
+                continue
+            if text.startswith("/restore"):
+                print("Restore requires a checkpoint snapshot in the current process.")
                 continue
             task = runtime.create_task(text)
             print(renderer.plan(task.plan))

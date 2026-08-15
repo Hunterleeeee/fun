@@ -111,6 +111,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("◇ PLAN", renderer.plan(["inspect files"]))
         self.assertTrue(renderer.activity("reading").startswith("◌"))
         self.assertTrue(renderer.finding("risk").startswith("!"))
+        self.assertTrue(renderer.event("tool.completed", {"text": "ok"}).startswith("✓"))
 
     def test_checkpoint_restore_reapplies_git_diff(self):
         with TemporaryDirectory() as directory:
