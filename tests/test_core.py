@@ -38,6 +38,25 @@ class CoreTests(unittest.TestCase):
             self.assertGreaterEqual(len(runtime.events.list()), 2)
             self.assertTrue((Path(directory) / "events.db").exists())
 
+    def test_task_pause_resume_and_complete(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory)
+            runtime.create_task("state")
+            runtime.pause()
+            self.assertEqual(runtime.task.status, "paused")
+            runtime.resume()
+            runtime.complete("done")
+            self.assertEqual(runtime.task.status, "completed")
+            self.assertEqual(runtime.events.list()[-1].type, "task.completed")
+
+    def test_unknown_tool_is_rejected(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("tool")
+            result = runtime.run_tool("emit", event_type="task.completed")
+            self.assertFalse(result.ok)
+            self.assertEqual(result.text, "UNSUPPORTED_TOOL")
+
     def test_runtime_emits_tool_events(self):
         with TemporaryDirectory() as directory:
             (Path(directory) / "hello.txt").write_text("hello\n", encoding="utf-8")

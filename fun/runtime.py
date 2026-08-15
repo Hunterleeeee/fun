@@ -28,6 +28,7 @@ class Task:
     status: str = "created"
     plan: list[str] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
+    validation: dict[str, Any] | None = None
 
 
 class Runtime:
@@ -80,7 +81,17 @@ class Runtime:
                 result = ToolResult(False, "APPROVAL_REQUIRED", risk)
                 self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
                 return result
-        method: Callable[..., ToolResult] = getattr(self.tools, name)
+        registered: dict[str, Callable[..., ToolResult]] = {
+            "explore": self.tools.explore,
+            "read": self.tools.read,
+            "edit": self.tools.edit,
+            "exec": self.tools.exec,
+        }
+        method = registered.get(name)
+        if method is None:
+            result = ToolResult(False, "UNSUPPORTED_TOOL")
+            self.emit("tool.failed", self.task.id, name=name, ok=False, text=result.text, changed=[])
+            return result
         try:
             result = method(**kwargs)
         except Exception as exc:
@@ -137,6 +148,7 @@ class Runtime:
             raise RuntimeError("NO_ACTIVE_TASK")
         self.emit("validation.started", self.task.id, command=command)
         result = self.run_tool("exec", command=command)
+        self.task.validation = {"ok": result.ok, "command": command, "text": result.text}
         self.emit("validation.completed" if result.ok else "validation.failed", self.task.id, ok=result.ok, command=command)
         return result
 
@@ -148,7 +160,23 @@ class Runtime:
         self.emit("checkpoint.created", self.task.id, label=label, changed=bool(diff.stdout))
         return snapshot
 
-    def stop(self) -> None:
+    def pause(self) -> None:
         if self.task and self.task.status == "running":
+            self.task.status = "paused"
+            self.emit("task.paused", self.task.id)
+
+    def resume(self) -> None:
+        if self.task and self.task.status == "paused":
+            self.task.status = "running"
+            self.emit("task.resumed", self.task.id)
+
+    def complete(self, result: str = "") -> None:
+        if not self.task or self.task.status != "running":
+            raise RuntimeError("NO_ACTIVE_TASK")
+        self.task.status = "completed"
+        self.emit("task.completed", self.task.id, result=result, validation=self.task.validation or {})
+
+    def stop(self) -> None:
+        if self.task and self.task.status in {"running", "paused"}:
             self.task.status = "stopped"
             self.emit("task.stopped", self.task.id)
