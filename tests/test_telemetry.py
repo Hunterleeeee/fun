@@ -22,6 +22,29 @@ class TelemetryTests(unittest.TestCase):
                 runtime.complete("done")
             send.assert_not_called()
 
+    def test_runtime_reports_stopped_once(self):
+        telemetry = TelemetryClient(enabled=True, endpoint="http://127.0.0.1:1/telemetry", install="test")
+        with mock.patch.object(telemetry, "send", return_value=True) as send:
+            import tempfile
+            with tempfile.TemporaryDirectory() as directory:
+                runtime = Runtime(directory, telemetry=telemetry)
+                runtime.create_task("stop me")
+                runtime.stop()
+                runtime.stop()
+            send.assert_called_once()
+            self.assertEqual(send.call_args.args[0]["status"], "stopped")
+
+    def test_runtime_reports_failure_once(self):
+        telemetry = TelemetryClient(enabled=True, endpoint="http://127.0.0.1:1/telemetry", install="test")
+        with mock.patch.object(telemetry, "send", return_value=True) as send:
+            import tempfile
+            with tempfile.TemporaryDirectory() as directory:
+                runtime = Runtime(directory, telemetry=telemetry)
+                runtime.create_task("fail me")
+                runtime.fail("broken")
+            send.assert_called_once()
+            self.assertEqual(send.call_args.args[0]["status"], "failed")
+
     def test_sender_is_disabled_without_explicit_opt_in_and_endpoint(self):
         payload = event_payload(event="task.finished", install="local")
         self.assertFalse(TelemetryClient().send(payload))

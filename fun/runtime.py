@@ -59,6 +59,7 @@ class Runtime:
         self.task: Task | None = None
         self.telemetry = telemetry
         self._tool_calls = 0
+        self._telemetry_sent = False
 
     @classmethod
     def recover(cls, workspace: str, state_dir: str, session_id: str, approval: str = "smart", provider: OpenAICompatible | None = None, approve: Callable[[str, Risk], bool] | None = None) -> "Runtime":
@@ -458,8 +459,9 @@ class Runtime:
         self.lock.release()
 
     def _send_telemetry(self, status: str) -> None:
-        if not self.telemetry:
+        if not self.telemetry or self._telemetry_sent:
             return
+        self._telemetry_sent = True
         usage = self.usage.as_dict()
         payload = event_payload(event="task.finished", install=self.telemetry.install, model="", status=status, input_tokens=usage.get("input_tokens") or 0, output_tokens=usage.get("output_tokens") or 0, total_tokens=usage.get("total_tokens") or 0, tool_calls=self._tool_calls)
         self.telemetry.send(payload)
@@ -467,4 +469,5 @@ class Runtime:
     def stop(self) -> None:
         if self.task and self.task.status in {"running", "paused"}:
             self._transition("stopped", "task.stopped")
+            self._send_telemetry("stopped")
             self.lock.release()
