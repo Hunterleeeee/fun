@@ -30,6 +30,7 @@ class Task:
     goal: str
     status: str = "created"
     plan: list[str] = field(default_factory=list)
+    plan_status: list[str] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
     validation: dict[str, Any] | None = None
 
@@ -79,6 +80,7 @@ class Runtime:
                 continue
             if event.type == "plan.created":
                 self.task.plan = list(event.payload.get("steps", []))
+                self.task.plan_status = ["pending"] * len(self.task.plan)
             elif event.type == "task.started":
                 self.task.status = "running"
             elif event.type == "task.paused":
@@ -106,6 +108,7 @@ class Runtime:
             self.lock.acquire()
         self.task = Task(f"task_{uuid.uuid4().hex[:12]}", goal, "created")
         self.task.plan = self._initial_plan(goal)
+        self.task.plan_status = ["pending"] * len(self.task.plan)
         self.task.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
         self.emit("task.created", self.task.id, goal=goal)
         self.emit("plan.created", self.task.id, steps=self.task.plan)
@@ -133,6 +136,14 @@ class Runtime:
         if any(word in lower for word in ("fix", "修复", "改", "implement", "实现")):
             return ["inspect workspace", "locate relevant code", "apply a minimal change", "run focused validation"]
         return ["inspect workspace", "analyze the request", "report verified findings"]
+
+    def update_plan_step(self, index: int, status: str, evidence: str = "") -> None:
+        if not self.task or self.task.status != "running":
+            raise RuntimeError("NO_ACTIVE_TASK")
+        if index < 0 or index >= len(self.task.plan) or status not in {"pending", "active", "done", "blocked"}:
+            raise RuntimeError("INVALID_PLAN_STEP")
+        self.task.plan_status[index] = status
+        self.emit("plan.step_updated", self.task.id, index=index, status=status, evidence=evidence)
 
     def run_tool(self, name: str, **kwargs: object) -> ToolResult:
         if not self.task or self.task.status != "running":
