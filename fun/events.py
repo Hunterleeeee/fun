@@ -25,13 +25,16 @@ class Event:
 
 
 class EventStore:
-    def __init__(self) -> None:
+    def __init__(self, durable: object | None = None) -> None:
         self._events: list[Event] = []
+        self._durable = durable
 
     def append(self, event: Event) -> Event:
         if any(item.id == event.id for item in self._events):
             return event
         self._events.append(event)
+        if self._durable is not None:
+            self._durable.append(event)
         return event
 
     def list(self, session_id: str | None = None) -> list[Event]:

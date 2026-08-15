@@ -111,16 +111,23 @@ class Tools:
 
     def exec(self, command: str, timeout: float = 120.0) -> ToolResult:
         risk = self.policy.risk_for("exec")
-        if self.policy.mode == self.policy.mode.AUTO and any(token in command for token in ("rm -rf", "git reset --hard", "git clean")):
-            return ToolResult(False, "CRITICAL_OPERATION_BLOCKED", Risk.CRITICAL)
-        completed = subprocess.run(
-            command,
-            cwd=self.guard.root,
-            shell=True,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            env={**os.environ, "PWD": str(self.guard.root)},
-        )
+        critical_tokens = ("rm -rf", "git reset --hard", "git clean", "sudo ", "curl ", "wget ")
+        if any(token in command for token in critical_tokens):
+            if self.policy.mode != self.policy.mode.ASK:
+                return ToolResult(False, "CRITICAL_OPERATION_BLOCKED", Risk.CRITICAL)
+            return ToolResult(False, "APPROVAL_REQUIRED", Risk.CRITICAL)
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=self.guard.root,
+                shell=True,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                env={**os.environ, "PWD": str(self.guard.root)},
+            )
+        except subprocess.TimeoutExpired as exc:
+            output = ((exc.stdout or "") + (exc.stderr or "")).strip()
+            return ToolResult(False, f"COMMAND_TIMEOUT\n{output}".strip(), risk)
         output = (completed.stdout + completed.stderr).strip()
         return ToolResult(completed.returncode == 0, output, risk, exit_code=completed.returncode)

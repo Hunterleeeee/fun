@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Iterator
@@ -11,6 +12,7 @@ class ModelConfig:
     base_url: str
     api_key: str
     model: str
+    timeout: float = 120.0
 
 
 class ProviderError(RuntimeError):
@@ -18,6 +20,8 @@ class ProviderError(RuntimeError):
 
 
 class OpenAICompatible:
+    """Minimal OpenAI-compatible chat-completions streaming adapter."""
+
     def __init__(self, config: ModelConfig) -> None:
         self.config = config
 
@@ -31,8 +35,10 @@ class OpenAICompatible:
             headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
             method="POST",
         )
+        started = time.monotonic()
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+                first = True
                 for raw in response:
                     line = raw.decode(errors="replace").strip()
                     if not line or line == "data: [DONE]":
@@ -40,8 +46,21 @@ class OpenAICompatible:
                     if line.startswith("data:"):
                         line = line[5:].strip()
                     try:
-                        yield json.loads(line)
+                        item = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    if first:
+                        item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
+                        first = False
+                    yield item
         except Exception as exc:
             raise ProviderError(str(exc)) from exc
+
+
+def tool_schemas() -> list[dict[str, Any]]:
+    return [
+        {"type": "function", "function": {"name": "explore", "description": "List files in the workspace.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}}, "required": []}}},
+        {"type": "function", "function": {"name": "read", "description": "Read a text file with line numbers.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "start": {"type": "integer"}, "end": {"type": "integer"}}, "required": ["path"]}}},
+        {"type": "function", "function": {"name": "edit", "description": "Apply a unified diff after an expected hash check.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "expected_hash": {"type": "string"}, "patch": {"type": "string"}}, "required": ["path", "expected_hash", "patch"]}}},
+        {"type": "function", "function": {"name": "exec", "description": "Run a command in the workspace.", "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "timeout": {"type": "number"}}, "required": ["command"]}}},
+    ]

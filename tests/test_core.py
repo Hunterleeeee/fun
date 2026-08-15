@@ -57,6 +57,16 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertEqual(result.text, "ok")
 
+    def test_checkpoint_and_validation_emit_events(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "auto")
+            runtime.create_task("validate")
+            result = runtime.validate("python3 -c \"print('pass')\"")
+            self.assertTrue(result.ok)
+            snapshot = runtime.checkpoint("test")
+            self.assertEqual(snapshot["label"], "test")
+            self.assertEqual([event.type for event in runtime.events.list()][-4:], ["tool.requested", "tool.completed", "validation.completed", "checkpoint.created"])
+
     def test_edit_applies_hash_checked_patch_in_auto_mode(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "a.txt"
