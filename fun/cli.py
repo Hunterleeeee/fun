@@ -55,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
             saved.telemetry_endpoint = ""
         saved.save(config_path)
         print(f"Saved provider configuration to {config_path}")
+        if saved.api_key:
+            print("API key is not stored in the config file; export FUN_API_KEY before running Fun.")
         return 0
     base_url = args.base_url or saved.base_url
     api_key = args.api_key or saved.api_key

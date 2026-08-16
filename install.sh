@@ -2,6 +2,7 @@
 set -eu
 
 REPO_URL="${FUN_REPO_URL:-https://github.com/Hunterleeeee/fun.git}"
+FUN_REF="${FUN_VERSION:-v1.0.0a6}"
 INSTALL_ROOT="${FUN_INSTALL_ROOT:-$HOME/.fun}"
 VENV="$INSTALL_ROOT/venv"
 BIN_DIR="${FUN_BIN_DIR:-$HOME/.local/bin}"
@@ -30,7 +31,7 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 
 "$VENV/bin/python" -m pip install --upgrade pip >/dev/null
-"$VENV/bin/python" -m pip install --upgrade "git+${REPO_URL}"
+"$VENV/bin/python" -m pip install --upgrade "git+${REPO_URL}@${FUN_REF}"
 
 ln -sf "$VENV/bin/fun" "$BIN_DIR/fun"
 
