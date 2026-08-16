@@ -416,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
                     print(text)
             if not text:
                 continue
-            if text.startswith("/") and not text.startswith(("/goal ", "/recover ")):
+            if text.startswith("/") and not text.startswith(("/goal ", "/recover ", "/cancel ")):
                 known = {item[0] for item in command_items} | {"/setup", "/quit"}
                 resolved, matches = resolve_command_prefix(text, known)
                 if resolved is not None:
