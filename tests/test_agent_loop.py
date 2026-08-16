@@ -1,10 +1,34 @@
+import json
+import os
+import subprocess
+import sys
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from fun.provider import ModelConfig, OpenAICompatible, ProviderError, tool_schemas
 from fun.runtime import Runtime
+
+
+class SmokeHandler(BaseHTTPRequestHandler):
+    seen_auth = None
+
+    def do_POST(self):
+        self.__class__.seen_auth = self.headers.get("Authorization")
+        length = int(self.headers.get("Content-Length", "0"))
+        json.loads(self.rfile.read(length))
+        body = b'data: {"choices":[{"delta":{"content":"FUN_SMOKE_OK"}}]}\n\ndata: [DONE]\n\n'
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args):
+        pass
 
 
 class InvalidPlanProvider:
@@ -38,6 +62,25 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_local_sse_provider_smoke_script(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), SmokeHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            env = os.environ | {
+                "FUN_API_URL": f"http://127.0.0.1:{server.server_port}/v1",
+                "FUN_API_KEY": "smoke-secret",
+                "FUN_MODEL": "smoke-model",
+            }
+            result = subprocess.run([sys.executable, "scripts/provider_smoke.py"], capture_output=True, text=True, env=env, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("stream_chunks=1", result.stdout)
+            self.assertEqual(SmokeHandler.seen_auth, "Bearer smoke-secret")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
     def test_provider_stream_handles_done_token_split_across_chunks(self):
         class Response:
             def __enter__(self):
