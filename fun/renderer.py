@@ -1,22 +1,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 import unicodedata
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _char_width(char: str) -> int:
+    return 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
 
 
 def _display_width(text: str) -> int:
-    return sum(2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1 for char in text)
+    return sum(_char_width(char) for char in _ANSI.sub("", text))
 
 
 def _fit_display(text: str, width: int) -> str:
     result = ""
     used = 0
-    for char in text:
-        char_width = 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
-        if used + char_width > width:
-            break
-        result += char
-        used += char_width
+    for token in re.split(r"(\x1b\[[0-9;]*m)", text):
+        if not token:
+            continue
+        if _ANSI.fullmatch(token):
+            result += token
+            continue
+        for char in token:
+            char_width = _char_width(char)
+            if used + char_width > width:
+                return result + " " * max(0, width - used)
+            result += char
+            used += char_width
     return result + " " * max(0, width - used)
 
 

@@ -579,6 +579,8 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(result.text, "UNSUPPORTED_TOOL")
 
     def test_renderer_keeps_unicode_header_rows_aligned(self):
+        color_header = TerminalRenderer(color=True, locale="zh-CN").header("/tmp/中文-workspace", True, "smart")
+        self.assertTrue(all(_display_width(line) == 62 for line in color_header.splitlines()))
         renderer = TerminalRenderer(color=False, locale="zh-CN")
         for line in renderer.header("/tmp/中文-workspace", True, "smart").splitlines():
             self.assertEqual(_display_width(line), 62)
