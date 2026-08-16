@@ -5,9 +5,13 @@ import os
 import queue
 import select
 import sys
-import termios
 import threading
-import tty
+try:
+    import termios
+    import tty
+except ImportError:  # Windows keeps the plain CLI fallback
+    termios = None
+    tty = None
 from dataclasses import dataclass, field
 from shutil import get_terminal_size
 from typing import Any, Callable
@@ -124,7 +128,7 @@ class TerminalUI:
         return key
 
     def run(self, on_submit: Callable[[str], None], on_approval: Callable[[str, object, dict[str, Any]], None] | None = None) -> None:
-        if not sys.stdin.isatty() or not hasattr(termios, "tcgetattr"):
+        if termios is None or tty is None or not sys.stdin.isatty() or not hasattr(termios, "tcgetattr"):
             raise RuntimeError("TUI_REQUIRES_TTY")
         fd = sys.stdin.fileno()
         self._old_termios = termios.tcgetattr(fd)
