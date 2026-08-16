@@ -229,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
             print(t(locale, "api_key_hint"))
             entered_key = _secret_input("API key ❯ ") if not os.getenv("FUN_API_KEY") else os.getenv("FUN_API_KEY")
             if entered_key is None:
-                return
+                return 130
             saved.api_key = entered_key
             if not saved.api_key:
                 print(renderer.error("API key is required."), file=sys.stderr)
@@ -287,11 +287,11 @@ def main(argv: list[str] | None = None) -> int:
         readline.parse_and_bind('tab: complete')
 
     command_items = [
-        ("/help", "Show help"), ("/config", "Configure provider and credentials"),
-        ("/model", "Choose a model"), ("/permissions", "Change approval mode"),
-        ("/logout", "Remove saved API key and provider"), ("/status", "Show status"),
-        ("/plan", "Show plan"), ("/usage", "Show usage"), ("/diff", "Show diff"),
-        ("/checkpoint", "Create checkpoint"), ("/clear", "Clear screen"), ("/exit", "Exit"),
+        ("/help", t(locale, "cmd_help")), ("/config", t(locale, "cmd_config")),
+        ("/model", t(locale, "cmd_model")), ("/permissions", t(locale, "cmd_permissions")),
+        ("/logout", t(locale, "cmd_logout")), ("/status", t(locale, "cmd_status")),
+        ("/plan", t(locale, "cmd_plan")), ("/usage", t(locale, "cmd_usage")), ("/diff", t(locale, "cmd_diff")),
+        ("/checkpoint", t(locale, "cmd_checkpoint")), ("/clear", t(locale, "cmd_clear")), ("/exit", t(locale, "cmd_exit")),
     ]
 
     def command_menu() -> str:
@@ -300,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         index = 0
         while True:
             print("\033[2J\033[H", end="")
-            print("Commands · ↑↓ select · Enter accept · Esc cancel\n")
+            print(t(locale, "commands_title") + "\n")
             for i, (command, description) in enumerate(command_items):
                 marker = "❯" if i == index else " "
                 print(f"{marker} {command:<14} {description}")
