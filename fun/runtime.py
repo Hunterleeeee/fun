@@ -337,7 +337,7 @@ class Runtime:
         self.emit("agent.node", self.task.id, node="ready")
         self.task.agent_state = "ready"
 
-    def run_tool(self, name: str, **kwargs: object) -> ToolResult:
+    def run_tool(self, name: str, on_status: Callable[[str, dict[str, Any]], None] | None = None, **kwargs: object) -> ToolResult:
         if not self.task or self.task.status != "running":
             raise RuntimeError("NO_ACTIVE_TASK")
         plan_index = self._active_plan_index()
@@ -358,6 +358,8 @@ class Runtime:
         risk = self.policy.risk_for(name, write=write_operation)
         if self.policy.requires_approval(risk):
             self.emit("approval.pending", self.task.id, call_id=call_id, name=name, risk=risk.value, arguments=dict(kwargs))
+            if on_status is not None:
+                on_status("approval.pending", {"call_id": call_id, "name": name, "risk": risk.value})
             try:
                 allowed = self.approve(name, risk) if self.approve else False
                 if not isinstance(allowed, bool):
@@ -378,6 +380,8 @@ class Runtime:
                 self.task.pending_tool = None
                 raise
             self.emit("approval.resolved", self.task.id, call_id=call_id, name=name, allowed=allowed)
+            if on_status is not None:
+                on_status("approval.resolved", {"call_id": call_id, "name": name, "allowed": allowed})
             if not allowed:
                 self.emit("approval.rejected", self.task.id, call_id=call_id, name=name, risk=risk.value, reason="callback_denied")
                 result = ToolResult(False, "APPROVAL_REQUIRED", risk)
@@ -399,12 +403,18 @@ class Runtime:
             self._ready_after_tool()
             return result
         self.emit("tool.executing", self.task.id, call_id=call_id, name=name)
+        started = time.monotonic()
+        if on_status is not None:
+            on_status("tool.executing", {"call_id": call_id, "name": name})
         try:
             result = method(**kwargs)
         except Exception as exc:
             self.emit("tool.failed", self.task.id, name=name, error_type=type(exc).__name__, error_tag="TOOL_EXECUTION_FAILED")
             raise
-        self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, call_id=call_id, name=name, ok=result.ok, text=result.text, changed=result.changed or [])
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, call_id=call_id, name=name, ok=result.ok, text=result.text, changed=result.changed or [], elapsed_ms=elapsed_ms, exit_code=result.exit_code)
+        if on_status is not None:
+            on_status("tool.completed" if result.ok else "tool.failed", {"call_id": call_id, "name": name, "ok": result.ok, "elapsed_ms": elapsed_ms, "exit_code": result.exit_code})
         self.task.pending_tool = None
         if plan_index is not None:
             self.update_plan_step(plan_index, "done" if result.ok else "blocked", result.text[:500])
@@ -592,7 +602,7 @@ class Runtime:
                     self._tool_calls += 1
                     if on_status is not None:
                         on_status("tool.started", {"name": name, "call_id": call["id"]})
-                    result = self.run_tool(name, **arguments)
+                    result = self.run_tool(name, on_status=on_status, **arguments)
                     if on_status is not None:
                         on_status("tool.completed", {"name": name, "call_id": call["id"], "ok": result.ok})
                 self.task.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})

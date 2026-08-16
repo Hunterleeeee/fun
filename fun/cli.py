@@ -314,10 +314,14 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 print(t(locale, "thinking"), end=" ", flush=True)
                 def status(kind: str, payload: dict[str, object]) -> None:
-                    if kind == "tool.started":
+                    if kind in {"tool.started", "tool.executing"}:
                         print(f"\n{t(locale, 'tool_running').format(name=payload.get('name', 'tool'))}", flush=True)
+                    elif kind == "approval.pending":
+                        print(t(locale, "approval_wait"), flush=True)
                     elif kind == "tool.completed":
-                        print("✓", flush=True)
+                        print(f"✓ ({payload.get('elapsed_ms', 0)}ms)", flush=True)
+                    elif kind == "tool.failed":
+                        print(f"× ({payload.get('elapsed_ms', 0)}ms)", flush=True)
                 output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True), on_status=status)
                 runtime.complete(output)
                 print()
