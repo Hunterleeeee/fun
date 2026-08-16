@@ -8,6 +8,11 @@ class TerminalRenderer:
     """Minimal single-column renderer for Runtime events."""
 
     color: bool = True
+    locale: str = "en-US"
+
+    @property
+    def zh(self) -> bool:
+        return self.locale.startswith("zh")
 
     def _style(self, text: str, code: str) -> str:
         return f"\033[{code}m{text}\033[0m" if self.color else text
@@ -16,47 +21,34 @@ class TerminalRenderer:
         return f"◌ {text}"
 
     def header(self, workspace: str, configured: bool, approval: str) -> str:
-        state = "READY" if configured else "SETUP REQUIRED"
+        state = ("就绪" if configured else "需要配置") if self.zh else ("READY" if configured else "SETUP REQUIRED")
+        title = "FUN 工作区" if self.zh else "FUN WORKSPACE"
+        slogan = "让写代码变得有意思。" if self.zh else "Coding should feel good."
         width = 59
         def row(text: str) -> str:
             return f"│ {text[:width]:<{width}}│"
         return "\n".join([
-            self._style("╭─ FUN WORKSPACE ─────────────────────────────────────────────╮", "36"),
-            row(self._style("Coding should feel good.", "1;36")),
-            row(f"workspace  {workspace}"),
-            row(f"provider   {state}  approval  {approval}"),
+            self._style(f"╭─ {title} ─────────────────────────────────────────────╮", "36"),
+            row(self._style(slogan, "1;36")),
+            row(("工作区  " if self.zh else "workspace  ") + workspace),
+            row(("Provider  " if self.zh else "provider   ") + f"{state}  " + ("审批  " if self.zh else "approval  ") + approval),
             self._style("╰─────────────────────────────────────────────────────────────╯", "36"),
         ])
 
     def welcome(self, configured: bool, workspace: str = "") -> str:
         if configured:
-            return "Commands: /help  /status  /plan  /usage  /checkpoint  /quit"
-        return "\n".join([
-            "╭─ WELCOME TO FUN ──────────────────────────────────────────╮",
-            "│ Your terminal coding workspace.                            │",
-            f"│ {workspace[:57]:<57}│",
-            "│                                                             │",
-            "│  [1] Configure an OpenAI-compatible provider               │",
-            "│  [2] Use environment variables                             │",
-            "│  [3] Continue in offline mode                              │",
-            "│  [q] Exit                                                  │",
-            "╰─────────────────────────────────────────────────────────────╯",
-        ])
+            return "命令：/help  /status  /plan  /usage  /checkpoint  /quit" if self.zh else "Commands: /help  /status  /plan  /usage  /checkpoint  /quit"
+        if self.zh:
+            return "\n".join(["╭─ 欢迎使用 Fun ────────────────────────────────────────────╮", "│ 你的终端 Coding 工作区。                                  │", f"│ {workspace[:57]:<57}│", "│                                                            │", "│  [1] 配置 OpenAI-compatible Provider                      │", "│  [2] 使用环境变量                                          │", "│  [3] 进入离线模式                                          │", "│  [q] 退出                                                  │", "╰─────────────────────────────────────────────────────────────╯"])
+        return "\n".join(["╭─ WELCOME TO FUN ──────────────────────────────────────────╮", "│ Your terminal coding workspace.                            │", f"│ {workspace[:57]:<57}│", "│                                                             │", "│  [1] Configure an OpenAI-compatible provider               │", "│  [2] Use environment variables                             │", "│  [3] Continue in offline mode                              │", "│  [q] Exit                                                  │", "╰─────────────────────────────────────────────────────────────╯"])
 
     def setup_complete(self) -> str:
-        return "✓ Setup saved · API key stays out of config · restart `fun` to begin"
+        return "✓ 配置已保存 · API key 不会写入配置 · 请重新启动 fun" if self.zh else "✓ Setup saved · API key stays out of config · restart `fun` to begin"
 
     def help(self) -> str:
-        return "\n".join([
-            "┌─ COMMANDS ────────────────────────────────────────────────┐",
-            "│ /help       show this help                                │",
-            "│ /status     show task, agent and usage state              │",
-            "│ /plan       show the current execution plan               │",
-            "│ /usage      show token usage                               │",
-            "│ /checkpoint save a workspace checkpoint                   │",
-            "│ /pause /resume /stop /recover <action> /quit              │",
-            "└───────────────────────────────────────────────────────────┘",
-        ])
+        if self.zh:
+            return "\n".join(["┌─ 命令 ────────────────────────────────────────────────────┐", "│ /help       显示帮助                                      │", "│ /status     查看任务、Agent 和用量状态                    │", "│ /plan       查看当前执行计划                             │", "│ /usage      查看 Token 用量                              │", "│ /checkpoint 创建工作区检查点                             │", "│ /pause /resume /stop /recover <action> /quit              │", "└───────────────────────────────────────────────────────────┘"])
+        return "\n".join(["┌─ COMMANDS ────────────────────────────────────────────────┐", "│ /help       show this help                                │", "│ /status     show task, agent and usage state              │", "│ /plan       show the current execution plan               │", "│ /usage      show token usage                               │", "│ /checkpoint save a workspace checkpoint                   │", "│ /pause /resume /stop /recover <action> /quit              │", "└───────────────────────────────────────────────────────────┘"])
 
     def prompt(self, configured: bool = True) -> str:
         return "fun ❯ " if configured else "fun/setup ❯ "

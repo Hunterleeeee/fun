@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 import getpass
 import shlex
 import sys
@@ -18,6 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("goal", nargs="?", help="A one-shot task goal")
     parser.add_argument("--workspace", default=os.getcwd())
     parser.add_argument("--approval", choices=("ask", "smart", "auto"), default="smart")
+    parser.add_argument("--locale", choices=("zh-CN", "en-US"), default=os.getenv("FUN_LOCALE"), help="UI language")
     parser.add_argument("--version", action="version", version="fun 1.0.0a6")
     parser.add_argument("--base-url", default=os.getenv("FUN_API_URL"))
     parser.add_argument("--api-key", default=os.getenv("FUN_API_KEY"))
@@ -40,6 +42,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     config_path = os.path.join(state_dir, "config.json")
     saved = FunConfig.load(config_path)
+    locale = args.locale or saved.locale
+    if not args.locale and not Path(config_path).exists() and sys.stdin.isatty():
+        print("Select language / 选择语言")
+        print("  [1] 中文")
+        print("  [2] English")
+        locale = "zh-CN" if input("❯ ").strip() == "1" else "en-US"
+        saved.locale = locale
+        saved.save(config_path)
+    renderer = TerminalRenderer(color=sys.stdout.isatty(), locale=locale)
     if args.configure:
         if not sys.stdin.isatty():
             print("Configuration requires an interactive terminal.", file=sys.stderr)
@@ -93,7 +104,10 @@ def main(argv: list[str] | None = None) -> int:
     if telemetry_enabled and saved.telemetry_endpoint:
         from .telemetry import TelemetryClient, load_or_create_install_id
         telemetry = TelemetryClient(enabled=True, endpoint=saved.telemetry_endpoint, install=load_or_create_install_id(state_dir))
-    renderer = TerminalRenderer(color=sys.stdout.isatty())
+    if locale != saved.locale:
+        saved.locale = locale
+        saved.save(config_path)
+    renderer = TerminalRenderer(color=sys.stdout.isatty(), locale=locale)
     if not provider and not args.goal and sys.stdin.isatty():
         print(renderer.welcome(False, os.path.abspath(args.workspace)))
         choice = input("\nSelect [1/2/3/q] ❯ ").strip().lower()
@@ -145,8 +159,8 @@ def main(argv: list[str] | None = None) -> int:
     if provider:
         print(renderer.welcome(True))
     else:
-        print(renderer.finding("Offline mode · no model calls will be made."))
-        print("Use /help for commands, /setup to configure later, or /quit to exit.")
+        print(renderer.finding("离线模式 · 不会调用模型。" if renderer.zh else "Offline mode · no model calls will be made."))
+        print("输入 /help 查看帮助，/setup 了解配置，或 /quit 退出。" if renderer.zh else "Use /help for commands, /setup to configure later, or /quit to exit.")
 
     def run_interactive_task(task: object) -> None:
         print(renderer.plan(task.plan, task.plan_status))
@@ -249,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("Restore requires a checkpoint snapshot in the current process.")
                 continue
             if not provider:
-                print(renderer.finding("Offline mode: configure a provider before starting a task."))
+                print(renderer.finding("离线模式：请先配置 Provider，再开始任务。" if renderer.zh else "Offline mode: configure a provider before starting a task."))
                 continue
             task = runtime.create_task(text)
             run_interactive_task(task)
