@@ -437,6 +437,19 @@ def main(argv: list[str] | None = None) -> int:
             if text == "/status":
                 tui.set_status(f"task={runtime.task.status if runtime.task else 'idle'} · model={runtime.model}")
                 return
+            if text == "/permissions":
+                modes = ["ask", "smart", "auto"]
+                current = runtime.policy.mode.value
+                selected = modes[(modes.index(current) + 1) % len(modes)] if current in modes else "smart"
+                runtime.policy.mode = selected
+                saved.approval = selected
+                saved.save(config_path)
+                tui.state.approval_mode = selected
+                tui.set_status(f"approval={selected}")
+                return
+            if text in {"/config", "/setup", "/model"}:
+                tui.append_assistant("Configuration forms are available before the TUI: restart with --configure, or use the plain non-TTY shell.")
+                return
             if text == "/clear":
                 tui.state.transcript.clear()
                 tui.set_status("ready")
@@ -458,6 +471,17 @@ def main(argv: list[str] | None = None) -> int:
             if text == "/stop":
                 runtime.stop()
                 tui.set_status("stopped")
+                return
+            if text.startswith("/recover"):
+                action = text.split(maxsplit=1)[1] if len(text.split()) > 1 else "resume"
+                try:
+                    runtime.acknowledge_recovery(action)
+                    tui.state.mode = "working" if action in {"resume", "discard", "mark_failed"} else "ready"
+                    tui.set_status(f"recovery={action}")
+                    if provider and action in {"resume", "discard", "mark_failed"} and runtime.task and runtime.task.status == "running":
+                        tui_submit("/resume")
+                except RuntimeError as exc:
+                    tui.append_assistant("× " + str(exc))
                 return
             if text.startswith("/cancel "):
                 try:
