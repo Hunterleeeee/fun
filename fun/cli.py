@@ -12,6 +12,10 @@ try:
 except ImportError:  # Windows: menu falls back to typed commands
     termios = None
     tty = None
+try:
+    import readline
+except ImportError:
+    readline = None
 
 from .config import FunConfig
 from .dashboard import serve
@@ -211,6 +215,14 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(renderer.finding(t(locale, "offline")))
         print("输入 /help 查看帮助，/setup 了解配置，或 /quit 退出。" if renderer.zh else "Use /help for commands, /setup to configure later, or /quit to exit.")
+
+    if readline is not None:
+        command_names = ["/help", "/config", "/model", "/permissions", "/logout", "/status", "/plan", "/usage", "/diff", "/checkpoint", "/clear", "/exit"]
+        def complete_command(text: str, state: int) -> str | None:
+            matches = [item for item in command_names if item.startswith(text)]
+            return matches[state] if state < len(matches) else None
+        readline.set_completer(complete_command)
+        readline.parse_and_bind('tab: complete')
 
     command_items = [
         ("/help", "Show help"), ("/config", "Configure provider and credentials"),
