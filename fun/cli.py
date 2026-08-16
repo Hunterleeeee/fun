@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import getpass
+import json
 import shlex
 import sys
 try:
@@ -129,7 +130,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("API key: paste is supported; input is hidden and will not echo.")
             saved.api_key = getpass.getpass("API key [Enter to keep current]: ").strip() or saved.api_key
-        saved.model = input(f"Model [{saved.model}]: ").strip() or saved.model
+        saved.model = _choose_model(saved.base_url, saved.api_key, saved.model, locale) or saved.model
+        if not saved.model:
+            print("Model selection is required.", file=sys.stderr)
+            return 2
         telemetry_choice = input(f"Enable private telemetry? [{'Y/n' if saved.telemetry else 'y/N'}]: ").strip().lower()
         if telemetry_choice in {"y", "yes"}:
             saved.telemetry = True
@@ -140,7 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         saved.save(config_path)
         print(f"Saved provider configuration to {config_path}")
         if saved.api_key:
-            print("API key is not stored in the config file; export FUN_API_KEY before running Fun.")
+            store = "macOS Keychain" if json.loads(Path(config_path).read_text(encoding="utf-8")).get("api_key_store") == "macos-keychain" else "FUN_API_KEY environment variable"
+            print(f"API key stored via {store}; it is not written to config.json.")
         return 0
     base_url = args.base_url or saved.base_url
     api_key = args.api_key or saved.api_key
