@@ -146,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.non_interactive or not sys.stdin.isatty():
             return False
         try:
+            print(t(locale, "approval_wait"), flush=True)
             return input(f"? Allow {name} ({risk})? [y/N] ").strip().lower() in {"y", "yes"}
         except (EOFError, KeyboardInterrupt):
             return False
