@@ -964,11 +964,14 @@ class CoreTests(unittest.TestCase):
 
     def test_checkpoint_restore_reapplies_git_diff(self):
         with TemporaryDirectory() as directory:
-            subprocess.run(["git", "init", "-q"], cwd=directory, check=True)
+            git_env = os.environ.copy()
+            git_env["GIT_CONFIG_NOSYSTEM"] = "1"
+            git_env["GIT_CONFIG_GLOBAL"] = os.devnull
+            subprocess.run(["git", "init", "-q"], cwd=directory, check=True, env=git_env)
             path = Path(directory) / "a.txt"
             path.write_text("one\n", encoding="utf-8")
-            subprocess.run(["git", "add", "a.txt"], cwd=directory, check=True)
-            subprocess.run(["git", "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", "base"], cwd=directory, check=True)
+            subprocess.run(["git", "add", "a.txt"], cwd=directory, check=True, env=git_env)
+            subprocess.run(["git", "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-qm", "base"], cwd=directory, check=True, env=git_env)
             runtime = Runtime(directory, "auto")
             runtime.create_task("restore")
             path.write_text("two\n", encoding="utf-8")
