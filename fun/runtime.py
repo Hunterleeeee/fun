@@ -230,6 +230,7 @@ class Runtime:
         return event
 
     def create_task(self, goal: str) -> Task:
+        self._reopen_if_needed()
         if self.task and self.task.status == "running":
             raise RuntimeError("TASK_ALREADY_RUNNING")
         acquired = False
