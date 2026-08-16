@@ -111,6 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-key", default=os.getenv("FUN_API_KEY"))
     parser.add_argument("--model", default=os.getenv("FUN_MODEL"))
     parser.add_argument("--non-interactive", action="store_true", help="Never wait for interactive approval")
+    parser.add_argument("--resume-session", help="Resume a persisted session by ID")
     parser.add_argument("--configure", action="store_true", help="Save provider settings interactively")
     parser.add_argument("--dashboard", action="store_true", help="Open the local-only usage dashboard")
     parser.add_argument("--dashboard-port", type=int, default=8765)
@@ -221,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         saved.locale = locale
         saved.save(config_path)
     renderer = TerminalRenderer(color=sys.stdout.isatty(), locale=locale)
-    if not provider and not args.goal and sys.stdin.isatty():
+    if not provider and not args.goal and not args.resume_session and sys.stdin.isatty():
         print(renderer.welcome(False, os.path.abspath(args.workspace)))
         try:
             choice = input("\nSelect [1/2/3/4/q] ❯ ").strip().lower()
@@ -267,7 +268,14 @@ def main(argv: list[str] | None = None) -> int:
         elif choice == "3":
             base_url, api_key, model = saved.base_url, saved.api_key, saved.model
             provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-    runtime = Runtime(args.workspace, approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
+    if args.resume_session:
+        try:
+            runtime = Runtime.recover(args.workspace, state_dir, args.resume_session, approval=approval, provider=provider, approve=approve)
+        except Exception as exc:
+            print(f"× could not resume session: {exc}", file=sys.stderr)
+            return 2
+    else:
+        runtime = Runtime(args.workspace, approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
     if args.goal:
         task = runtime.create_task(args.goal)
         print(f"Fun · {args.workspace}")
@@ -289,6 +297,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print(renderer.header(str(runtime.tools.guard.root), provider is not None, runtime.policy.mode.value))
+    if runtime.task and runtime.task.status == "recovery_required":
+        pending = runtime.recovery_summary() or {}
+        print("! " + t(locale, "pending_tool").format(name=pending.get("name", "unknown tool"), call_id=pending.get("call_id", "?")))
+        print(t(locale, "recovery_actions"))
     if provider:
         print(renderer.welcome(True))
     else:
@@ -526,8 +538,10 @@ def main(argv: list[str] | None = None) -> int:
                 try:
                     runtime.acknowledge_recovery(action)
                     print(f"● recovery acknowledged; {action}")
-                    if action in {"resume", "discard", "mark_failed"} and runtime.task and runtime.task.status == "running":
+                    if provider and action in {"resume", "discard", "mark_failed"} and runtime.task and runtime.task.status == "running":
                         run_interactive_task(runtime.task)
+                    elif not provider and action in {"resume", "discard", "mark_failed"}:
+                        print(t(locale, "offline"))
                 except RuntimeError as exc:
                     print(f"× {exc}", file=sys.stderr)
                 continue
