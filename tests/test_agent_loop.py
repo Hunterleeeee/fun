@@ -127,6 +127,24 @@ class AgentLoopTests(unittest.TestCase):
             thread.join(2)
             server.server_close()
 
+    def test_runtime_supports_two_consecutive_tasks_after_completion(self):
+        class TwoTurnProvider:
+            def __init__(self):
+                self.calls = 0
+            def stream(self, messages, tools=None):
+                self.calls += 1
+                yield {"choices": [{"delta": {"content": f"turn-{self.calls}"}}]}
+        with TemporaryDirectory() as directory:
+            provider = TwoTurnProvider()
+            runtime = Runtime(directory, state_dir=directory, provider=provider)
+            runtime.create_task("first")
+            self.assertEqual(runtime.run_model_turn(), "turn-1")
+            runtime.complete("turn-1")
+            runtime.create_task("second")
+            self.assertEqual(runtime.run_model_turn(), "turn-2")
+            runtime.complete("turn-2")
+            self.assertEqual(provider.calls, 2)
+
     def test_runtime_model_field_tracks_provider_switch(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, provider=object(), model="old-model")
