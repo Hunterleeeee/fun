@@ -191,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.non_interactive or not sys.stdin.isatty():
             return False
         if tui is not None:
-            return tui.request_approval(name, risk, {})
+            return tui.request_approval(name, risk)
         try:
             print(t(locale, "approval_wait"), flush=True)
             choice = input("? " + t(locale, "approval_prompt").format(name=name, risk=risk)).strip().lower()
@@ -462,7 +462,7 @@ def main(argv: list[str] | None = None) -> int:
                     tui.post("status", t(locale, "thinking"))
                     output = runtime.run_model_turn(
                         on_text=lambda chunk: tui.post("assistant", chunk),
-                        on_status=lambda kind, payload: tui.post("tool", (kind, payload)),
+                        on_status=lambda kind, payload: (tui.bind_approval(str(payload.get("call_id", "")), str(payload.get("name", "tool")), dict(payload.get("arguments") or {})) if kind == "approval.pending" else None) or tui.post("tool", (kind, payload)),
                     )
                     runtime.complete(output)
                     tui.post("status", "ready")

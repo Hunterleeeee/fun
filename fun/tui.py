@@ -44,6 +44,7 @@ class TerminalUI:
         self._stop = False
         self._worker: threading.Thread | None = None
         self._approval: _Approval | None = None
+        self._approval_context: dict[tuple[str, str], dict[str, Any]] = {}
         self._old_termios: list[Any] | None = None
         self._dirty = True
 
@@ -57,8 +58,17 @@ class TerminalUI:
     def append_assistant(self, text: str) -> None:
         self.post("assistant", text)
 
-    def request_approval(self, name: str, risk: object, arguments: dict[str, Any]) -> bool:
-        request = _Approval(name, risk, dict(arguments), None, threading.Event())
+    def bind_approval(self, call_id: str, name: str, arguments: dict[str, Any]) -> None:
+        self._approval_context[(call_id, name)] = dict(arguments)
+
+    def request_approval(self, name: str, risk: object, arguments: dict[str, Any] | None = None) -> bool:
+        resolved = dict(arguments or {})
+        for (call_id, tool_name), value in self._approval_context.items():
+            if tool_name == name:
+                resolved = value
+                del self._approval_context[(call_id, tool_name)]
+                break
+        request = _Approval(name, risk, resolved, None, threading.Event())
         self.post("approval", request)
         while not request.done.wait(0.05):
             if self._stop:
