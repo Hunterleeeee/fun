@@ -133,7 +133,11 @@ def main(argv: list[str] | None = None) -> int:
         print("Select language / 选择语言")
         print("  [1] 中文")
         print("  [2] English")
-        locale = "zh-CN" if input("❯ ").strip() == "1" else "en-US"
+        try:
+            locale = "zh-CN" if input("❯ ").strip() == "1" else "en-US"
+        except (EOFError, KeyboardInterrupt):
+            print(t("en-US", "cancel_status"), file=sys.stderr)
+            return 130
         saved.locale = locale
         saved.save(config_path)
     renderer = TerminalRenderer(color=sys.stdout.isatty(), locale=locale)
@@ -219,7 +223,11 @@ def main(argv: list[str] | None = None) -> int:
     renderer = TerminalRenderer(color=sys.stdout.isatty(), locale=locale)
     if not provider and not args.goal and sys.stdin.isatty():
         print(renderer.welcome(False, os.path.abspath(args.workspace)))
-        choice = input("\nSelect [1/2/3/4/q] ❯ ").strip().lower()
+        try:
+            choice = input("\nSelect [1/2/3/4/q] ❯ ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print(t(locale, "cancel_status"), file=sys.stderr)
+            return 130
         if choice == "q":
             return 0
         if choice == "1":
