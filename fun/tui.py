@@ -39,8 +39,10 @@ class TerminalUI:
         self._worker: threading.Thread | None = None
         self._approval: _Approval | None = None
         self._old_termios: list[Any] | None = None
+        self._dirty = True
 
     def post(self, kind: str, payload: Any = None) -> None:
+        self._dirty = True
         self.events.put((kind, payload))
 
     def set_status(self, text: str) -> None:
@@ -94,8 +96,11 @@ class TerminalUI:
 
     def _draw(self) -> None:
         self._consume()
+        if not self._dirty:
+            return
         self.output.write(self._frame())
         self.output.flush()
+        self._dirty = False
 
     def _read_key(self, fd: int) -> str | None:
         ready, _, _ = select.select([fd], [], [], 0.08)
