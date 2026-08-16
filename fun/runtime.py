@@ -411,7 +411,10 @@ class Runtime:
                 kwargs["on_progress"] = lambda elapsed: on_status("tool.progress", {"call_id": call_id, "name": name, "elapsed_ms": int(elapsed * 1000)}) if on_status is not None else None
             result = method(**kwargs)
         except Exception as exc:
-            self.emit("tool.failed", self.task.id, name=name, error_type=type(exc).__name__, error_tag="TOOL_EXECUTION_FAILED")
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            self.emit("tool.failed", self.task.id, call_id=call_id, name=name, error_type=type(exc).__name__, error_tag="TOOL_EXECUTION_FAILED", elapsed_ms=elapsed_ms)
+            if on_status is not None:
+                on_status("tool.failed", {"call_id": call_id, "name": name, "ok": False, "elapsed_ms": elapsed_ms, "error": type(exc).__name__})
             raise
         elapsed_ms = int((time.monotonic() - started) * 1000)
         self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, call_id=call_id, name=name, ok=result.ok, text=result.text, changed=result.changed or [], elapsed_ms=elapsed_ms, exit_code=result.exit_code)
