@@ -254,9 +254,13 @@ def main(argv: list[str] | None = None) -> int:
         print("输入 /help 查看帮助，/setup 了解配置，或 /quit 退出。" if renderer.zh else "Use /help for commands, /setup to configure later, or /quit to exit.")
 
     if readline is not None:
-        command_names = ["/help", "/config", "/model", "/permissions", "/logout", "/status", "/plan", "/usage", "/diff", "/checkpoint", "/clear", "/exit"]
+        command_names = ["/help", "/config", "/setup", "/model", "/permissions", "/logout", "/status", "/plan", "/usage", "/diff", "/checkpoint", "/clear", "/goal", "/pause", "/resume", "/recover", "/stop", "/exit", "/quit"]
         def complete_command(text: str, state: int) -> str | None:
-            matches = [item for item in command_names if item.startswith(text)]
+            line = readline.get_line_buffer() if readline is not None else text
+            if line and not line.lstrip().startswith("/"):
+                return None
+            prefix = line[:readline.get_begidx()] if readline is not None else text
+            matches = [item for item in command_names if item.startswith(prefix or text)]
             return matches[state] if state < len(matches) else None
         readline.set_completer(complete_command)
         readline.parse_and_bind('tab: complete')
