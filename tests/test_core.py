@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from fun.events import Event, EventStore
 from fun.policy import ApprovalMode, Policy, PolicyError
 from fun.renderer import TerminalRenderer, _display_width
+from fun.terminal_ui import TerminalUiState
 from fun.runtime import Runtime
 from fun.tools import Tools, file_hash
 from fun.usage import Usage
@@ -586,6 +587,19 @@ class CoreTests(unittest.TestCase):
             runtime.model = ""
             self.assertIsNone(runtime.provider)
             self.assertEqual(runtime.model, "")
+
+    def test_terminal_ui_keeps_transcript_and_tool_cards_together(self):
+        ui = TerminalUiState()
+        ui.add_user("inspect the project")
+        ui.tool_status("tool.executing", {"call_id": "c1", "name": "read", "arguments": {"path": "README.md"}})
+        ui.tool_status("tool.completed", {"call_id": "c1", "name": "read", "elapsed_ms": 12, "text": "hello"})
+        ui.add_assistant("Done")
+        rendered = ui.render()
+        self.assertIn("› inspect the project", rendered)
+        self.assertIn("read · completed · 12ms", rendered)
+        self.assertIn("README.md", rendered)
+        self.assertIn("Done", rendered)
+        self.assertTrue(rendered.endswith("> "))
 
     def test_renderer_keeps_unicode_header_rows_aligned(self):
         color_header = TerminalRenderer(color=True, locale="zh-CN").header("/tmp/中文-workspace", True, "smart")

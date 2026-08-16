@@ -1,0 +1,101 @@
+"""Small, testable terminal UI state model for Fun's persistent composer.
+
+This module deliberately owns presentation state, not Runtime state.  It keeps a
+transcript and live tool cards so the CLI can redraw one coherent view instead
+of printing unrelated status lines from callbacks.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class ToolCard:
+    call_id: str
+    name: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+    status: str = "queued"
+    elapsed_ms: int | None = None
+    output: str = ""
+    exit_code: int | None = None
+
+    def update(self, status: str, payload: dict[str, Any]) -> None:
+        self.status = status
+        if isinstance(payload.get("elapsed_ms"), int):
+            self.elapsed_ms = payload["elapsed_ms"]
+        if isinstance(payload.get("text"), str):
+            self.output = payload["text"][:500]
+        if isinstance(payload.get("exit_code"), int):
+            self.exit_code = payload["exit_code"]
+
+
+@dataclass
+class TranscriptItem:
+    role: str
+    text: str = ""
+    tool: ToolCard | None = None
+
+
+@dataclass
+class TerminalUiState:
+    """Owned UI state for a persistent transcript and bottom composer."""
+
+    locale: str = "en-US"
+    composer: str = ""
+    mode: str = "ready"
+    status_text: str = ""
+    transcript: list[TranscriptItem] = field(default_factory=list)
+    tools: dict[str, ToolCard] = field(default_factory=dict)
+
+    def add_user(self, text: str) -> None:
+        self.transcript.append(TranscriptItem("user", text))
+
+    def add_assistant(self, text: str) -> None:
+        if not text:
+            return
+        self.transcript.append(TranscriptItem("assistant", text))
+
+    def tool_status(self, kind: str, payload: dict[str, Any]) -> ToolCard | None:
+        call_id = str(payload.get("call_id", ""))
+        if not call_id:
+            return None
+        card = self.tools.get(call_id)
+        if card is None:
+            card = ToolCard(call_id, str(payload.get("name", "tool")), dict(payload.get("arguments") or {}))
+            self.tools[call_id] = card
+            self.transcript.append(TranscriptItem("tool", tool=card))
+        mapping = {
+            "tool.started": "queued",
+            "approval.pending": "approval",
+            "tool.executing": "running",
+            "tool.progress": "running",
+            "tool.completed": "completed",
+            "tool.failed": "failed",
+        }
+        card.update(mapping.get(kind, kind), payload)
+        return card
+
+    def render(self, width: int = 88) -> str:
+        """Render a stable transcript plus a single bottom composer line."""
+        width = max(40, width)
+        lines: list[str] = []
+        for item in self.transcript:
+            if item.role == "user":
+                lines.append(f"› {item.text}")
+            elif item.role == "assistant":
+                lines.extend(item.text.splitlines() or [""])
+            elif item.tool is not None:
+                card = item.tool
+                args = " ".join(f"{k}={v!r}" for k, v in card.arguments.items())
+                detail = f" · {args}" if args else ""
+                timing = f" · {card.elapsed_ms}ms" if card.elapsed_ms is not None else ""
+                lines.append(f"┌ {card.name} · {card.status}{timing}{detail}")
+                if card.output:
+                    lines.append(f"│ {card.output.replace(chr(10), chr(10) + '│ ')[:500]}")
+                lines.append("└")
+        if self.status_text:
+            lines.append(f"· {self.status_text}")
+        lines.append("─" * min(width, 88))
+        lines.append(f"{'> ' if self.mode == 'ready' else '… '}" + self.composer)
+        return "\n".join(lines)
