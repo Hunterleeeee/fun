@@ -41,6 +41,14 @@ class BackgroundTaskTests(unittest.TestCase):
             self.assertEqual(status[0][1:], ("completed", "status check", "done", None))
             runtime.stop()
 
+    def test_cancel_unknown_background_task_is_safe(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("parent")
+            with self.assertRaisesRegex(RuntimeError, "BACKGROUND_TASK_NOT_FOUND"):
+                runtime.cancel_background_task("bg_missing")
+            runtime.stop()
+
     def test_failed_background_task_exposes_safe_error_name(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)

@@ -308,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
         print("输入 /help 查看帮助，/setup 了解配置，或 /quit 退出。" if renderer.zh else "Use /help for commands, /setup to configure later, or /quit to exit.")
 
     if readline is not None:
-        command_names = ["/help", "/config", "/setup", "/model", "/permissions", "/logout", "/status", "/plan", "/usage", "/diff", "/checkpoint", "/clear", "/goal", "/pause", "/resume", "/recover", "/stop", "/exit", "/quit"]
+        command_names = ["/help", "/config", "/setup", "/model", "/permissions", "/logout", "/status", "/plan", "/usage", "/diff", "/checkpoint", "/clear", "/goal", "/pause", "/resume", "/recover", "/cancel", "/stop", "/exit", "/quit"]
         def complete_command(text: str, state: int) -> str | None:
             line = readline.get_line_buffer() if readline is not None else text
             if line and not line.lstrip().startswith("/"):
@@ -324,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         ("/model", t(locale, "cmd_model")), ("/permissions", t(locale, "cmd_permissions")),
         ("/logout", t(locale, "cmd_logout")), ("/status", t(locale, "cmd_status")),
         ("/plan", t(locale, "cmd_plan")), ("/usage", t(locale, "cmd_usage")), ("/diff", t(locale, "cmd_diff")),
-        ("/checkpoint", t(locale, "cmd_checkpoint")), ("/clear", t(locale, "cmd_clear")), ("/exit", t(locale, "cmd_exit")),
+        ("/checkpoint", t(locale, "cmd_checkpoint")), ("/clear", t(locale, "cmd_clear")), ("/cancel", t(locale, "cmd_cancel")), ("/exit", t(locale, "cmd_exit")),
     ]
 
     def command_menu() -> str:
@@ -475,6 +475,17 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if text == "/clear":
                 print("\033[2J\033[H", end="")
+                continue
+            if text.startswith("/cancel"):
+                parts = text.split(maxsplit=1)
+                if len(parts) != 2 or not parts[1].strip():
+                    print("Usage: /cancel <background-task-id>", file=sys.stderr)
+                    continue
+                try:
+                    runtime.cancel_background_task(parts[1].strip())
+                    print(f"✓ cancellation requested: {parts[1].strip()}")
+                except RuntimeError as exc:
+                    print(f"× {exc}", file=sys.stderr)
                 continue
             if text == "/goal":
                 print(runtime.goal() or "(no active goal)")
