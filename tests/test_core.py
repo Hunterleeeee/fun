@@ -29,7 +29,7 @@ class CoreTests(unittest.TestCase):
             first.lock.release()
             first.events._durable.close()
             child = subprocess.run([
-                os.environ.get("PYTHON", "python3"), "-c",
+                os.environ.get("PYTHON", sys.executable), "-c",
                 "from fun.runtime import Runtime; import sys; r=Runtime.recover(sys.argv[1], sys.argv[1], sys.argv[2], approval='auto'); r.run_tool('explore', path='.'); r.stop()",
                 directory, session_id,
             ], check=False, capture_output=True, text=True)
