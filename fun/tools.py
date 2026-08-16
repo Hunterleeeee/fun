@@ -122,6 +122,8 @@ class Tools:
             return ToolResult(False, f"INVALID_COMMAND: {exc}", risk)
         if not argv:
             return ToolResult(False, "INVALID_COMMAND: empty command", risk)
+        if argv[0] == "python3" and sys.platform == "win32":
+            argv[0] = sys.executable
         executable = Path(argv[0]).name
         wrapped = argv[1:] if executable in {"env", "command", "xargs"} else argv
         if executable in {"env", "command"}:
