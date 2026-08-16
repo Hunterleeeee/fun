@@ -625,6 +625,10 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn("line-0", scroll_ui.render())
         ui.tool_status("tool.failed", {"call_id": "c1", "name": "read", "error": "permission denied"})
         self.assertIn("permission denied", ui.render())
+        ui.tool_status("approval.pending", {"call_id": "approval-2", "name": "exec", "risk": "medium", "arguments": {"command": "echo hi"}})
+        approval_render = ui.render()
+        self.assertIn("Approval required · risk=medium", approval_render)
+        self.assertIn("[y] once", approval_render)
 
     def test_renderer_keeps_unicode_header_rows_aligned(self):
         color_header = TerminalRenderer(color=True, locale="zh-CN").header("/tmp/中文-workspace", True, "smart")
