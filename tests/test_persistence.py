@@ -1,3 +1,4 @@
+import multiprocessing
 import tempfile
 import threading
 import unittest
@@ -7,7 +8,37 @@ from fun.events import Event
 from fun.persistence import SQLiteEventStore
 
 
+def _process_writer(path: str, index: int, ready, result) -> None:
+    store = SQLiteEventStore(path)
+    ready.wait()
+    try:
+        store.append(Event("process", "ses_process", id=f"evt_process_{index}", seq=index + 1))
+        result.put(None)
+    except Exception as exc:
+        result.put(type(exc).__name__ + ": " + str(exc))
+    finally:
+        store.close()
+
+
 class PersistenceTests(unittest.TestCase):
+    def test_sqlite_concurrent_processes_persist_all_events(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / "events.db")
+            context = multiprocessing.get_context("spawn")
+            ready = context.Event()
+            result = context.Queue()
+            processes = [context.Process(target=_process_writer, args=(path, index, ready, result)) for index in range(8)]
+            for process in processes:
+                process.start()
+            ready.set()
+            for process in processes:
+                process.join(timeout=15)
+                self.assertEqual(process.exitcode, 0)
+            self.assertEqual([result.get(timeout=2) for _ in processes], [None] * len(processes))
+            store = SQLiteEventStore(path)
+            self.assertEqual(len(store.list("ses_process")), len(processes))
+            store.close()
+
     def test_event_store_load_rejects_batch_seq_conflict_without_mutation(self):
         from fun.events import EventStore
 
