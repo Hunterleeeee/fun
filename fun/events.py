@@ -32,6 +32,10 @@ class Event:
     id: str = field(default_factory=lambda: f"evt_{uuid4().hex}")
     seq: int = field(default_factory=next_event_seq)
     timestamp: str = field(default_factory=now_iso)
+    parent_task_id: str | None = None
+    run_id: str | None = None
+    correlation_id: str | None = None
+    command_key: str | None = None
 
 
 class EventStore:
