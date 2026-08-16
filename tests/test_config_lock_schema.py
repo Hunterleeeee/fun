@@ -1,3 +1,4 @@
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,7 +16,8 @@ class ConfigLockSchemaTests(unittest.TestCase):
             config.save(path)
             loaded = FunConfig.load(path)
             self.assertEqual(loaded.model, "model-x")
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             config.telemetry = True
             config.telemetry_endpoint = "http://private.test/telemetry"
             config.save(path)
