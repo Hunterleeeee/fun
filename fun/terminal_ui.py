@@ -120,8 +120,8 @@ class TerminalUiState:
         card.update(mapping.get(kind, kind), payload)
         return card
 
-    def render(self, width: int = 88) -> str:
-        """Render a stable transcript plus a single bottom composer line."""
+    def render(self, width: int = 88, height: int | None = None) -> str:
+        """Render a stable transcript plus a fixed bottom composer area."""
         width = max(40, width)
         lines: list[str] = []
         visible = self.transcript[self.scroll_offset:] if self.scroll_offset else self.transcript
@@ -157,4 +157,7 @@ class TerminalUiState:
         draft_lines = self.composer.splitlines() or [""]
         lines.append(prompt + draft_lines[0])
         lines.extend("  " + line for line in draft_lines[1:])
+        if height is not None and height > 4 and len(lines) > height:
+            fixed = len(draft_lines) + 2
+            lines = lines[:max(1, height - fixed)] + lines[-fixed:]
         return "\n".join(lines)

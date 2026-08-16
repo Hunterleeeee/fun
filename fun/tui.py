@@ -47,6 +47,7 @@ class TerminalUI:
         self._approval_context: dict[tuple[str, str], dict[str, Any]] = {}
         self._old_termios: list[Any] | None = None
         self._dirty = True
+        self._last_size: tuple[int, int] | None = None
 
     def post(self, kind: str, payload: Any = None) -> None:
         self._dirty = True
@@ -108,8 +109,12 @@ class TerminalUI:
                 self._stop = True
 
     def _frame(self) -> str:
-        width = get_terminal_size((88, 24)).columns
-        return "\033[2J\033[H" + self.state.render(width)
+        size = get_terminal_size((88, 24))
+        current = (size.columns, size.lines)
+        if current != self._last_size:
+            self._last_size = current
+            self._dirty = True
+        return "\033[2J\033[H" + self.state.render(current[0], current[1])
 
     def _draw(self) -> None:
         self._consume()

@@ -616,6 +616,8 @@ class CoreTests(unittest.TestCase):
         self.assertIn("Done", rendered)
         self.assertTrue(rendered.endswith("> "))
         self.assertIn("approval=smart", rendered)
+        compact = ui.render(40, 8)
+        self.assertLessEqual(len(compact.splitlines()), 8)
         ui.composer = "first line\nsecond line"
         multiline = ui.render()
         self.assertIn("Ctrl-N newline · Enter submit", multiline)
