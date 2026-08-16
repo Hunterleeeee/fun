@@ -148,12 +148,20 @@ def main(argv: list[str] | None = None) -> int:
     provider = None
     if base_url and api_key and model:
         provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+    session_approvals: set[str] = set()
     def approve(name: str, risk: object) -> bool:
+        if name in session_approvals:
+            return True
         if args.non_interactive or not sys.stdin.isatty():
             return False
         try:
             print(t(locale, "approval_wait"), flush=True)
-            return input(f"? Allow {name} ({risk})? [y/N] ").strip().lower() in {"y", "yes"}
+            choice = input("? " + t(locale, "approval_prompt").format(name=name, risk=risk)).strip().lower()
+            if choice in {"a", "always", "本会话"}:
+                session_approvals.add(name)
+                print(t(locale, "approval_session").format(name=name), flush=True)
+                return True
+            return choice in {"y", "yes"}
         except (EOFError, KeyboardInterrupt):
             return False
     telemetry_enabled = saved.telemetry if args.telemetry is None else args.telemetry
