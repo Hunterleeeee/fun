@@ -92,3 +92,9 @@ class SQLiteEventStore:
 
     def close(self) -> None:
         self.connection.close()
+
+    def __enter__(self) -> "SQLiteEventStore":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()

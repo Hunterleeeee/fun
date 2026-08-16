@@ -16,14 +16,14 @@ class DashboardTests(unittest.TestCase):
 
     def test_dashboard_aggregates_local_events(self):
         with tempfile.TemporaryDirectory() as directory:
-            store = SQLiteEventStore(Path(directory) / "events.db")
-            store.append(Event("task.created", "s1", "t1", {"goal": "test"}))
-            store.append(Event("model.completed", "s1", "t1", {"usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}}))
-            store.append(Event("task.created", "s2", "t2", {"goal": "second"}))
-            store.append(Event("model.completed", "s2", "t2", {"usage": {"prompt_tokens": 20, "completion_tokens": 7}}))
-            store.append(Event("model.tool_call", "s1", "t1", {"name": "read"}))
-            store.append(Event("task.completed", "s1", "t1", {}))
-            store.append(Event("task.failed", "s2", "t2", {"reason": "test"}))
+            with SQLiteEventStore(Path(directory) / "events.db") as store:
+                store.append(Event("task.created", "s1", "t1", {"goal": "test"}))
+                store.append(Event("model.completed", "s1", "t1", {"usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}}))
+                store.append(Event("task.created", "s2", "t2", {"goal": "second"}))
+                store.append(Event("model.completed", "s2", "t2", {"usage": {"prompt_tokens": 20, "completion_tokens": 7}}))
+                store.append(Event("model.tool_call", "s1", "t1", {"name": "read"}))
+                store.append(Event("task.completed", "s1", "t1", {}))
+                store.append(Event("task.failed", "s2", "t2", {"reason": "test"}))
             snapshot = DashboardData(Path(directory) / "events.db").snapshot()
             self.assertEqual(snapshot["sessions"], 2)
             self.assertEqual(snapshot["tasks"], 2)

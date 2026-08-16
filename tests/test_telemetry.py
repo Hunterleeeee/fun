@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from unittest import mock
@@ -36,7 +37,8 @@ class TelemetryTests(unittest.TestCase):
             self.assertEqual(first, second)
             path = Path(directory) / "telemetry_id"
             self.assertEqual(path.read_text(encoding="utf-8").strip(), first)
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
     def test_runtime_does_not_send_without_client(self):
         with mock.patch.object(TelemetryClient, "send") as send:

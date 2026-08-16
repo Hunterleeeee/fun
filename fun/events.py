@@ -97,6 +97,8 @@ class EventStore:
                 for event in new_events:
                     durable.append(event)
         self._events.extend(new_events)
+        if new_events:
+            advance_event_seq(max(event.seq for event in new_events) + 1)
         return events
 
     def list(self, session_id: str | None = None) -> list[Event]:
