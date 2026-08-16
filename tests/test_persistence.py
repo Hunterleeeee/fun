@@ -1,4 +1,5 @@
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -85,6 +86,30 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual([row["id"] for row in first.list("ses_1")], ["evt_existing"])
             first.close()
             second.close()
+
+    def test_sqlite_concurrent_connections_persist_all_events(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.db"
+            errors = []
+
+            def writer(index: int) -> None:
+                store = SQLiteEventStore(path)
+                try:
+                    store.append(Event("concurrent", "ses_concurrent", id=f"evt_{index}", seq=index + 1))
+                except Exception as exc:
+                    errors.append(exc)
+                finally:
+                    store.close()
+
+            threads = [threading.Thread(target=writer, args=(index,)) for index in range(12)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            self.assertEqual(errors, [])
+            store = SQLiteEventStore(path)
+            self.assertEqual(len(store.list("ses_concurrent")), 12)
+            store.close()
 
     def test_sqlite_event_store_supports_multiple_connections(self):
         with tempfile.TemporaryDirectory() as directory:
