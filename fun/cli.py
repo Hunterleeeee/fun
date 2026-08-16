@@ -341,6 +341,8 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["FUN_API_KEY"] = api_key
         saved.save(config_path)
         provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+        runtime.provider = provider
+        runtime.model = model
         print(t(locale, "saved"))
 
     def run_interactive_task(task: object) -> None:
@@ -412,6 +414,8 @@ def main(argv: list[str] | None = None) -> int:
                         saved.model = selected
                         saved.save(config_path)
                         provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+                        runtime.provider = provider
+                        runtime.model = model
                         print(f"✓ model: {model}")
                 continue
             if text == "/clear":
