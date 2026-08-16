@@ -57,6 +57,9 @@ class FunConfig:
         allowed = {"base_url", "api_key", "model", "approval", "locale", "telemetry", "telemetry_endpoint"}
         loaded = cls(**{key: value for key, value in data.items() if key in allowed})
         loaded.api_key = os.getenv("FUN_API_KEY") or _keychain_get() or loaded.api_key
+        if not loaded.api_key and data.get("api_key_store") == "macos-keychain":
+            loaded.base_url = ""
+            loaded.model = ""
         return loaded
 
     def save(self, path: str | Path) -> None:
@@ -65,9 +68,12 @@ class FunConfig:
         data = asdict(self)
         if data.get("api_key"):
             key = data.pop("api_key")
-            if _keychain_set(key):
+            if _keychain_set(key) and _keychain_get() == key:
                 data["api_key_store"] = "macos-keychain"
             else:
+                # Do not claim durable storage when Keychain cannot read it back.
+                # The caller keeps FUN_API_KEY in the current process; next launch
+                # must ask for it again rather than silently sending no credentials.
                 data["api_key_env"] = "FUN_API_KEY"
         target.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         try:
