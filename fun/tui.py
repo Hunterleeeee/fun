@@ -117,6 +117,9 @@ class TerminalUI:
             ready, _, _ = select.select([fd], [], [], 0.02)
             if ready:
                 seq = os.read(fd, 2).decode("utf-8", "replace")
+                if seq in {"[5" , "[6"}:
+                    os.read(fd, 1)
+                    return "pageup" if seq == "[5" else "pagedown"
                 return {"[A": "up", "[B": "down", "[C": "right", "[D": "left"}.get(seq, "escape")
             return "escape"
         if key in {"\r", "\n"}:
@@ -163,6 +166,12 @@ class TerminalUI:
                     self.set_status("cancelled")
                 elif key == "eof":
                     self._stop = True
+                elif key == "pageup":
+                    self.state.scroll(-5)
+                    self._dirty = True
+                elif key == "pagedown":
+                    self.state.scroll(5)
+                    self._dirty = True
                 elif key == "up":
                     if self.state.composer.startswith("/") and self.commands:
                         self._suggestion_index = (self._suggestion_index - 1) % len(self.commands)

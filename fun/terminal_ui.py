@@ -52,6 +52,7 @@ class TerminalUiState:
     tools: dict[str, ToolCard] = field(default_factory=dict)
     composer_history: list[str] = field(default_factory=list)
     history_index: int | None = None
+    scroll_offset: int = 0
 
     def history(self, direction: int) -> str:
         if not self.composer_history:
@@ -61,6 +62,10 @@ class TerminalUiState:
         self.history_index = max(0, min(len(self.composer_history), self.history_index + direction))
         self.composer = self.composer_history[self.history_index] if self.history_index < len(self.composer_history) else ""
         return self.composer
+
+    def scroll(self, delta: int) -> int:
+        self.scroll_offset = max(0, min(max(0, len(self.transcript) - 1), self.scroll_offset + delta))
+        return self.scroll_offset
 
     def add_user(self, text: str) -> None:
         text = text.strip()
@@ -101,10 +106,11 @@ class TerminalUiState:
         """Render a stable transcript plus a single bottom composer line."""
         width = max(40, width)
         lines: list[str] = []
-        for item in self.transcript:
+        visible = self.transcript[self.scroll_offset:] if self.scroll_offset else self.transcript
+        for item in visible:
             if item.role == "user":
                 lines.append(f"› {item.text}")
-            elif item.role == "assistant":
+            elif item.role in {"assistant", "system"}:
                 lines.extend(item.text.splitlines() or [""])
             elif item.tool is not None:
                 card = item.tool

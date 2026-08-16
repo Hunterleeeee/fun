@@ -617,6 +617,12 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(rendered.endswith("> "))
         self.assertEqual(ui.history(-1), "inspect the project")
         self.assertEqual(ui.history(1), "")
+        scroll_ui = TerminalUiState()
+        for index in range(8):
+            scroll_ui.transcript.append(__import__('fun.terminal_ui', fromlist=['TranscriptItem']).TranscriptItem('system', f"line-{index}"))
+        self.assertEqual(scroll_ui.scroll(3), 3)
+        self.assertIn("line-3", scroll_ui.render())
+        self.assertNotIn("line-0", scroll_ui.render())
         ui.tool_status("tool.failed", {"call_id": "c1", "name": "read", "error": "permission denied"})
         self.assertIn("permission denied", ui.render())
 
