@@ -2,6 +2,7 @@ import subprocess
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from tempfile import TemporaryDirectory
 
 from fun.events import Event, EventStore
@@ -857,6 +858,16 @@ class CoreTests(unittest.TestCase):
             result = runtime.run_tool("edit", path="a.txt", expected_hash=file_hash(path), patch="@@ -1 +1 @@\n-one\n+two\n")
             self.assertFalse(result.ok)
             self.assertEqual(result.text, "APPROVAL_REQUIRED")
+
+    def test_exec_uses_platform_process_group_controls(self):
+        with TemporaryDirectory() as directory:
+            with patch("fun.tools.sys.platform", "win32"), patch("fun.tools.subprocess.CREATE_NEW_PROCESS_GROUP", 512, create=True), patch("fun.tools.subprocess.Popen") as popen:
+                process = popen.return_value
+                process.communicate.return_value = ("ok", "")
+                process.returncode = 0
+                self.assertTrue(Tools(directory).exec("python3 -c print(1)").ok)
+                self.assertEqual(popen.call_args.kwargs["creationflags"], 512)
+                self.assertNotIn("start_new_session", popen.call_args.kwargs)
 
     def test_exec_timeout_and_output_limits_use_portable_python(self):
         with TemporaryDirectory() as directory:

@@ -7,6 +7,7 @@ import re
 import shlex
 import signal
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -135,21 +136,27 @@ class Tools:
             if self.policy.mode != self.policy.mode.ASK:
                 return ToolResult(False, "CRITICAL_OPERATION_BLOCKED", Risk.CRITICAL)
             return ToolResult(False, "APPROVAL_REQUIRED", Risk.CRITICAL)
+        popen_options = {
+            "cwd": self.guard.root,
+            "shell": False,
+            "text": True,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "env": safe_env,
+        }
+        if sys.platform == "win32":
+            popen_options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+        else:
+            popen_options["start_new_session"] = True
         try:
-            completed = subprocess.Popen(
-                argv,
-                cwd=self.guard.root,
-                shell=False,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True,
-                env=safe_env,
-            )
+            completed = subprocess.Popen(argv, **popen_options)
             try:
                 stdout, stderr = completed.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
-                os.killpg(completed.pid, signal.SIGKILL)
+                if sys.platform == "win32":
+                    completed.kill()
+                else:
+                    os.killpg(completed.pid, signal.SIGKILL)
                 stdout, stderr = completed.communicate()
                 output = (stdout + stderr).strip()[: self.MAX_OUTPUT]
                 return ToolResult(False, f"COMMAND_TIMEOUT\n{output}".strip(), risk, exit_code=None)
