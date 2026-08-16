@@ -12,6 +12,7 @@ from fun.events import Event, EventStore
 from fun.policy import ApprovalMode, Policy, PolicyError
 from fun.renderer import TerminalRenderer, _display_width
 from fun.terminal_ui import TerminalUiState
+from fun.tui import TerminalUI
 from fun.runtime import Runtime
 from fun.tools import Tools, file_hash
 from fun.usage import Usage
@@ -587,6 +588,19 @@ class CoreTests(unittest.TestCase):
             runtime.model = ""
             self.assertIsNone(runtime.provider)
             self.assertEqual(runtime.model, "")
+
+    def test_tui_queues_approval_without_direct_render_thread_access(self):
+        import threading
+        ui = TerminalUI()
+        result = []
+        waiter = threading.Thread(target=lambda: result.append(ui.request_approval("exec", "medium", {"command": "echo hi"})))
+        waiter.start()
+        kind, request = ui.events.get(timeout=1)
+        self.assertEqual(kind, "approval")
+        request.answer = "n"
+        request.done.set()
+        waiter.join(1)
+        self.assertEqual(result, [False])
 
     def test_terminal_ui_keeps_transcript_and_tool_cards_together(self):
         ui = TerminalUiState()
