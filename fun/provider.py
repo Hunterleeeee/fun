@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import socket
 import time
 import urllib.request
 from dataclasses import dataclass
@@ -185,7 +186,7 @@ class OpenAICompatible:
                     yield item
         except ProviderError:
             raise
-        except TimeoutError as exc:
+        except (TimeoutError, socket.timeout) as exc:
             raise ProviderError("PROVIDER_TIMEOUT", cause=exc) from exc
         except urllib.error.HTTPError as exc:
             tag = "PROVIDER_AUTH_FAILED" if exc.code in {401, 403} else "PROVIDER_HTTP_FAILED"

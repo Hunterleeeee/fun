@@ -567,6 +567,25 @@ class AgentLoopTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "INVALID_PROVIDER_TIMEOUT"):
                 OpenAICompatible(ModelConfig("https://provider.invalid", "key", "model", timeout=timeout))
 
+    def test_real_provider_socket_timeout_is_classified(self):
+        class SlowHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                import time
+                time.sleep(0.2)
+            def log_message(self, *_args):
+                pass
+        server = ThreadingHTTPServer(("127.0.0.1", 0), SlowHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            provider = OpenAICompatible(ModelConfig(f"http://127.0.0.1:{server.server_port}/v1", "key", "model", timeout=0.03))
+            with self.assertRaisesRegex(ProviderError, "PROVIDER_TIMEOUT"):
+                next(provider.stream([], []))
+        finally:
+            server.shutdown()
+            thread.join(2)
+            server.server_close()
+
     def test_provider_http_status_like_oserror_is_classified(self):
         class StatusError(OSError):
             code = 401
