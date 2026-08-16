@@ -413,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
             runtime.stop()
 
     if provider and sys.stdin.isatty() and termios is not None and tty is not None:
-        tui = TerminalUI(locale=locale)
+        tui = TerminalUI(locale=locale, commands=["/help", "/status", "/usage", "/plan", "/pause", "/resume", "/cancel", "/clear", "/stop", "/exit"])
         def tui_submit(text: str) -> None:
             if text in {"/quit", "/exit"}:
                 tui.post("quit")

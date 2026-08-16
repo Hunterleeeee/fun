@@ -35,9 +35,11 @@ class TerminalUI:
     ordinary goals. Runtime callbacks must only enqueue UI updates.
     """
 
-    def __init__(self, locale: str = "en-US", output=None) -> None:
+    def __init__(self, locale: str = "en-US", output=None, commands: list[str] | None = None) -> None:
         self.output = output or sys.stdout
         self.state = TerminalUiState(locale=locale)
+        self.commands = commands or []
+        self._suggestion_index = 0
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self._stop = False
         self._worker: threading.Thread | None = None
@@ -148,6 +150,8 @@ class TerminalUI:
                     continue
                 if key == "enter":
                     text = self.state.composer.strip()
+                    if text == "/" and self.commands:
+                        text = self.commands[self._suggestion_index]
                     self.state.composer = ""
                     if text:
                         self.post("user", text)
@@ -160,10 +164,18 @@ class TerminalUI:
                 elif key == "eof":
                     self._stop = True
                 elif key == "up":
-                    self.state.history(-1)
+                    if self.state.composer.startswith("/") and self.commands:
+                        self._suggestion_index = (self._suggestion_index - 1) % len(self.commands)
+                        self.state.composer = self.commands[self._suggestion_index]
+                    else:
+                        self.state.history(-1)
                     self._dirty = True
                 elif key == "down":
-                    self.state.history(1)
+                    if self.state.composer.startswith("/") and self.commands:
+                        self._suggestion_index = (self._suggestion_index + 1) % len(self.commands)
+                        self.state.composer = self.commands[self._suggestion_index]
+                    else:
+                        self.state.history(1)
                     self._dirty = True
                 elif len(key) == 1 and key.isprintable():
                     self.state.composer += key

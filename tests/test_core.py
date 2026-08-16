@@ -591,7 +591,7 @@ class CoreTests(unittest.TestCase):
 
     def test_tui_queues_approval_without_direct_render_thread_access(self):
         import threading
-        ui = TerminalUI()
+        ui = TerminalUI(commands=["/help", "/status"])
         result = []
         waiter = threading.Thread(target=lambda: result.append(ui.request_approval("exec", "medium", {"command": "echo hi"})))
         waiter.start()
