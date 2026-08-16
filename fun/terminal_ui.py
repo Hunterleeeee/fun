@@ -77,6 +77,18 @@ class TerminalUiState:
             self.composer_history.append(text)
             self.history_index = None
 
+    def restore_messages(self, messages: list[dict[str, Any]]) -> None:
+        for message in messages:
+            role = message.get("role")
+            content = message.get("content")
+            if role == "user" and isinstance(content, str):
+                self.add_user(content)
+            elif role == "assistant" and isinstance(content, str) and content:
+                self.add_assistant(content)
+            elif role == "tool" and isinstance(content, str):
+                call_id = str(message.get("tool_call_id", "restored-tool"))
+                self.tool_status("tool.completed", {"call_id": call_id, "name": "tool", "text": content})
+
     def add_assistant(self, text: str) -> None:
         if not text:
             return

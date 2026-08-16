@@ -414,6 +414,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if provider and sys.stdin.isatty() and termios is not None and tty is not None:
         tui = TerminalUI(locale=locale, commands=["/help", "/status", "/usage", "/plan", "/pause", "/resume", "/cancel", "/clear", "/stop", "/exit"])
+        if runtime.task and runtime.task.messages:
+            tui.state.restore_messages(runtime.task.messages)
+        if runtime.task and runtime.task.status == "recovery_required":
+            pending = runtime.recovery_summary() or {}
+            tui.state.status_text = f"recovery required · {pending.get('name', 'tool')} · {pending.get('call_id', '?')}"
+            tui.state.mode = "recovery"
         def tui_submit(text: str) -> None:
             if text in {"/quit", "/exit"}:
                 tui.post("quit")
