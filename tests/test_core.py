@@ -33,11 +33,14 @@ class CoreTests(unittest.TestCase):
             session_id = first.session_id
             first.lock.release()
             first.events._durable.close()
+            child_env = os.environ.copy()
+            root = str(Path(__file__).resolve().parents[1])
+            child_env["PYTHONPATH"] = root + os.pathsep + child_env.get("PYTHONPATH", "")
             child = subprocess.run([
                 os.environ.get("PYTHON", sys.executable), "-c",
                 "from fun.runtime import Runtime; import sys; r=Runtime.recover(sys.argv[1], sys.argv[1], sys.argv[2], approval='auto'); r.run_tool('explore', path='.'); r.stop()",
                 directory, session_id,
-            ], check=False, capture_output=True, text=True)
+            ], check=False, capture_output=True, text=True, env=child_env)
             self.assertEqual(child.returncode, 0, child.stderr)
             recovered = Runtime.recover(directory, directory, session_id, approval="auto")
             event_types = [event.type for event in recovered.events.list(session_id)]
