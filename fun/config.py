@@ -17,6 +17,16 @@ def _keychain_get() -> str:
         return ""
 
 
+def _keychain_delete() -> bool:
+    if shutil.which("security") is None:
+        return False
+    try:
+        result = subprocess.run(["security", "delete-generic-password", "-a", "fun", "-s", "fun-api-key"], capture_output=True, text=True, check=False, timeout=3)
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def _keychain_set(value: str) -> bool:
     if shutil.which("security") is None:
         return False
@@ -64,6 +74,13 @@ class FunConfig:
             target.chmod(0o600)
         except OSError:
             pass
+
+    def clear_credentials(self, path: str | Path) -> None:
+        _keychain_delete()
+        self.api_key = ""
+        self.base_url = ""
+        self.model = ""
+        self.save(path)
 
     def ready(self) -> bool:
         return bool(self.base_url and self.api_key and self.model)

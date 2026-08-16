@@ -6,6 +6,12 @@ from pathlib import Path
 import getpass
 import shlex
 import sys
+try:
+    import termios
+    import tty
+except ImportError:  # Windows: menu falls back to typed commands
+    termios = None
+    tty = None
 
 from .config import FunConfig
 from .dashboard import serve
@@ -205,6 +211,43 @@ def main(argv: list[str] | None = None) -> int:
         print(renderer.finding("离线模式 · 不会调用模型。" if renderer.zh else "Offline mode · no model calls will be made."))
         print("输入 /help 查看帮助，/setup 了解配置，或 /quit 退出。" if renderer.zh else "Use /help for commands, /setup to configure later, or /quit to exit.")
 
+    command_items = [
+        ("/help", "Show help"), ("/config", "Configure provider and credentials"),
+        ("/model", "Choose a model"), ("/permissions", "Change approval mode"),
+        ("/logout", "Remove saved API key and provider"), ("/status", "Show status"),
+        ("/plan", "Show plan"), ("/usage", "Show usage"), ("/diff", "Show diff"),
+        ("/checkpoint", "Create checkpoint"), ("/clear", "Clear screen"), ("/exit", "Exit"),
+    ]
+
+    def command_menu() -> str:
+        if not sys.stdin.isatty() or termios is None or tty is None:
+            return "/help"
+        index = 0
+        while True:
+            print("\033[2J\033[H", end="")
+            print("Commands · ↑↓ select · Enter accept · Esc cancel\n")
+            for i, (command, description) in enumerate(command_items):
+                marker = "❯" if i == index else " "
+                print(f"{marker} {command:<14} {description}")
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+            try:
+                tty.setcbreak(fd)
+                key = sys.stdin.read(1)
+                if key in {"\n", "\r"}:
+                    return command_items[index][0]
+                if key == "\x1b":
+                    if sys.stdin.read(1) == "[":
+                        code = sys.stdin.read(1)
+                        if code == "A": index = (index - 1) % len(command_items)
+                        elif code == "B": index = (index + 1) % len(command_items)
+                    else:
+                        return ""
+                elif key == "k": index = (index - 1) % len(command_items)
+                elif key == "j": index = (index + 1) % len(command_items)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
     def run_interactive_task(task: object) -> None:
         print(renderer.plan(task.plan, task.plan_status))
         if provider:
@@ -222,12 +265,45 @@ def main(argv: list[str] | None = None) -> int:
     try:
         while True:
             text = input(f"\n{renderer.prompt(provider is not None)}").strip()
+            if text == "/":
+                text = command_menu()
+                if text:
+                    print(text)
             if not text:
                 continue
             if text in {"/quit", "/exit"}:
                 break
             if text == "/help":
                 print(renderer.help())
+                continue
+            if text in {"/config", "/setup"}:
+                print("Run `fun --configure` to configure provider, model, and credentials.")
+                continue
+            if text == "/logout":
+                saved.clear_credentials(config_path)
+                provider = None
+                print("✓ Saved API key, provider, and model removed.")
+                continue
+            if text == "/permissions":
+                print("Permission mode: [1] ask  [2] smart  [3] auto")
+                args.approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), args.approval)
+                runtime.policy.mode = args.approval
+                print(f"✓ permission mode: {args.approval}")
+                continue
+            if text == "/model":
+                if not provider:
+                    print("Configure a provider first.")
+                else:
+                    selected = _choose_model(base_url, api_key, model)
+                    if selected:
+                        model = selected
+                        saved.model = selected
+                        saved.save(config_path)
+                        provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+                        print(f"✓ model: {model}")
+                continue
+            if text == "/clear":
+                print("\033[2J\033[H", end="")
                 continue
             if text == "/setup":
                 print("Run `fun --configure` in a new terminal to configure the provider.")
