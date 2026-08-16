@@ -38,9 +38,21 @@ jobs:
         run: git diff --check
 
   windows-test:
-    name: Windows Python 3.11
+    name: Windows · ${{ matrix.module }}
     runs-on: windows-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - tests.test_agent_loop
+          - tests.test_background
+          - tests.test_config_lock_schema
+          - tests.test_core
+          - tests.test_dashboard
+          - tests.test_installer
+          - tests.test_persistence
+          - tests.test_telemetry
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -56,7 +68,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
-          python -m unittest discover -s tests -v 2>&1 | Tee-Object -FilePath windows-test.log
+          python -m unittest ${{ matrix.module }} -v 2>&1 | Tee-Object -FilePath windows-test.log
           $code = $LASTEXITCODE
           Write-Host "unittest_exit_code=$code"
           if ($code -ne 0) {
@@ -70,11 +82,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-test-log
+          name: windows-test-log-${{ strategy.job-index }}
           path: windows-test.log
           if-no-files-found: error
-      - name: Run provider smoke fixture
-        run: python -m unittest tests.test_agent_loop.AgentLoopTests.test_local_sse_provider_smoke_script -v
 
   build:
     name: Build package distributions
