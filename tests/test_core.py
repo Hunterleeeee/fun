@@ -615,6 +615,10 @@ class CoreTests(unittest.TestCase):
         self.assertIn("README.md", rendered)
         self.assertIn("Done", rendered)
         self.assertTrue(rendered.endswith("> "))
+        self.assertEqual(ui.history(-1), "inspect the project")
+        self.assertEqual(ui.history(1), "")
+        ui.tool_status("tool.failed", {"call_id": "c1", "name": "read", "error": "permission denied"})
+        self.assertIn("permission denied", ui.render())
 
     def test_renderer_keeps_unicode_header_rows_aligned(self):
         color_header = TerminalRenderer(color=True, locale="zh-CN").header("/tmp/中文-workspace", True, "smart")

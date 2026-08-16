@@ -156,7 +156,11 @@ class TerminalUI:
                 elif key == "eof":
                     self._stop = True
                 elif key == "up":
-                    self.set_status("history is not available yet")
+                    self.state.history(-1)
+                    self._dirty = True
+                elif key == "down":
+                    self.state.history(1)
+                    self._dirty = True
                 elif len(key) == 1 and key.isprintable():
                     self.state.composer += key
         finally:

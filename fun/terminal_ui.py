@@ -18,6 +18,7 @@ class ToolCard:
     status: str = "queued"
     elapsed_ms: int | None = None
     output: str = ""
+    error: str = ""
     exit_code: int | None = None
 
     def update(self, status: str, payload: dict[str, Any]) -> None:
@@ -26,6 +27,8 @@ class ToolCard:
             self.elapsed_ms = payload["elapsed_ms"]
         if isinstance(payload.get("text"), str):
             self.output = payload["text"][:500]
+        if isinstance(payload.get("error"), str):
+            self.error = payload["error"][:240]
         if isinstance(payload.get("exit_code"), int):
             self.exit_code = payload["exit_code"]
 
@@ -47,9 +50,24 @@ class TerminalUiState:
     status_text: str = ""
     transcript: list[TranscriptItem] = field(default_factory=list)
     tools: dict[str, ToolCard] = field(default_factory=dict)
+    composer_history: list[str] = field(default_factory=list)
+    history_index: int | None = None
+
+    def history(self, direction: int) -> str:
+        if not self.composer_history:
+            return self.composer
+        if self.history_index is None:
+            self.history_index = len(self.composer_history)
+        self.history_index = max(0, min(len(self.composer_history), self.history_index + direction))
+        self.composer = self.composer_history[self.history_index] if self.history_index < len(self.composer_history) else ""
+        return self.composer
 
     def add_user(self, text: str) -> None:
-        self.transcript.append(TranscriptItem("user", text))
+        text = text.strip()
+        if text:
+            self.transcript.append(TranscriptItem("user", text))
+            self.composer_history.append(text)
+            self.history_index = None
 
     def add_assistant(self, text: str) -> None:
         if not text:
@@ -96,6 +114,8 @@ class TerminalUiState:
                 lines.append(f"┌ {card.name} · {card.status}{timing}{detail}")
                 if card.output:
                     lines.append(f"│ {card.output.replace(chr(10), chr(10) + '│ ')[:500]}")
+                if card.error:
+                    lines.append(f"│ × {card.error}")
                 lines.append("└")
         if self.status_text:
             lines.append(f"· {self.status_text}")
