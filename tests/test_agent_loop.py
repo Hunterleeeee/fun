@@ -62,6 +62,27 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_tool_lifecycle_reports_status_and_elapsed_time(self):
+        statuses = []
+        class ToolProvider:
+            def __init__(self):
+                self.calls = 0
+            def stream(self, messages, tools=None):
+                self.calls += 1
+                if self.calls == 1:
+                    yield {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call_tool", "function": {"name": "read", "arguments": '{"path":"missing.txt"}'}}]}}]}
+                else:
+                    yield {"choices": [{"delta": {"content": "done"}}]}
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, provider=ToolProvider(), approve=lambda name, risk: True)
+            runtime.create_task("inspect")
+            runtime.run_model_turn(on_status=lambda kind, payload: statuses.append((kind, payload)))
+            self.assertIn("tool.executing", [kind for kind, _ in statuses])
+            completed = next(payload for kind, payload in statuses if kind == "tool.failed")
+            self.assertIsInstance(completed["elapsed_ms"], int)
+            event = next(event for event in runtime.events.list() if event.type == "tool.failed")
+            self.assertIn("elapsed_ms", event.payload)
+
     def test_model_step_records_start_first_token_and_completion_timing(self):
         class TimingProvider:
             def stream(self, messages, tools=None):
