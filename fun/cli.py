@@ -283,6 +283,24 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
+    def reconfigure_current_session() -> None:
+        nonlocal provider, base_url, api_key, model
+        new_url = input(f"Provider base URL [{base_url}] ❯ ").strip() or base_url
+        print(t(locale, "api_key_hint"))
+        new_key = os.getenv("FUN_API_KEY") or getpass.getpass("API key ❯ ").strip()
+        if not new_key:
+            print(t(locale, "api_key_required"))
+            return
+        new_model = _choose_model(new_url, new_key, model, locale)
+        if not new_model:
+            return
+        base_url, api_key, model = new_url, new_key, new_model
+        saved.base_url, saved.api_key, saved.model = base_url, api_key, model
+        os.environ["FUN_API_KEY"] = api_key
+        saved.save(config_path)
+        provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+        print(t(locale, "saved"))
+
     def run_interactive_task(task: object) -> None:
         print(renderer.plan(task.plan, task.plan_status))
         if provider:
@@ -312,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(renderer.help())
                 continue
             if text in {"/config", "/setup"}:
-                print(t(locale, "configure"))
+                reconfigure_current_session()
                 continue
             if text == "/logout":
                 saved.clear_credentials(config_path)
