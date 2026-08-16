@@ -331,7 +331,7 @@ def main(argv: list[str] | None = None) -> int:
                     elif kind == "tool.completed":
                         print(f"✓ ({payload.get('elapsed_ms', 0)}ms)", flush=True)
                     elif kind == "tool.failed":
-                        if payload.get("error") == "TimeoutExpired":
+                        if payload.get("error") == "TimeoutExpired" or "COMMAND_TIMEOUT" in str(payload.get("text", "")):
                             print("× " + t(locale, "tool_timeout").format(elapsed_ms=payload.get("elapsed_ms", 0)), flush=True)
                         else:
                             print(f"× ({payload.get('elapsed_ms', 0)}ms) · use /status for details", flush=True)

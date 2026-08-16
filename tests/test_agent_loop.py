@@ -80,6 +80,7 @@ class AgentLoopTests(unittest.TestCase):
             self.assertIn("tool.executing", [kind for kind, _ in statuses])
             completed = next(payload for kind, payload in statuses if kind == "tool.failed")
             self.assertIsInstance(completed["elapsed_ms"], int)
+            self.assertIn("text", completed)
             event = next(event for event in runtime.events.list() if event.type == "tool.failed")
             self.assertIn("elapsed_ms", event.payload)
 

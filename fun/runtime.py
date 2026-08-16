@@ -419,7 +419,7 @@ class Runtime:
         elapsed_ms = int((time.monotonic() - started) * 1000)
         self.emit("tool.completed" if result.ok else "tool.failed", self.task.id, call_id=call_id, name=name, ok=result.ok, text=result.text, changed=result.changed or [], elapsed_ms=elapsed_ms, exit_code=result.exit_code)
         if on_status is not None:
-            on_status("tool.completed" if result.ok else "tool.failed", {"call_id": call_id, "name": name, "ok": result.ok, "elapsed_ms": elapsed_ms, "exit_code": result.exit_code})
+            on_status("tool.completed" if result.ok else "tool.failed", {"call_id": call_id, "name": name, "ok": result.ok, "elapsed_ms": elapsed_ms, "exit_code": result.exit_code, "text": result.text[:500]})
         self.task.pending_tool = None
         if plan_index is not None:
             self.update_plan_step(plan_index, "done" if result.ok else "blocked", result.text[:500])
