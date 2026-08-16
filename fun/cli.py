@@ -129,7 +129,10 @@ def main(argv: list[str] | None = None) -> int:
             saved.api_key = env_key
         else:
             print("API key: paste is supported; input is hidden and will not echo.")
-            saved.api_key = getpass.getpass("API key [Enter to keep current]: ").strip() or saved.api_key
+            entered_key = _secret_input("API key [Enter to keep current]: ")
+            if entered_key is None:
+                return 130
+            saved.api_key = entered_key or saved.api_key
         saved.model = _choose_model(saved.base_url, saved.api_key, saved.model, locale) or saved.model
         if not saved.model:
             print("Model selection is required.", file=sys.stderr)
@@ -216,7 +219,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         if choice in {"1", "2"}:
             print(t(locale, "api_key_hint"))
-            saved.api_key = os.getenv("FUN_API_KEY") or getpass.getpass("API key ❯ ").strip()
+            entered_key = _secret_input("API key ❯ ") if not os.getenv("FUN_API_KEY") else os.getenv("FUN_API_KEY")
+            if entered_key is None:
+                return
+            saved.api_key = entered_key
             if not saved.api_key:
                 print(renderer.error("API key is required."), file=sys.stderr)
                 return 2
@@ -313,7 +319,9 @@ def main(argv: list[str] | None = None) -> int:
         nonlocal provider, base_url, api_key, model
         new_url = input(f"Provider base URL [{base_url}] ❯ ").strip() or base_url
         print(t(locale, "api_key_hint"))
-        new_key = os.getenv("FUN_API_KEY") or getpass.getpass("API key ❯ ").strip()
+        new_key = os.getenv("FUN_API_KEY") or _secret_input("API key ❯ ")
+        if new_key is None:
+            return
         if not new_key:
             print(t(locale, "api_key_required"))
             return
