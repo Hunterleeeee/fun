@@ -57,7 +57,9 @@ class TerminalUI:
         self.post("status", text)
 
     def set_background(self, tasks: list[dict[str, Any]]) -> None:
-        self.post("background", tasks)
+        normalized = [{key: str(item.get(key, ""))[:240] for key in ("id", "status", "goal", "result", "error")} for item in tasks]
+        if normalized != self.state.background:
+            self.post("background", normalized)
 
     def append_assistant(self, text: str) -> None:
         self.post("assistant", text)
