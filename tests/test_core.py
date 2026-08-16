@@ -26,6 +26,12 @@ def runtime_usage_summary():
 
 
 class CoreTests(unittest.TestCase):
+    def test_short_conversational_goal_uses_lightweight_plan(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory)
+            task = runtime.create_task("你好啊")
+            self.assertEqual(task.plan, ["understand the request", "respond"])
+
     def test_cross_process_recovery_persists_followup_tool_events(self):
         with TemporaryDirectory() as directory:
             first = Runtime(directory, "auto", state_dir=directory)
