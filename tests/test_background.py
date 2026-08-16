@@ -41,6 +41,19 @@ class BackgroundTaskTests(unittest.TestCase):
             self.assertEqual(status[0][1:], ("completed", "status check", "done", None))
             runtime.stop()
 
+    def test_failed_background_task_exposes_safe_error_name(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("parent")
+            def worker(goal, cancel):
+                raise RuntimeError("private secret must not be shown")
+            task = runtime.spawn_agent("failed work", worker)
+            task.thread.join(2)
+            self.assertEqual(task.status, "failed")
+            self.assertEqual(task.error, "RuntimeError")
+            self.assertNotIn("private secret", str(task.error))
+            runtime.stop()
+
     def test_cancel_background_task_is_cooperative(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)
