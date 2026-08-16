@@ -616,6 +616,9 @@ class CoreTests(unittest.TestCase):
         self.assertIn("Done", rendered)
         self.assertTrue(rendered.endswith("> "))
         self.assertIn("approval=smart", rendered)
+        ui.composer = "first line\nsecond line"
+        multiline = ui.render()
+        self.assertIn("> first line\n  second line", multiline)
         self.assertEqual(ui.history(-1), "inspect the project")
         self.assertEqual(ui.history(1), "")
         scroll_ui = TerminalUiState()

@@ -152,5 +152,8 @@ class TerminalUiState:
             status += f" · {self.status_text}"
         lines.append(f"· {status}")
         lines.append("─" * min(width, 88))
-        lines.append(f"{'> ' if self.mode == 'ready' else '… '}" + self.composer)
+        prompt = "> " if self.mode == "ready" else "… "
+        draft_lines = self.composer.splitlines() or [""]
+        lines.append(prompt + draft_lines[0])
+        lines.extend("  " + line for line in draft_lines[1:])
         return "\n".join(lines)

@@ -133,8 +133,10 @@ class TerminalUI:
                     return "pageup" if seq == "[5" else "pagedown"
                 return {"[A": "up", "[B": "down", "[C": "right", "[D": "left"}.get(seq, "escape")
             return "escape"
-        if key in {"\r", "\n"}:
+        if key == "\r":
             return "enter"
+        if key == "\n":
+            return "newline"
         if key in {"\x7f", "\b"}:
             return "backspace"
         if key == "\x03":
@@ -170,6 +172,9 @@ class TerminalUI:
                     if text:
                         self.post("user", text)
                         on_submit(text)
+                elif key == "newline":
+                    self.state.composer += "\n"
+                    self._dirty = True
                 elif key == "backspace":
                     self.state.composer = self.state.composer[:-1]
                 elif key == "cancel":
