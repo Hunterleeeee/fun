@@ -56,7 +56,13 @@ def main(argv: list[str] | None = None) -> int:
             print("Configuration requires an interactive terminal.", file=sys.stderr)
             return 2
         saved.base_url = input(f"Base URL [{saved.base_url}]: ").strip() or saved.base_url
-        saved.api_key = input("API key [hidden, leave blank to keep]: ").strip() or saved.api_key
+        env_key = os.getenv("FUN_API_KEY", "")
+        if env_key:
+            print("Using FUN_API_KEY from environment; no key input needed.")
+            saved.api_key = env_key
+        else:
+            print("API key: paste is supported; input is hidden and will not echo.")
+            saved.api_key = getpass.getpass("API key [Enter to keep current]: ").strip() or saved.api_key
         saved.model = input(f"Model [{saved.model}]: ").strip() or saved.model
         telemetry_choice = input(f"Enable private telemetry? [{'Y/n' if saved.telemetry else 'y/N'}]: ").strip().lower()
         if telemetry_choice in {"y", "yes"}:
@@ -115,7 +121,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if choice == "1":
             saved.base_url = input("Provider base URL [https://api.openai.com/v1] ❯ ").strip() or "https://api.openai.com/v1"
-            saved.api_key = getpass.getpass("API key (not saved to disk) ❯ ").strip()
+            print("API key: you can paste it here; input is hidden and will not echo.")
+            saved.api_key = os.getenv("FUN_API_KEY") or getpass.getpass("API key (paste supported) ❯ ").strip()
             saved.model = input("Model name ❯ ").strip()
             if saved.api_key:
                 os.environ["FUN_API_KEY"] = saved.api_key
