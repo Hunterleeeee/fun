@@ -59,6 +59,7 @@ class TerminalUiState:
     composer_history: list[str] = field(default_factory=list)
     history_index: int | None = None
     scroll_offset: int = 0
+    background: list[dict[str, str]] = field(default_factory=list)
 
     def history(self, direction: int) -> str:
         if not self.composer_history:
@@ -68,6 +69,12 @@ class TerminalUiState:
         self.history_index = max(0, min(len(self.composer_history), self.history_index + direction))
         self.composer = self.composer_history[self.history_index] if self.history_index < len(self.composer_history) else ""
         return self.composer
+
+    def set_background(self, tasks: list[dict[str, str]]) -> None:
+        self.background = [
+            {key: str(item.get(key, ""))[:240] for key in ("id", "status", "goal", "result", "error")}
+            for item in tasks
+        ]
 
     def scroll(self, delta: int) -> int:
         self.scroll_offset = max(0, min(max(0, len(self.transcript) - 1), self.scroll_offset + delta))
@@ -151,6 +158,10 @@ class TerminalUiState:
         if self.status_text:
             status += f" · {self.status_text}"
         lines.append(f"· {status}")
+        for task in self.background:
+            detail = task.get("result") or task.get("error") or ""
+            suffix = f" · {detail}" if detail else ""
+            lines.append(f"  bg {task.get('id', '?')} · {task.get('status', '?')} · {task.get('goal', '')}{suffix}")
         lines.append("─" * min(width, 88))
         lines.append("  Ctrl-N newline · Enter submit · Ctrl-C clear")
         prompt = "> " if self.mode == "ready" else "… "

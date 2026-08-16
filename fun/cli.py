@@ -417,6 +417,10 @@ def main(argv: list[str] | None = None) -> int:
         tui.state.model_name = runtime.model
         tui.state.approval_mode = runtime.policy.mode.value
         tui.state.task_state = runtime.task.status if runtime.task else "idle"
+        tui.background_provider = lambda: [
+            {"id": item.id, "status": item.status, "goal": item.goal, "result": str(item.result)[:120] if item.result is not None else "", "error": item.error or ""}
+            for item in runtime.background.list()
+        ]
         if runtime.task and runtime.task.messages:
             tui.state.restore_messages(runtime.task.messages)
         if runtime.task and runtime.task.status == "recovery_required":

@@ -56,6 +56,9 @@ class TerminalUI:
     def set_status(self, text: str) -> None:
         self.post("status", text)
 
+    def set_background(self, tasks: list[dict[str, Any]]) -> None:
+        self.post("background", tasks)
+
     def append_assistant(self, text: str) -> None:
         self.post("assistant", text)
 
@@ -95,6 +98,8 @@ class TerminalUI:
             elif kind == "tool":
                 event_kind, event_payload = payload
                 self.state.tool_status(event_kind, event_payload)
+            elif kind == "background":
+                self.state.set_background(payload if isinstance(payload, list) else [])
             elif kind == "approval":
                 self._approval = payload
                 self.state.mode = "approval"
@@ -159,6 +164,8 @@ class TerminalUI:
             tty.setcbreak(fd)
             self._draw()
             while not self._stop:
+                if hasattr(self, "background_provider"):
+                    self.set_background(self.background_provider())
                 self._draw()
                 key = self._read_key(fd)
                 if key is None:

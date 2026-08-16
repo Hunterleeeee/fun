@@ -616,6 +616,8 @@ class CoreTests(unittest.TestCase):
         self.assertIn("Done", rendered)
         self.assertTrue(rendered.endswith("> "))
         self.assertIn("approval=smart", rendered)
+        ui.set_background([{"id": "bg_1", "status": "running", "goal": "search files", "result": "", "error": ""}])
+        self.assertIn("bg bg_1 · running · search files", ui.render())
         compact = ui.render(40, 8)
         self.assertLessEqual(len(compact.splitlines()), 8)
         ui.composer = "first line\nsecond line"
