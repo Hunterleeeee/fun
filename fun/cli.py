@@ -383,6 +383,18 @@ def main(argv: list[str] | None = None) -> int:
                     print(text)
             if not text:
                 continue
+            if text.startswith("/") and not text.startswith(("/goal ", "/recover ")):
+                known = {item[0] for item in command_items} | {"/setup", "/quit"}
+                if text not in known:
+                    matches = sorted(command for command in known if command.startswith(text))
+                    if len(matches) == 1:
+                        text = matches[0]
+                    elif matches:
+                        print("\n".join(matches))
+                        continue
+                    else:
+                        print(t(locale, "unknown_command"), file=sys.stderr)
+                        continue
             if text in {"/quit", "/exit"}:
                 break
             if text == "/help":
