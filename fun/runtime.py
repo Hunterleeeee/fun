@@ -292,10 +292,12 @@ class Runtime:
 
     @staticmethod
     def _initial_plan(goal: str) -> list[str]:
-        lower = goal.lower()
-        if any(word in lower for word in ("fix", "修复", "改", "implement", "实现")):
+        lower = goal.strip().lower()
+        if len(lower) <= 12 and not any(word in lower for word in ("?", "？", "怎么", "what", "how", "why")):
+            return ["understand the request", "respond"]
+        if any(word in lower for word in ("fix", "修复", "改", "implement", "实现", "create", "创建", "写", "build", "做")):
             return ["inspect workspace", "locate relevant code", "apply a minimal change", "run focused validation"]
-        return ["inspect workspace", "analyze the request", "report verified findings"]
+        return ["understand the request", "inspect workspace if needed", "report verified findings"]
 
     def replace_plan(self, steps: list[str]) -> None:
         if not self.task or self.task.status != "running":
