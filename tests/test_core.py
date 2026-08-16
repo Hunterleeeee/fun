@@ -887,6 +887,17 @@ class CoreTests(unittest.TestCase):
                 self.assertEqual(popen.call_args.kwargs["creationflags"], 512)
                 self.assertNotIn("start_new_session", popen.call_args.kwargs)
 
+    def test_exec_windows_timeout_kills_process_without_killpg(self):
+        with TemporaryDirectory() as directory:
+            with patch("fun.tools.sys.platform", "win32"), patch("fun.tools.subprocess.Popen") as popen, patch("fun.tools.os.killpg") as killpg:
+                process = popen.return_value
+                process.communicate.side_effect = [subprocess.TimeoutExpired("python3", 0.01), ("", "")]
+                result = Tools(directory).exec("python3 -c print(1)", timeout=0.01)
+                self.assertFalse(result.ok)
+                self.assertIn("COMMAND_TIMEOUT", result.text)
+                process.kill.assert_called_once_with()
+                killpg.assert_not_called()
+
     def test_exec_timeout_and_output_limits_use_portable_python(self):
         with TemporaryDirectory() as directory:
             result = Tools(directory).exec("python3 -c \"print('x' * 300000)\"")
