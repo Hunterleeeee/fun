@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -31,6 +32,16 @@ class ConfigLockSchemaTests(unittest.TestCase):
             config = FunConfig(approval="ask")
             config.save(path)
             self.assertEqual(FunConfig.load(path).approval, "ask")
+
+    def test_missing_keychain_binding_clears_provider_ready_state(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text('{"base_url":"https://example.test/v1","model":"m","api_key_store":"macos-keychain"}\n', encoding="utf-8")
+            with patch("fun.config._keychain_get", return_value=""):
+                loaded = FunConfig.load(path)
+            self.assertFalse(loaded.ready())
+            self.assertEqual(loaded.base_url, "")
+            self.assertEqual(loaded.model, "")
 
     def test_workspace_lock_is_exclusive(self):
         with TemporaryDirectory() as directory:

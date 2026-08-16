@@ -66,6 +66,8 @@ class FunConfig:
         target = Path(path).expanduser()
         target.parent.mkdir(parents=True, exist_ok=True)
         data = asdict(self)
+        data.pop("api_key_store", None)
+        data.pop("api_key_env", None)
         if data.get("api_key"):
             key = data.pop("api_key")
             if _keychain_set(key) and _keychain_get() == key:

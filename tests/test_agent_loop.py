@@ -13,6 +13,24 @@ from fun.provider import ModelConfig, OpenAICompatible, ProviderError, tool_sche
 from fun.runtime import Runtime
 
 
+class ModelsHandler(BaseHTTPRequestHandler):
+    status = 200
+    payload = {"data": [{"id": "model-z"}, {"id": "model-a"}, {"id": "model-a"}, {"name": "ignored"}]}
+    seen_auth = None
+
+    def do_GET(self):
+        self.__class__.seen_auth = self.headers.get("Authorization")
+        body = json.dumps(self.__class__.payload).encode()
+        self.send_response(self.__class__.status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args):
+        pass
+
+
 class SmokeHandler(BaseHTTPRequestHandler):
     seen_auth = None
 
@@ -62,6 +80,34 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_list_models_real_http_deduplicates_and_sorts(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), ModelsHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            provider = OpenAICompatible(ModelConfig(f"http://127.0.0.1:{server.server_port}/v1", "models-secret", "unused"))
+            self.assertEqual(provider.list_models(), ["model-a", "model-z"])
+            self.assertEqual(ModelsHandler.seen_auth, "Bearer models-secret")
+        finally:
+            server.shutdown()
+            thread.join(2)
+            server.server_close()
+
+    def test_list_models_auth_failure_is_stable(self):
+        ModelsHandler.status = 401
+        server = ThreadingHTTPServer(("127.0.0.1", 0), ModelsHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            provider = OpenAICompatible(ModelConfig(f"http://127.0.0.1:{server.server_port}/v1", "bad", "unused"))
+            with self.assertRaisesRegex(ProviderError, "PROVIDER_AUTH_FAILED"):
+                provider.list_models()
+        finally:
+            ModelsHandler.status = 200
+            server.shutdown()
+            thread.join(2)
+            server.server_close()
+
     def test_tool_lifecycle_reports_status_and_elapsed_time(self):
         statuses = []
         class ToolProvider:
