@@ -155,7 +155,7 @@ class TerminalUiState:
         if self.model_name:
             status += f" · model={self.model_name}"
         status += f" · approval={self.approval_mode}"
-        if self.status_text:
+        if self.status_text and self.status_text not in {self.task_state, f"approval={self.approval_mode}"}:
             status += f" · {self.status_text}"
         lines.append(f"· {status}")
         for task in self.background:
