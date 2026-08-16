@@ -17,11 +17,14 @@ class TerminalRenderer:
 
     def header(self, workspace: str, configured: bool, approval: str) -> str:
         state = "READY" if configured else "SETUP REQUIRED"
+        width = 59
+        def row(text: str) -> str:
+            return f"│ {text[:width]:<{width}}│"
         return "\n".join([
             self._style("╭─ FUN WORKSPACE ─────────────────────────────────────────────╮", "36"),
-            f"│ {self._style('Coding should feel good.', '1;36'):<56}│",
-            f"│ workspace  {workspace[:43]:<43}│",
-            f"│ provider   {state:<13}  approval  {approval:<8}  │",
+            row(self._style("Coding should feel good.", "1;36")),
+            row(f"workspace  {workspace}"),
+            row(f"provider   {state}  approval  {approval}"),
             self._style("╰─────────────────────────────────────────────────────────────╯", "36"),
         ])
 
