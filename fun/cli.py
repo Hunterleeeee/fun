@@ -219,7 +219,8 @@ def main(argv: list[str] | None = None) -> int:
             if not saved.model:
                 return 2
             print("Permission mode: [1] ask  [2] smart (recommended)  [3] auto")
-            args.approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), "smart")
+            approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), approval)
+            saved.approval = approval
             os.environ["FUN_API_KEY"] = saved.api_key
             saved.save(config_path)
             base_url, api_key, model = saved.base_url, saved.api_key, saved.model
