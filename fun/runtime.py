@@ -573,7 +573,7 @@ class Runtime:
         self.task.agent_state = "ready"
         return content, parsed
 
-    def execute_tool_calls(self, calls: list[dict[str, Any]]) -> None:
+    def execute_tool_calls(self, calls: list[dict[str, Any]], on_status: Callable[[str, dict[str, Any]], None] | None = None) -> None:
         if not self.task:
             raise RuntimeError("NO_ACTIVE_TASK")
         self._node("tools.executing", count=len(calls))
@@ -590,7 +590,11 @@ class Runtime:
                 else:
                     self.emit("model.tool_call", self.task.id, call_id=call["id"], name=name)
                     self._tool_calls += 1
+                    if on_status is not None:
+                        on_status("tool.started", {"name": name, "call_id": call["id"]})
                     result = self.run_tool(name, **arguments)
+                    if on_status is not None:
+                        on_status("tool.completed", {"name": name, "call_id": call["id"], "ok": result.ok})
                 self.task.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})
         finally:
             try:
@@ -599,7 +603,7 @@ class Runtime:
             except Exception:
                 pass
 
-    def run_model_turn(self, on_text: Callable[[str], None] | None = None, max_steps: int = 8) -> str:
+    def run_model_turn(self, on_text: Callable[[str], None] | None = None, on_status: Callable[[str, dict[str, Any]], None] | None = None, max_steps: int = 8) -> str:
         if not self.task:
             raise RuntimeError("NO_ACTIVE_TASK")
         final_text = ""
@@ -619,7 +623,7 @@ class Runtime:
                 self.task.model_error = None
                 return final_text
             self.task.messages.append({"role": "assistant", "content": content or None, "tool_calls": calls})
-            self.execute_tool_calls(calls)
+            self.execute_tool_calls(calls, on_status=on_status)
         self.emit("task.blocked", self.task.id, reason="TOOL_BUDGET_EXCEEDED")
         raise RuntimeError("TASK_BUDGET_EXCEEDED")
 

@@ -313,7 +313,12 @@ def main(argv: list[str] | None = None) -> int:
         if provider:
             try:
                 print(t(locale, "thinking"), end=" ", flush=True)
-                output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True))
+                def status(kind: str, payload: dict[str, object]) -> None:
+                    if kind == "tool.started":
+                        print(f"\n{t(locale, 'tool_running').format(name=payload.get('name', 'tool'))}", flush=True)
+                    elif kind == "tool.completed":
+                        print("✓", flush=True)
+                output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True), on_status=status)
                 runtime.complete(output)
                 print()
             except Exception as exc:
@@ -365,9 +370,6 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if text == "/clear":
                 print("\033[2J\033[H", end="")
-                continue
-            if text == "/setup":
-                print("Run `fun --configure` in a new terminal to configure the provider.")
                 continue
             if text == "/goal":
                 print(runtime.goal() or "(no active goal)")
