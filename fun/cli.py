@@ -429,6 +429,9 @@ def main(argv: list[str] | None = None) -> int:
                 runtime.provider = None
                 runtime.model = ""
                 base_url = api_key = model = ""
+                print("\033[2J\033[H", end="")
+                print(renderer.header(str(runtime.tools.guard.root), False, runtime.policy.mode.value))
+                print(renderer.finding(t(locale, "offline")))
                 print("✓ " + t(locale, "removed"))
                 continue
             if text == "/permissions":
