@@ -479,7 +479,17 @@ def main(argv: list[str] | None = None) -> int:
                     tui.state.mode = "working" if action in {"resume", "discard", "mark_failed"} else "ready"
                     tui.set_status(f"recovery={action}")
                     if provider and action in {"resume", "discard", "mark_failed"} and runtime.task and runtime.task.status == "running":
-                        tui_submit("/resume")
+                        def continue_recovered() -> None:
+                            tui.post("status", "working")
+                            try:
+                                output = runtime.run_model_turn(on_text=lambda chunk: tui.post("assistant", chunk), on_status=lambda kind, payload: tui.post("tool", (kind, payload)))
+                                runtime.complete(output)
+                                tui.post("status", "ready")
+                            except Exception as exc:
+                                runtime.fail(str(exc))
+                                tui.post("assistant", "× " + _friendly_error(exc, locale))
+                                tui.post("status", "failed")
+                        threading.Thread(target=continue_recovered, daemon=True).start()
                 except RuntimeError as exc:
                     tui.append_assistant("× " + str(exc))
                 return
