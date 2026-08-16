@@ -65,8 +65,11 @@ class DashboardData:
                 counts["failed"] += 1
             elif event_type == "task.stopped":
                 counts["stopped"] += 1
-            if event_type.startswith("background.task.") and task_id:
-                item = background.setdefault(task_id, {"task_id": task_id, "status": "created"})
+            if event_type.startswith("background.task."):
+                background_id = payload.get("background_task_id") or task_id
+                if not isinstance(background_id, str) or not background_id:
+                    continue
+                item = background.setdefault(background_id, {"task_id": background_id, "status": "created"})
                 item["status"] = event_type.rsplit(".", 1)[-1].replace("cancel_requested", "cancelling")
                 for key in ("goal", "kind", "parent_task_id", "run_id", "result", "error"):
                     if key in payload:
