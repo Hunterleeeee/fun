@@ -127,6 +127,24 @@ class AgentLoopTests(unittest.TestCase):
             thread.join(2)
             server.server_close()
 
+    def test_consecutive_tasks_start_with_fresh_user_context(self):
+        class CaptureProvider:
+            def __init__(self):
+                self.messages = []
+            def stream(self, messages, tools=None):
+                self.messages.append(list(messages))
+                yield {"choices": [{"delta": {"content": "ok"}}]}
+        with TemporaryDirectory() as directory:
+            provider = CaptureProvider()
+            runtime = Runtime(directory, provider=provider)
+            runtime.create_task("first goal")
+            runtime.run_model_turn()
+            runtime.complete("ok")
+            runtime.create_task("second goal")
+            runtime.run_model_turn()
+            self.assertEqual([item["content"] for item in provider.messages[1] if item["role"] == "user"], ["second goal"])
+            runtime.stop()
+
     def test_runtime_supports_two_consecutive_tasks_after_completion(self):
         class TwoTurnProvider:
             def __init__(self):
