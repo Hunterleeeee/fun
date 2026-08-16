@@ -19,6 +19,7 @@ class ToolCard:
     elapsed_ms: int | None = None
     output: str = ""
     error: str = ""
+    risk: str = ""
     exit_code: int | None = None
 
     def update(self, status: str, payload: dict[str, Any]) -> None:
@@ -29,6 +30,8 @@ class ToolCard:
             self.output = payload["text"][:500]
         if isinstance(payload.get("error"), str):
             self.error = payload["error"][:240]
+        if isinstance(payload.get("risk"), str):
+            self.risk = payload["risk"]
         if isinstance(payload.get("exit_code"), int):
             self.exit_code = payload["exit_code"]
 
@@ -118,6 +121,9 @@ class TerminalUiState:
                 detail = f" · {args}" if args else ""
                 timing = f" · {card.elapsed_ms}ms" if card.elapsed_ms is not None else ""
                 lines.append(f"┌ {card.name} · {card.status}{timing}{detail}")
+                if card.status == "approval":
+                    risk = f" · risk={card.risk}" if card.risk else ""
+                    lines.append(f"│ Approval required{risk} · [y] once · [a] this session · [n] deny")
                 if card.output:
                     lines.append(f"│ {card.output.replace(chr(10), chr(10) + '│ ')[:500]}")
                 if card.error:
