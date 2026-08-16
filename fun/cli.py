@@ -433,7 +433,12 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if text == "/permissions":
                 print(t(locale, "permission") + ": " + t(locale, "permission_options"))
-                approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), approval)
+                try:
+                    selected_approval = input("❯ ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    print(t(locale, "cancel_status"), file=sys.stderr)
+                    continue
+                approval = {"1": "ask", "2": "smart", "3": "auto"}.get(selected_approval, approval)
                 runtime.policy.mode = approval
                 saved.approval = approval
                 saved.save(config_path)
