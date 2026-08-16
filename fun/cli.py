@@ -37,10 +37,18 @@ def _choose_model(base_url: str, api_key: str, current: str = "", locale: str = 
         models = OpenAICompatible(ModelConfig(base_url, api_key, current or "models-placeholder")).list_models()
     except Exception as exc:
         print(t(locale, "model_load_failed"))
-        return input(f"Model ID [{current}] (manual fallback) ❯ ").strip() or current or None
+        try:
+            return input(f"Model ID [{current}] (manual fallback, Enter cancels) ❯ ").strip() or current or None
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
     if not models:
-        print("Provider returned no models.")
-        return input(f"Model ID [{current}] (manual fallback) ❯ ").strip() or current or None
+        print(t(locale, "model_empty"))
+        try:
+            return input(f"Model ID [{current}] (manual fallback, Enter cancels) ❯ ").strip() or current or None
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
     print(t(locale, "choose_model"))
     if termios is None or tty is None or not sys.stdin.isatty():
         for index, model_id in enumerate(models, 1):
