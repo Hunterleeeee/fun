@@ -117,6 +117,9 @@ class Runtime:
             created = next((event for event in task_events if event.type == "task.created" and event.task_id == task_id), None)
             if created:
                 runtime.task = Task(task_id, str(created.payload.get("goal", "")))
+                messages = created.payload.get("messages")
+                if isinstance(messages, list):
+                    runtime.task.messages = [dict(item) for item in messages if isinstance(item, dict)]
                 runtime._replay_task(task_events)
                 if runtime.task.status in {"running", "paused"} and runtime.task.agent_state in {"approval.pending", "tool.executing"} and not any(event.type in {"recovery.acknowledged", "recovery.discarded", "recovery.marked_failed"} for event in task_events if event.task_id == task_id and event.seq > created.seq):
                     runtime.task.status = "recovery_required"
@@ -183,6 +186,10 @@ class Runtime:
                 self.task.model_error = {key: event.payload.get(key) for key in ("error_type", "error_tag") if key in event.payload}
             elif event.type == "model.completed":
                 self.task.model_error = None
+            elif event.type == "task.message":
+                message = event.payload.get("message")
+                if isinstance(message, dict):
+                    self.task.messages.append(dict(message))
             elif event.type == "task.result":
                 self.task.result = str(event.payload.get("result", ""))
                 self.task.agent_state = "completed"
@@ -247,7 +254,7 @@ class Runtime:
         candidate.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
         try:
             events = [
-                Event("task.created", self.session_id, candidate.id, {"goal": goal}),
+                Event("task.created", self.session_id, candidate.id, {"goal": goal, "messages": candidate.messages}),
                 Event("plan.created", self.session_id, candidate.id, {"steps": candidate.plan}),
                 Event("task.started", self.session_id, candidate.id, {}),
                 Event("agent.node", self.session_id, candidate.id, {"node": "ready"}),
@@ -609,7 +616,9 @@ class Runtime:
                     if on_status is not None:
                         on_status("tool.started", {"name": name, "call_id": call["id"]})
                     result = self.run_tool(name, on_status=on_status, **arguments)
-                self.task.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})
+                message = {"role": "tool", "tool_call_id": call["id"], "content": result.text}
+                self.task.messages.append(message)
+                self.emit("task.message", self.task.id, message=message)
         finally:
             try:
                 self.emit("agent.node", self.task.id, node="ready")
@@ -628,7 +637,9 @@ class Runtime:
                 final_text += content
             if not calls:
                 if content:
-                    self.task.messages.append({"role": "assistant", "content": content})
+                    message = {"role": "assistant", "content": content}
+                    self.task.messages.append(message)
+                    self.emit("task.message", self.task.id, message=message)
                 timing = {
                     "step_ms": None if self._model_step_started is None else int((time.monotonic() - self._model_step_started) * 1000),
                     "ttft_ms": self.usage.ttft_ms,
@@ -637,7 +648,9 @@ class Runtime:
                 self.emit("model.completed", self.task.id, text=content, usage=self.usage.as_dict(), timing=timing)
                 self.task.model_error = None
                 return final_text
-            self.task.messages.append({"role": "assistant", "content": content or None, "tool_calls": calls})
+            message = {"role": "assistant", "content": content or None, "tool_calls": calls}
+            self.task.messages.append(message)
+            self.emit("task.message", self.task.id, message=message)
             self.execute_tool_calls(calls, on_status=on_status)
         self.emit("task.blocked", self.task.id, reason="TOOL_BUDGET_EXCEEDED")
         raise RuntimeError("TASK_BUDGET_EXCEEDED")

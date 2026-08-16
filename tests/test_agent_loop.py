@@ -193,6 +193,20 @@ class AgentLoopTests(unittest.TestCase):
             for server in servers: server.shutdown(); server.server_close()
             for thread in threads: thread.join(2)
 
+    def test_recovered_task_restores_durable_transcript_messages(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory, provider=FakeProvider(), approval="auto")
+            runtime.create_task("persisted goal")
+            runtime.run_model_turn()
+            session_id = runtime.session_id
+            runtime.stop()
+            recovered = Runtime.recover(directory, directory, session_id, provider=FakeProvider(), approval="auto")
+            contents = [message.get("content") for message in recovered.task.messages]
+            self.assertIn("persisted goal", contents)
+            self.assertIn("The file was inspected.", contents)
+            self.assertIn("Not a file: hello.txt", contents)
+            recovered.stop()
+
     def test_recovered_task_continues_model_turn_after_discard(self):
         with TemporaryDirectory() as directory:
             original = Runtime(directory, state_dir=directory)
