@@ -81,6 +81,16 @@ def _choose_model(base_url: str, api_key: str, current: str = "", locale: str = 
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
+def resolve_command_prefix(text: str, commands: set[str]) -> tuple[str | None, list[str]]:
+    """Resolve an exact or unique slash command without sending it to the model."""
+    if not text.startswith("/") or text in commands:
+        return text, []
+    matches = sorted(command for command in commands if command.startswith(text))
+    if len(matches) == 1:
+        return matches[0], []
+    return None, matches
+
+
 def _secret_input(prompt: str) -> str | None:
     try:
         return getpass.getpass(prompt).strip()
@@ -385,16 +395,15 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if text.startswith("/") and not text.startswith(("/goal ", "/recover ")):
                 known = {item[0] for item in command_items} | {"/setup", "/quit"}
-                if text not in known:
-                    matches = sorted(command for command in known if command.startswith(text))
-                    if len(matches) == 1:
-                        text = matches[0]
-                    elif matches:
-                        print("\n".join(matches))
-                        continue
-                    else:
-                        print(t(locale, "unknown_command"), file=sys.stderr)
-                        continue
+                resolved, matches = resolve_command_prefix(text, known)
+                if resolved is not None:
+                    text = resolved
+                elif matches:
+                    print("\n".join(matches))
+                    continue
+                else:
+                    print(t(locale, "unknown_command"), file=sys.stderr)
+                    continue
             if text in {"/quit", "/exit"}:
                 break
             if text == "/help":

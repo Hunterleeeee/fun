@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 
 from fun.runtime import Runtime
-from fun.cli import build_parser
+from fun.cli import build_parser, resolve_command_prefix
 from fun.i18n import t
 from fun.telemetry import TelemetryClient, event_payload, install_id, load_or_create_install_id, model_family, valid_endpoint
 
@@ -23,6 +23,14 @@ class TelemetryTests(unittest.TestCase):
         self.assertFalse(valid_endpoint("file:///tmp/events"))
         self.assertFalse(valid_endpoint("private.example/events"))
         self.assertFalse(TelemetryClient(enabled=True, endpoint="file:///tmp/events").enabled)
+
+    def test_slash_command_prefix_resolution(self):
+        commands = {"/model", "/status", "/stop"}
+        self.assertEqual(resolve_command_prefix("/model", commands), ("/model", []))
+        self.assertEqual(resolve_command_prefix("/mod", commands), ("/model", []))
+        self.assertEqual(resolve_command_prefix("/st", commands), (None, ["/status", "/stop"]))
+        self.assertEqual(resolve_command_prefix("hello", commands), ("hello", []))
+        self.assertEqual(resolve_command_prefix("/unknown", commands), (None, []))
 
     def test_command_menu_locales_are_not_english_only(self):
         self.assertIn("命令", t("zh-CN", "commands_title"))
