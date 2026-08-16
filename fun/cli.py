@@ -116,6 +116,11 @@ def main(argv: list[str] | None = None) -> int:
     print("Coding should feel good.")
     print(f"Workspace: {runtime.tools.guard.root}")
     print("Type a task, or Ctrl-C to exit.")
+    if not provider:
+        print("\nFirst-run setup: provider is not configured.")
+        print("  1. Run: fun --configure")
+        print("  2. Or export: FUN_API_URL, FUN_API_KEY, FUN_MODEL")
+        print("  3. Dashboard: fun --dashboard")
 
     def run_interactive_task(task: object) -> None:
         print(renderer.plan(task.plan, task.plan_status))
