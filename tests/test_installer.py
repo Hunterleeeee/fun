@@ -11,7 +11,8 @@ class InstallerTests(unittest.TestCase):
         if os.name != "nt":
             self.assertTrue(mode & stat.S_IXUSR)
         text = path.read_text(encoding="utf-8")
-        self.assertIn("git+${REPO_URL}", text)
+        self.assertIn("git+${REPO_URL}@${FUN_REF}", text)
+        self.assertIn('FUN_VERSION:-v1.0.0a6', text)
         self.assertIn("$BIN_DIR/fun", text)
         self.assertIn("Python 3.11", text)
 

@@ -125,7 +125,10 @@ class Tools:
             return ToolResult(False, f"INVALID_COMMAND: {exc}", risk)
         if not argv:
             return ToolResult(False, "INVALID_COMMAND: empty command", risk)
-        if Path(argv[0]).name in {"bash", "sh", "zsh", "fish", "cmd", "powershell", "pwsh"} and len(argv) >= 3 and argv[1] in {"-c", "/c"}:
+        command_name = Path(argv[0]).name.lower()
+        if command_name in {"bash", "sh", "zsh", "fish", "cmd", "powershell", "pwsh"} and len(argv) >= 3 and argv[1] in {"-c", "/c"}:
+            return ToolResult(False, "CRITICAL_WRAPPER_BLOCKED", Risk.CRITICAL)
+        if command_name in {"npm", "npm.cmd", "pnpm", "pnpm.cmd", "yarn", "yarn.cmd", "make", "gmake", "just", "node", "node.exe", "ruby", "perl"}:
             return ToolResult(False, "CRITICAL_WRAPPER_BLOCKED", Risk.CRITICAL)
         if Path(argv[0]).name in {"python", "python3", "python.exe", "python3.exe"} and "-c" in argv[1:]:
             code = argv[argv.index("-c") + 1]

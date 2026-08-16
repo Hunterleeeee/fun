@@ -958,6 +958,13 @@ class CoreTests(unittest.TestCase):
             self.assertFalse(timeout.ok)
             self.assertIn("COMMAND_TIMEOUT", timeout.text)
 
+    def test_exec_blocks_indirect_script_wrappers(self):
+        with TemporaryDirectory() as directory:
+            for command in ("npm run build", "pnpm run test", "yarn test", "make all", "node -e 'process.exit(0)'", "ruby -e 'puts 1'", "perl -e 'print 1'"):
+                result = Tools(directory, Policy(ApprovalMode.ASK)).exec(command)
+                self.assertFalse(result.ok)
+                self.assertEqual(result.text, "CRITICAL_WRAPPER_BLOCKED")
+
     def test_exec_blocks_critical_argv_forms(self):
         with TemporaryDirectory() as directory:
             for command in ("rm -rf build", "rm --recursive --force build", "git reset --hard HEAD", "git clean -fd", "sudo echo nope", "curl https://example.com", "env FOO=bar rm -rf build", "command rm --recursive --force build"):
