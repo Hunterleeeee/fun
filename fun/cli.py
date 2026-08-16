@@ -523,6 +523,8 @@ def main(argv: list[str] | None = None) -> int:
                 try:
                     runtime.acknowledge_recovery(action)
                     print(f"● recovery acknowledged; {action}")
+                    if action in {"resume", "discard", "mark_failed"} and runtime.task and runtime.task.status == "running":
+                        run_interactive_task(runtime.task)
                 except RuntimeError as exc:
                     print(f"× {exc}", file=sys.stderr)
                 continue
