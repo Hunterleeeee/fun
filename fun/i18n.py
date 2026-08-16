@@ -28,6 +28,7 @@ TEXT = {
         "provider_network": "Could not reach the provider. Check the endpoint or network, then try again.",
         "provider_timeout": "The provider timed out. Try again, or choose a faster model with /model.",
         "provider_bad_response": "The provider returned an invalid response. Check the selected model with /model.",
+        "tool_timeout": "Tool timed out after {elapsed_ms}ms. Check /status, then decide whether to continue.",
     },
     "zh-CN": {
         "commands_hint": "输入消息 · 输入 / 浏览命令 · ↑↓ 选择 · Ctrl+C 取消",
@@ -56,6 +57,7 @@ TEXT = {
         "provider_network": "无法连接 Provider。请检查地址或网络后重试。",
         "provider_timeout": "Provider 请求超时。请重试，或用 /model 选择更快的模型。",
         "provider_bad_response": "Provider 返回了无效响应。请用 /model 检查当前模型。",
+        "tool_timeout": "工具运行超过 {elapsed_ms}ms 后超时。请用 /status 查看详情，再决定是否继续。",
     },
 }
 

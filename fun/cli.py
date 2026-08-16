@@ -331,7 +331,10 @@ def main(argv: list[str] | None = None) -> int:
                     elif kind == "tool.completed":
                         print(f"✓ ({payload.get('elapsed_ms', 0)}ms)", flush=True)
                     elif kind == "tool.failed":
-                        print(f"× ({payload.get('elapsed_ms', 0)}ms) · use /status for details", flush=True)
+                        if payload.get("error") == "TimeoutExpired":
+                            print("× " + t(locale, "tool_timeout").format(elapsed_ms=payload.get("elapsed_ms", 0)), flush=True)
+                        else:
+                            print(f"× ({payload.get('elapsed_ms', 0)}ms) · use /status for details", flush=True)
                 output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True), on_status=status)
                 runtime.complete(output)
                 print()
