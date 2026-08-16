@@ -47,6 +47,13 @@ TEXT = {
         "cmd_checkpoint": "Create checkpoint",
         "cmd_clear": "Clear screen",
         "cmd_exit": "Exit",
+        "base_url": "Base URL",
+        "api_key_keep": "API key [Enter to keep current]",
+        "telemetry_prompt": "Enable private telemetry?",
+        "telemetry_endpoint": "Private telemetry endpoint",
+        "saved_to": "Saved provider configuration to {path}",
+        "model_required_cli": "Model selection is required.",
+        "cancel_status": "Configuration cancelled.",
     },
     "zh-CN": {
         "commands_hint": "输入消息 · 输入 / 浏览命令 · ↑↓ 选择 · Ctrl+C 取消",
@@ -94,6 +101,13 @@ TEXT = {
         "cmd_checkpoint": "创建检查点",
         "cmd_clear": "清屏",
         "cmd_exit": "退出",
+        "base_url": "Base URL（服务地址）",
+        "api_key_keep": "API Key（回车保留当前值）",
+        "telemetry_prompt": "启用私有遥测？",
+        "telemetry_endpoint": "私有遥测地址",
+        "saved_to": "Provider 配置已保存到 {path}",
+        "model_required_cli": "必须选择一个模型。",
+        "cancel_status": "配置已取消。",
     },
 }
 

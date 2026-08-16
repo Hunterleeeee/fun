@@ -130,30 +130,30 @@ def main(argv: list[str] | None = None) -> int:
         if not sys.stdin.isatty():
             print("Configuration requires an interactive terminal.", file=sys.stderr)
             return 2
-        saved.base_url = input(f"Base URL [{saved.base_url}]: ").strip() or saved.base_url
+        saved.base_url = input(f"{t(locale, 'base_url')} [{saved.base_url}]: ").strip() or saved.base_url
         env_key = os.getenv("FUN_API_KEY", "")
         if env_key:
             print("Using FUN_API_KEY from environment; no key input needed.")
             saved.api_key = env_key
         else:
             print("API key: paste is supported; input is hidden and will not echo.")
-            entered_key = _secret_input("API key [Enter to keep current]: ")
+            entered_key = _secret_input(t(locale, "api_key_keep") + ": ")
             if entered_key is None:
                 return 130
             saved.api_key = entered_key or saved.api_key
         saved.model = _choose_model(saved.base_url, saved.api_key, saved.model, locale) or saved.model
         if not saved.model:
-            print("Model selection is required.", file=sys.stderr)
+            print(t(locale, "model_required_cli"), file=sys.stderr)
             return 2
-        telemetry_choice = input(f"Enable private telemetry? [{'Y/n' if saved.telemetry else 'y/N'}]: ").strip().lower()
+        telemetry_choice = input(f"{t(locale, 'telemetry_prompt')} [{'Y/n' if saved.telemetry else 'y/N'}]: ").strip().lower()
         if telemetry_choice in {"y", "yes"}:
             saved.telemetry = True
-            saved.telemetry_endpoint = input(f"Private telemetry endpoint [{saved.telemetry_endpoint}]: ").strip() or saved.telemetry_endpoint
+            saved.telemetry_endpoint = input(f"{t(locale, 'telemetry_endpoint')} [{saved.telemetry_endpoint}]: ").strip() or saved.telemetry_endpoint
         elif telemetry_choice in {"n", "no"}:
             saved.telemetry = False
             saved.telemetry_endpoint = ""
         saved.save(config_path)
-        print(f"Saved provider configuration to {config_path}")
+        print(t(locale, "saved_to").format(path=config_path))
         if saved.api_key:
             store = "macOS Keychain" if json.loads(Path(config_path).read_text(encoding="utf-8")).get("api_key_store") == "macos-keychain" else "FUN_API_KEY environment variable"
             print(f"API key stored via {store}; it is not written to config.json.")
