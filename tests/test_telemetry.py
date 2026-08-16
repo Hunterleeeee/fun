@@ -23,6 +23,10 @@ class TelemetryTests(unittest.TestCase):
         self.assertFalse(valid_endpoint("private.example/events"))
         self.assertFalse(TelemetryClient(enabled=True, endpoint="file:///tmp/events").enabled)
 
+    def test_cli_approval_can_use_saved_config(self):
+        self.assertIsNone(build_parser().parse_args([]).approval)
+        self.assertEqual(build_parser().parse_args(["--approval", "ask"]).approval, "ask")
+
     def test_cli_exposes_explicit_telemetry_switches(self):
         self.assertTrue(build_parser().parse_args(["--telemetry"]).telemetry)
         self.assertFalse(build_parser().parse_args(["--no-telemetry"]).telemetry)

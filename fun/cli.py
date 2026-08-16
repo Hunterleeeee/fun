@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fun", description="A safety-first terminal coding agent runtime.")
     parser.add_argument("goal", nargs="?", help="A one-shot task goal")
     parser.add_argument("--workspace", default=os.getcwd())
-    parser.add_argument("--approval", choices=("ask", "smart", "auto"), default="smart")
+    parser.add_argument("--approval", choices=("ask", "smart", "auto"), default=None)
     parser.add_argument("--locale", choices=("zh-CN", "en-US"), default=os.getenv("FUN_LOCALE"), help="UI language")
     parser.add_argument("--version", action="version", version="fun 1.0.0a6")
     parser.add_argument("--base-url", default=os.getenv("FUN_API_URL"))
@@ -145,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     base_url = args.base_url or saved.base_url
     api_key = args.api_key or saved.api_key
     model = args.model or saved.model
+    approval = args.approval or saved.approval
     provider = None
     if base_url and api_key and model:
         provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
@@ -227,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
         elif choice == "3":
             base_url, api_key, model = saved.base_url, saved.api_key, saved.model
             provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-    runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
+    runtime = Runtime(args.workspace, approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
     if args.goal:
         task = runtime.create_task(args.goal)
         print(f"Fun · {args.workspace}")
@@ -373,11 +374,11 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if text == "/permissions":
                 print(t(locale, "permission") + ": " + t(locale, "permission_options"))
-                args.approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), args.approval)
-                runtime.policy.mode = args.approval
-                saved.approval = args.approval
+                approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), approval)
+                runtime.policy.mode = approval
+                saved.approval = approval
                 saved.save(config_path)
-                print(f"✓ permission mode: {args.approval}")
+                print(f"✓ permission mode: {approval}")
                 continue
             if text == "/model":
                 if not provider:
