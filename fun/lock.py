@@ -5,6 +5,29 @@ import os
 from pathlib import Path
 
 
+def _pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if pid == os.getpid():
+        return True
+    if os.name == "nt":
+        import ctypes
+
+        process = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not process:
+            return False
+        try:
+            exit_code = ctypes.c_ulong()
+            return bool(ctypes.windll.kernel32.GetExitCodeProcess(process, ctypes.byref(exit_code))) and exit_code.value == 259
+        finally:
+            ctypes.windll.kernel32.CloseHandle(process)
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 class WorkspaceLockError(RuntimeError):
     pass
 
@@ -33,8 +56,7 @@ class WorkspaceLock:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             pid = int(data.get("pid", 0))
-            os.kill(pid, 0)
-            return False
+            return not _pid_is_alive(pid)
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return True
 

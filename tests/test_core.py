@@ -80,6 +80,7 @@ class CoreTests(unittest.TestCase):
             first = Runtime(directory, "auto", state_dir=directory)
             first.create_task("continue after recovery")
             session_id = first.session_id
+            first.close()
             recovered = Runtime.recover(directory, directory, session_id, approval="auto")
             recovered.run_tool("explore", path=".")
             event_types = [event.type for event in recovered.events.list(session_id)]
@@ -165,6 +166,7 @@ class CoreTests(unittest.TestCase):
             recovered.acknowledge_recovery("discard")
             self.assertIsNone(recovered.task.pending_tool)
             self.assertIn("recovery.discarded", [event.type for event in recovered.events.list()])
+            recovered.close()
             replayed = Runtime.recover(directory, directory, runtime.session_id)
             self.assertEqual(replayed.task.status, "running")
             self.assertIsNone(replayed.task.pending_tool)
