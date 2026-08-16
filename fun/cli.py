@@ -18,6 +18,7 @@ try:
 except ImportError:
     readline = None
 
+from . import __version__
 from .config import FunConfig
 from .dashboard import serve
 from .provider import ModelConfig, OpenAICompatible, ProviderError
@@ -105,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace", default=os.getcwd())
     parser.add_argument("--approval", choices=("ask", "smart", "auto"), default=None)
     parser.add_argument("--locale", choices=("zh-CN", "en-US"), default=os.getenv("FUN_LOCALE"), help="UI language")
-    parser.add_argument("--version", action="version", version="fun 1.0.0a6")
+    parser.add_argument("--version", action="version", version=f"fun {__version__}")
     parser.add_argument("--base-url", default=os.getenv("FUN_API_URL"))
     parser.add_argument("--api-key", default=os.getenv("FUN_API_KEY"))
     parser.add_argument("--model", default=os.getenv("FUN_MODEL"))
