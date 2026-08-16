@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import getpass
 import shlex
 import sys
 
@@ -92,8 +93,36 @@ def main(argv: list[str] | None = None) -> int:
     if telemetry_enabled and saved.telemetry_endpoint:
         from .telemetry import TelemetryClient, load_or_create_install_id
         telemetry = TelemetryClient(enabled=True, endpoint=saved.telemetry_endpoint, install=load_or_create_install_id(state_dir))
-    runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
     renderer = TerminalRenderer(color=sys.stdout.isatty())
+    if not provider and not args.goal and sys.stdin.isatty():
+        print(renderer.welcome(False, os.path.abspath(args.workspace)))
+        choice = input("\nSelect [1/2/3/q] ❯ ").strip().lower()
+        if choice == "q":
+            return 0
+        if choice == "1":
+            saved.base_url = input("Provider base URL [https://api.openai.com/v1] ❯ ").strip() or "https://api.openai.com/v1"
+            saved.api_key = getpass.getpass("API key (not saved to disk) ❯ ").strip()
+            saved.model = input("Model name ❯ ").strip()
+            if saved.api_key:
+                os.environ["FUN_API_KEY"] = saved.api_key
+            if saved.base_url and saved.model and saved.api_key:
+                saved.save(config_path)
+                base_url, api_key, model = saved.base_url, saved.api_key, saved.model
+                provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+                print(renderer.setup_complete())
+            else:
+                print(renderer.error("Setup needs base URL, API key, and model."), file=sys.stderr)
+                return 2
+        elif choice == "2":
+            if not (os.getenv("FUN_API_URL") and os.getenv("FUN_API_KEY") and os.getenv("FUN_MODEL")):
+                print(renderer.error("Missing FUN_API_URL, FUN_API_KEY, or FUN_MODEL."), file=sys.stderr)
+                return 2
+            base_url, api_key, model = os.environ["FUN_API_URL"], os.environ["FUN_API_KEY"], os.environ["FUN_MODEL"]
+            provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+        elif choice != "3":
+            print(renderer.error("Choose 1, 2, 3, or q."), file=sys.stderr)
+            return 2
+    runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
     if args.goal:
         task = runtime.create_task(args.goal)
         print(f"Fun · {args.workspace}")
@@ -113,10 +142,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print(renderer.header(str(runtime.tools.guard.root), provider is not None, runtime.policy.mode.value))
-    print(renderer.welcome(provider is not None))
-    if not provider:
-        print(renderer.finding("Provider is not configured. Tasks will be recorded locally; model execution is disabled."))
-        print(renderer.finding("Run `fun --configure` or export FUN_API_URL, FUN_API_KEY, FUN_MODEL."))
+    if provider:
+        print(renderer.welcome(True))
+    else:
+        print(renderer.finding("Offline mode · no model calls will be made."))
+        print("Use /help for commands, /setup to configure later, or /quit to exit.")
 
     def run_interactive_task(task: object) -> None:
         print(renderer.plan(task.plan, task.plan_status))
@@ -141,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
                 break
             if text == "/help":
                 print(renderer.help())
+                continue
+            if text == "/setup":
+                print("Run `fun --configure` in a new terminal to configure the provider.")
                 continue
             if text == "/goal":
                 print(runtime.goal() or "(no active goal)")
@@ -214,6 +247,9 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if text.startswith("/restore"):
                 print("Restore requires a checkpoint snapshot in the current process.")
+                continue
+            if not provider:
+                print(renderer.finding("Offline mode: configure a provider before starting a task."))
                 continue
             task = runtime.create_task(text)
             run_interactive_task(task)

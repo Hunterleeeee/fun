@@ -28,10 +28,23 @@ class TerminalRenderer:
             self._style("╰─────────────────────────────────────────────────────────────╯", "36"),
         ])
 
-    def welcome(self, configured: bool) -> str:
+    def welcome(self, configured: bool, workspace: str = "") -> str:
         if configured:
             return "Commands: /help  /status  /plan  /usage  /checkpoint  /quit"
-        return "Setup: fun --configure  |  env: FUN_API_URL FUN_API_KEY FUN_MODEL  |  /help"
+        return "\n".join([
+            "╭─ WELCOME TO FUN ──────────────────────────────────────────╮",
+            "│ Your terminal coding workspace.                            │",
+            f"│ {workspace[:57]:<57}│",
+            "│                                                             │",
+            "│  [1] Configure an OpenAI-compatible provider               │",
+            "│  [2] Use environment variables                             │",
+            "│  [3] Continue in offline mode                              │",
+            "│  [q] Exit                                                  │",
+            "╰─────────────────────────────────────────────────────────────╯",
+        ])
+
+    def setup_complete(self) -> str:
+        return "✓ Setup saved · API key stays out of config · restart `fun` to begin"
 
     def help(self) -> str:
         return "\n".join([
