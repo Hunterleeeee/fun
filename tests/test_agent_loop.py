@@ -31,6 +31,25 @@ class ModelsHandler(BaseHTTPRequestHandler):
         pass
 
 
+class MarkerSSEHandler(BaseHTTPRequestHandler):
+    marker = "default"
+    calls = 0
+
+    def do_POST(self):
+        self.__class__.calls += 1
+        length = int(self.headers.get("Content-Length", "0"))
+        json.loads(self.rfile.read(length))
+        body = f'data: {{"choices":[{{"delta":{{"content":"{self.__class__.marker}"}}}}]}}\n\ndata: [DONE]\n\n'.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args):
+        pass
+
+
 class SmokeHandler(BaseHTTPRequestHandler):
     seen_auth = None
 
@@ -107,6 +126,46 @@ class AgentLoopTests(unittest.TestCase):
             server.shutdown()
             thread.join(2)
             server.server_close()
+
+    def test_runtime_uses_new_provider_after_switch(self):
+        first = type("First", (MarkerSSEHandler,), {"marker": "OLD_PROVIDER", "calls": 0})
+        second = type("Second", (MarkerSSEHandler,), {"marker": "NEW_PROVIDER", "calls": 0})
+        servers = [ThreadingHTTPServer(("127.0.0.1", 0), first), ThreadingHTTPServer(("127.0.0.1", 0), second)]
+        threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in servers]
+        for thread in threads: thread.start()
+        try:
+            with TemporaryDirectory() as directory:
+                old = OpenAICompatible(ModelConfig(f"http://127.0.0.1:{servers[0].server_port}/v1", "key", "old"))
+                new = OpenAICompatible(ModelConfig(f"http://127.0.0.1:{servers[1].server_port}/v1", "key", "new"))
+                runtime = Runtime(directory, provider=old)
+                runtime.create_task("switch provider")
+                self.assertEqual(runtime.run_model_turn(), "OLD_PROVIDER")
+                runtime.provider = new
+                runtime.model = "new"
+                self.assertEqual(runtime.run_model_turn(), "NEW_PROVIDER")
+                self.assertEqual(first.calls, 1)
+                self.assertEqual(second.calls, 1)
+                runtime.stop()
+        finally:
+            for server in servers: server.shutdown(); server.server_close()
+            for thread in threads: thread.join(2)
+
+    def test_recovered_task_continues_model_turn_after_discard(self):
+        with TemporaryDirectory() as directory:
+            original = Runtime(directory, state_dir=directory)
+            original.create_task("continue after recovery")
+            original.emit("approval.pending", original.task.id, call_id="call_pending", name="exec", risk="medium", arguments={"command": "echo hi"})
+            session_id = original.session_id
+            original.close()
+            provider = FakeProvider()
+            recovered = Runtime.recover(directory, directory, session_id, provider=provider, approval="auto")
+            self.assertEqual(recovered.task.status, "recovery_required")
+            recovered.acknowledge_recovery("discard")
+            output = recovered.run_model_turn()
+            self.assertEqual(output, "The file was inspected.")
+            self.assertEqual(provider.calls, 2)
+            self.assertEqual(recovered.task.status, "running")
+            recovered.stop()
 
     def test_tool_lifecycle_reports_status_and_elapsed_time(self):
         statuses = []
