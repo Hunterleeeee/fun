@@ -133,9 +133,9 @@ class TerminalUI:
                     return "pageup" if seq == "[5" else "pagedown"
                 return {"[A": "up", "[B": "down", "[C": "right", "[D": "left"}.get(seq, "escape")
             return "escape"
-        if key == "\r":
+        if key in {"\r", "\n"}:
             return "enter"
-        if key == "\n":
+        if key == "\x0e":
             return "newline"
         if key in {"\x7f", "\b"}:
             return "backspace"
