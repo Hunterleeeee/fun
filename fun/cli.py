@@ -112,15 +112,11 @@ def main(argv: list[str] | None = None) -> int:
         runtime.stop()
         return 0
 
-    print("FUN HARNESS")
-    print("Coding should feel good.")
-    print(f"Workspace: {runtime.tools.guard.root}")
-    print("Type a task, or Ctrl-C to exit.")
+    print(renderer.header(str(runtime.tools.guard.root), provider is not None, runtime.policy.mode.value))
+    print(renderer.welcome(provider is not None))
     if not provider:
-        print("\nFirst-run setup: provider is not configured.")
-        print("  1. Run: fun --configure")
-        print("  2. Or export: FUN_API_URL, FUN_API_KEY, FUN_MODEL")
-        print("  3. Dashboard: fun --dashboard")
+        print(renderer.finding("Provider is not configured. Tasks will be recorded locally; model execution is disabled."))
+        print(renderer.finding("Run `fun --configure` or export FUN_API_URL, FUN_API_KEY, FUN_MODEL."))
 
     def run_interactive_task(task: object) -> None:
         print(renderer.plan(task.plan, task.plan_status))
@@ -138,11 +134,14 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         while True:
-            text = input("\n> ").strip()
+            text = input(f"\n{renderer.prompt(provider is not None)}").strip()
             if not text:
                 continue
             if text in {"/quit", "/exit"}:
                 break
+            if text == "/help":
+                print(renderer.help())
+                continue
             if text == "/goal":
                 print(runtime.goal() or "(no active goal)")
                 continue

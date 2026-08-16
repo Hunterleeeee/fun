@@ -9,8 +9,41 @@ class TerminalRenderer:
 
     color: bool = True
 
+    def _style(self, text: str, code: str) -> str:
+        return f"\033[{code}m{text}\033[0m" if self.color else text
+
     def activity(self, text: str) -> str:
         return f"◌ {text}"
+
+    def header(self, workspace: str, configured: bool, approval: str) -> str:
+        state = "READY" if configured else "SETUP REQUIRED"
+        return "\n".join([
+            self._style("╭─ FUN WORKSPACE ─────────────────────────────────────────────╮", "36"),
+            f"│ {self._style('Coding should feel good.', '1;36'):<56}│",
+            f"│ workspace  {workspace[:43]:<43}│",
+            f"│ provider   {state:<13}  approval  {approval:<8}  │",
+            self._style("╰─────────────────────────────────────────────────────────────╯", "36"),
+        ])
+
+    def welcome(self, configured: bool) -> str:
+        if configured:
+            return "Commands: /help  /status  /plan  /usage  /checkpoint  /quit"
+        return "Setup: fun --configure  |  env: FUN_API_URL FUN_API_KEY FUN_MODEL  |  /help"
+
+    def help(self) -> str:
+        return "\n".join([
+            "┌─ COMMANDS ────────────────────────────────────────────────┐",
+            "│ /help       show this help                                │",
+            "│ /status     show task, agent and usage state              │",
+            "│ /plan       show the current execution plan               │",
+            "│ /usage      show token usage                               │",
+            "│ /checkpoint save a workspace checkpoint                   │",
+            "│ /pause /resume /stop /recover <action> /quit              │",
+            "└───────────────────────────────────────────────────────────┘",
+        ])
+
+    def prompt(self, configured: bool = True) -> str:
+        return "fun ❯ " if configured else "fun/setup ❯ "
 
     def plan(self, steps: list[str], statuses: list[str] | None = None) -> str:
         lines = ["◇ PLAN"]
