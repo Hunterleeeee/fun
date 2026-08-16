@@ -5,6 +5,7 @@ from unittest import mock
 
 from fun.runtime import Runtime
 from fun.cli import build_parser
+from fun.i18n import t
 from fun.telemetry import TelemetryClient, event_payload, install_id, load_or_create_install_id, model_family, valid_endpoint
 
 
@@ -22,6 +23,11 @@ class TelemetryTests(unittest.TestCase):
         self.assertFalse(valid_endpoint("file:///tmp/events"))
         self.assertFalse(valid_endpoint("private.example/events"))
         self.assertFalse(TelemetryClient(enabled=True, endpoint="file:///tmp/events").enabled)
+
+    def test_command_menu_locales_are_not_english_only(self):
+        self.assertIn("命令", t("zh-CN", "commands_title"))
+        self.assertIn("配置", t("zh-CN", "cmd_config"))
+        self.assertIn("Commands", t("en-US", "commands_title"))
 
     def test_cli_approval_can_use_saved_config(self):
         self.assertIsNone(build_parser().parse_args([]).approval)
