@@ -61,10 +61,12 @@ jobs:
           Get-ChildItem tests -Filter "test_*.py" | Sort-Object Name | ForEach-Object {
             $module = "tests.$($_.BaseName)"
             Write-Host "=== Running $module ==="
-            python -m unittest $module -v *>> windows-test.log
-            if ($LASTEXITCODE -ne 0) {
+            $output = & python -m unittest $module -v 2>&1
+            $exitCode = $LASTEXITCODE
+            $output | Tee-Object -FilePath windows-test.log -Append | Write-Host
+            if ($exitCode -ne 0) {
               $failed += $module
-              Write-Host "FAILED: $module"
+              Write-Host "FAILED: $module (exit $exitCode)"
             }
           }
           Get-Content windows-test.log
