@@ -89,8 +89,8 @@ class TerminalUI:
                 self.state.add_assistant(str(payload))
             elif kind == "status":
                 self.state.status_text = str(payload)
-                self.state.task_state = "working" if payload and payload != "ready" else "ready"
-                self.state.mode = "working" if payload else "ready"
+                self.state.task_state = str(payload) if payload else "ready"
+                self.state.mode = "working" if payload not in {"ready", "failed", "stopped"} else "ready"
             elif kind == "tool":
                 event_kind, event_payload = payload
                 self.state.tool_status(event_kind, event_payload)

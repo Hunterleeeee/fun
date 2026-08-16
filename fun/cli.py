@@ -466,6 +466,7 @@ def main(argv: list[str] | None = None) -> int:
                 tui.append_assistant(t(locale, "unknown_command"))
                 return
             def worker() -> None:
+                tui.post("status", "working")
                 try:
                     task = runtime.create_task(text)
                     tui.post("status", t(locale, "thinking"))
@@ -478,7 +479,7 @@ def main(argv: list[str] | None = None) -> int:
                 except Exception as exc:
                     runtime.fail(str(exc))
                     tui.post("assistant", "× " + _friendly_error(exc, locale))
-                    tui.post("status", "ready")
+                    tui.post("status", "failed")
             threading.Thread(target=worker, daemon=True).start()
         try:
             tui.run(tui_submit)
