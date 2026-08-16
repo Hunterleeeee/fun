@@ -67,6 +67,8 @@ jobs:
             if ($exitCode -ne 0) {
               $failed += $module
               Write-Host "FAILED: $module (exit $exitCode)"
+              Write-Host "--- $module failure tail ---"
+              $output | Select-Object -Last 80 | Write-Host
             }
           }
           Get-Content windows-test.log
