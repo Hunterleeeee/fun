@@ -62,6 +62,21 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_model_step_records_start_first_token_and_completion_timing(self):
+        class TimingProvider:
+            def stream(self, messages, tools=None):
+                yield {"_meta": {"ttft_ms": 7}, "choices": [{"delta": {"content": "done"}}]}
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, provider=TimingProvider())
+            runtime.create_task("timing")
+            runtime.run_model_turn()
+            types = [event.type for event in runtime.events.list()]
+            self.assertIn("model.step_started", types)
+            self.assertIn("model.first_token", types)
+            completed = next(event for event in runtime.events.list() if event.type == "model.completed")
+            self.assertEqual(completed.payload["timing"]["ttft_ms"], 7)
+            self.assertIsInstance(completed.payload["timing"]["step_ms"], int)
+
     def test_model_request_compacts_oversized_context(self):
         class CaptureProvider:
             def __init__(self):
