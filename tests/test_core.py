@@ -892,7 +892,7 @@ class CoreTests(unittest.TestCase):
 
     def test_exec_windows_timeout_kills_process_without_killpg(self):
         with TemporaryDirectory() as directory:
-            with patch("fun.tools.sys.platform", "win32"), patch("fun.tools.subprocess.Popen") as popen, patch("fun.tools.os.killpg") as killpg:
+            with patch("fun.tools.sys.platform", "win32"), patch("fun.tools.subprocess.Popen") as popen, patch("fun.tools.os.killpg", create=True) as killpg:
                 process = popen.return_value
                 process.communicate.side_effect = [subprocess.TimeoutExpired("python3", 0.01), ("", "")]
                 result = Tools(directory).exec("python3 -c print(1)", timeout=0.01)
