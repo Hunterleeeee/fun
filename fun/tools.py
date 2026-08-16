@@ -116,6 +116,9 @@ class Tools:
         risk = self.policy.risk_for("exec")
         safe_env = {key: os.environ[key] for key in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR") if key in os.environ}
         safe_env["PWD"] = str(self.guard.root)
+        python_dir = str(Path(sys.executable).parent)
+        if python_dir not in safe_env.get("PATH", "").split(os.pathsep):
+            safe_env["PATH"] = python_dir + os.pathsep + safe_env.get("PATH", "")
         try:
             argv = shlex.split(command)
         except ValueError as exc:
