@@ -152,6 +152,7 @@ class TerminalUiState:
             status += f" · {self.status_text}"
         lines.append(f"· {status}")
         lines.append("─" * min(width, 88))
+        lines.append("  Ctrl-N newline · Enter submit · Ctrl-C clear")
         prompt = "> " if self.mode == "ready" else "… "
         draft_lines = self.composer.splitlines() or [""]
         lines.append(prompt + draft_lines[0])

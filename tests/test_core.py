@@ -618,6 +618,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("approval=smart", rendered)
         ui.composer = "first line\nsecond line"
         multiline = ui.render()
+        self.assertIn("Ctrl-N newline · Enter submit", multiline)
         self.assertIn("> first line\n  second line", multiline)
         self.assertEqual(ui.history(-1), "inspect the project")
         self.assertEqual(ui.history(1), "")
