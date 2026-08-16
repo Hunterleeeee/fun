@@ -858,6 +858,15 @@ class CoreTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.text, "APPROVAL_REQUIRED")
 
+    def test_exec_timeout_and_output_limits_use_portable_python(self):
+        with TemporaryDirectory() as directory:
+            result = Tools(directory).exec("python3 -c \"print('x' * 300000)\"")
+            self.assertTrue(result.ok)
+            self.assertIn("OUTPUT_TRUNCATED", result.text)
+            timeout = Tools(directory).exec("python3 -c \"import time; time.sleep(2)\"", timeout=0.05)
+            self.assertFalse(timeout.ok)
+            self.assertIn("COMMAND_TIMEOUT", timeout.text)
+
     def test_exec_limits_output_and_timeout(self):
         with TemporaryDirectory() as directory:
             result = Tools(directory).exec("python3 -c \"print('x' * 300000)\"")
