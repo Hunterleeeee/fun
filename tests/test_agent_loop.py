@@ -127,6 +127,13 @@ class AgentLoopTests(unittest.TestCase):
             thread.join(2)
             server.server_close()
 
+    def test_runtime_model_field_tracks_provider_switch(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, provider=object(), model="old-model")
+            runtime.provider = object()
+            runtime.model = "new-model"
+            self.assertEqual(runtime.model, "new-model")
+
     def test_runtime_uses_new_provider_after_switch(self):
         first = type("First", (MarkerSSEHandler,), {"marker": "OLD_PROVIDER", "calls": 0})
         second = type("Second", (MarkerSSEHandler,), {"marker": "NEW_PROVIDER", "calls": 0})
