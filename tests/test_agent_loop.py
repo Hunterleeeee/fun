@@ -249,6 +249,7 @@ class AgentLoopTests(unittest.TestCase):
             completed = next(event for event in runtime.events.list() if event.type == "model.completed")
             self.assertEqual(completed.payload["timing"]["ttft_ms"], 7)
             self.assertIsInstance(completed.payload["timing"]["step_ms"], int)
+            self.assertEqual(runtime.last_model_timing, completed.payload["timing"])
 
     def test_model_request_compacts_oversized_context(self):
         class CaptureProvider:

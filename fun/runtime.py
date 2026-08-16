@@ -72,6 +72,7 @@ class Runtime:
         self._task_started_at: float | None = None
         self._model_step_started: float | None = None
         self._model_step_first_token: float | None = None
+        self.last_model_timing: dict[str, int | None] | None = None
         self._closed = False
         self._state_dir = Path(state_dir) if state_dir is not None else None
         self.background = BackgroundTaskManager(self._emit_background)
@@ -632,6 +633,7 @@ class Runtime:
                     "step_ms": None if self._model_step_started is None else int((time.monotonic() - self._model_step_started) * 1000),
                     "ttft_ms": self.usage.ttft_ms,
                 }
+                self.last_model_timing = timing
                 self.emit("model.completed", self.task.id, text=content, usage=self.usage.as_dict(), timing=timing)
                 self.task.model_error = None
                 return final_text

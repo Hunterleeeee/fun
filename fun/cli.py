@@ -511,6 +511,9 @@ def main(argv: list[str] | None = None) -> int:
                 agent_state = runtime.task.agent_state if runtime.task else "idle"
                 recovery = runtime.task.recovery_reason if runtime.task else None
                 print(f"session={runtime.session_id} task={status} agent={agent_state} policy={runtime.policy.mode.value}")
+                if runtime.last_model_timing:
+                    timing = runtime.last_model_timing
+                    print(f"model timing: ttft={timing.get('ttft_ms', '?')}ms · step={timing.get('step_ms', '?')}ms")
                 if recovery:
                     pending = runtime.recovery_summary() or {}
                     print("! " + t(locale, "pending_tool").format(name=pending.get("name", "unknown tool"), call_id=pending.get("call_id", "?")))
