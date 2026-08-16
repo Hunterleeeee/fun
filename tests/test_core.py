@@ -16,8 +16,9 @@ from fun.tools import Tools, file_hash
 from fun.usage import Usage
 
 
-PYTHON_OK = "python -c \"pass\""
-PYTHON_FAIL = "python -c \"raise SystemExit(1)\""
+PYTHON_BIN = Path(sys.executable).name
+PYTHON_OK = f'{PYTHON_BIN} -c "pass"'
+PYTHON_FAIL = f'{PYTHON_BIN} -c "raise SystemExit(1)"'
 
 
 def runtime_usage_summary():
@@ -692,10 +693,10 @@ class CoreTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
             runtime.create_task("repair replay")
-            runtime.repair("false", max_attempts=1)
+            runtime.repair(PYTHON_FAIL, max_attempts=1)
             recovered = Runtime.recover(directory, directory, runtime.session_id, approval="auto")
             self.assertEqual(recovered.task.repair_attempts, 1)
-            blocked = recovered.repair("true", max_attempts=1)
+            blocked = recovered.repair(PYTHON_OK, max_attempts=1)
             self.assertFalse(blocked.ok)
             self.assertEqual(blocked.text, "REPAIR_BUDGET_EXCEEDED")
             recovered.stop()
@@ -890,7 +891,7 @@ class CoreTests(unittest.TestCase):
                 process = popen.return_value
                 process.communicate.return_value = ("ok", "")
                 process.returncode = 0
-                self.assertTrue(Tools(directory).exec("python3 -c print(1)").ok)
+                self.assertTrue(Tools(directory).exec(f"{PYTHON_BIN} -c print(1)").ok)
                 self.assertEqual(popen.call_args.kwargs["creationflags"], 512)
                 self.assertNotIn("start_new_session", popen.call_args.kwargs)
 
@@ -898,8 +899,8 @@ class CoreTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             with patch("fun.tools.sys.platform", "win32"), patch("fun.tools.subprocess.Popen") as popen, patch("fun.tools.os.killpg", create=True) as killpg:
                 process = popen.return_value
-                process.communicate.side_effect = [subprocess.TimeoutExpired("python3", 0.01), ("", "")]
-                result = Tools(directory).exec("python3 -c print(1)", timeout=0.01)
+                process.communicate.side_effect = [subprocess.TimeoutExpired("python", 0.01), ("", "")]
+                result = Tools(directory).exec(f"{PYTHON_BIN} -c print(1)", timeout=0.01)
                 self.assertFalse(result.ok)
                 self.assertIn("COMMAND_TIMEOUT", result.text)
                 process.kill.assert_called_once_with()
@@ -907,19 +908,19 @@ class CoreTests(unittest.TestCase):
 
     def test_exec_timeout_and_output_limits_use_portable_python(self):
         with TemporaryDirectory() as directory:
-            result = Tools(directory).exec("python3 -c \"print('x' * 300000)\"")
+            result = Tools(directory).exec(f"{PYTHON_BIN} -c \"print('x' * 300000)\"")
             self.assertTrue(result.ok)
             self.assertIn("OUTPUT_TRUNCATED", result.text)
-            timeout = Tools(directory).exec("python3 -c \"import time; time.sleep(2)\"", timeout=0.05)
+            timeout = Tools(directory).exec(f"{PYTHON_BIN} -c \"import time; time.sleep(2)\"", timeout=0.05)
             self.assertFalse(timeout.ok)
             self.assertIn("COMMAND_TIMEOUT", timeout.text)
 
     def test_exec_limits_output_and_timeout(self):
         with TemporaryDirectory() as directory:
-            result = Tools(directory).exec("python3 -c \"print('x' * 300000)\"")
+            result = Tools(directory).exec(f"{PYTHON_BIN} -c \"print('x' * 300000)\"")
             self.assertTrue(result.ok)
             self.assertIn("OUTPUT_TRUNCATED", result.text)
-            timeout = Tools(directory).exec("python3 -c \"import time; time.sleep(2)\"", timeout=0.05)
+            timeout = Tools(directory).exec(f"{PYTHON_BIN} -c \"import time; time.sleep(2)\"", timeout=0.05)
             self.assertFalse(timeout.ok)
             self.assertIn("COMMAND_TIMEOUT", timeout.text)
 
@@ -940,13 +941,13 @@ class CoreTests(unittest.TestCase):
 
     def test_exec_rejects_invalid_command_syntax(self):
         with TemporaryDirectory() as directory:
-            result = Tools(directory).exec("python3 -c 'unterminated")
+            result = Tools(directory).exec(f"{PYTHON_BIN} -c 'unterminated")
             self.assertFalse(result.ok)
             self.assertIn("INVALID_COMMAND", result.text)
 
     def test_exec_runs_inside_workspace(self):
         with TemporaryDirectory() as directory:
-            result = Tools(directory).exec("python3 -c \"print('ok')\"")
+            result = Tools(directory).exec(f"{PYTHON_BIN} -c \"print('ok')\"")
             self.assertTrue(result.ok)
             self.assertEqual(result.text, "ok")
 
@@ -977,8 +978,8 @@ class CoreTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto")
             runtime.create_task("repair")
-            first = runtime.repair("python3 -c \"raise SystemExit(1)\"")
-            second = runtime.repair("python3 -c \"raise SystemExit(1)\"")
+            first = runtime.repair(f"{PYTHON_BIN} -c \"raise SystemExit(1)\"")
+            second = runtime.repair(f"{PYTHON_BIN} -c \"raise SystemExit(1)\"")
             blocked = runtime.repair(PYTHON_OK)
             self.assertFalse(first.ok)
             self.assertFalse(second.ok)
@@ -990,7 +991,7 @@ class CoreTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto")
             runtime.create_task("validate")
-            result = runtime.validate("python3 -c \"print('pass')\"")
+            result = runtime.validate(f"{PYTHON_BIN} -c \"print('pass')\"")
             self.assertTrue(result.ok)
             snapshot = runtime.checkpoint("test")
             self.assertEqual(snapshot["label"], "test")
