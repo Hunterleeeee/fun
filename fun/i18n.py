@@ -22,6 +22,10 @@ TEXT = {
         "tool_running": "Running {name}…",
         "approval_wait": "Waiting for your approval…",
         "context_compacted": "Context trimmed to keep this turn fast.",
+        "provider_auth": "Provider rejected the API key. Check the key belongs to this endpoint, then run /config.",
+        "provider_network": "Could not reach the provider. Check the endpoint or network, then try again.",
+        "provider_timeout": "The provider timed out. Try again, or choose a faster model with /model.",
+        "provider_bad_response": "The provider returned an invalid response. Check the selected model with /model.",
     },
     "zh-CN": {
         "commands_hint": "输入消息 · 输入 / 浏览命令 · ↑↓ 选择 · Ctrl+C 取消",
@@ -44,6 +48,10 @@ TEXT = {
         "tool_running": "正在运行 {name}…",
         "approval_wait": "等待你确认…",
         "context_compacted": "已压缩上下文，保持当前请求速度。",
+        "provider_auth": "Provider 拒绝了 API Key。请确认 key 属于当前地址，然后运行 /config。",
+        "provider_network": "无法连接 Provider。请检查地址或网络后重试。",
+        "provider_timeout": "Provider 请求超时。请重试，或用 /model 选择更快的模型。",
+        "provider_bad_response": "Provider 返回了无效响应。请用 /model 检查当前模型。",
     },
 }
 

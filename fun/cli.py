@@ -25,6 +25,12 @@ from .renderer import TerminalRenderer
 from .runtime import Runtime
 
 
+def _friendly_error(exc: Exception, locale: str) -> str:
+    tag = getattr(exc, "error_tag", "")
+    keys = {"PROVIDER_AUTH_FAILED": "provider_auth", "PROVIDER_NETWORK_FAILED": "provider_network", "PROVIDER_TIMEOUT": "provider_timeout", "PROVIDER_MALFORMED_EVENT": "provider_bad_response", "PROVIDER_UNEXPECTED_CONTENT_TYPE": "provider_bad_response"}
+    return t(locale, keys[tag]) if tag in keys else str(exc)
+
+
 def _choose_model(base_url: str, api_key: str, current: str = "", locale: str = "en-US") -> str | None:
     try:
         models = OpenAICompatible(ModelConfig(base_url, api_key, current or "models-placeholder")).list_models()
@@ -224,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
                 runtime.complete(output)
                 print()
             except Exception as exc:
-                print(f"\n× {exc}", file=__import__("sys").stderr)
+                print(f"\n× {_friendly_error(exc, locale)}", file=__import__("sys").stderr)
                 runtime.stop()
                 return 1
         else:
@@ -311,7 +317,7 @@ def main(argv: list[str] | None = None) -> int:
                 runtime.complete(output)
                 print()
             except Exception as exc:
-                print(f"\n× {exc}", file=sys.stderr)
+                print(f"\n× {_friendly_error(exc, locale)}", file=sys.stderr)
                 runtime.fail(str(exc))
         else:
             print("Model not configured. Use --configure or set FUN_API_URL, FUN_API_KEY, and FUN_MODEL.")
