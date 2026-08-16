@@ -16,20 +16,21 @@ except ImportError:  # Windows: menu falls back to typed commands
 from .config import FunConfig
 from .dashboard import serve
 from .provider import ModelConfig, OpenAICompatible, ProviderError
+from .i18n import t
 from .renderer import TerminalRenderer
 from .runtime import Runtime
 
 
-def _choose_model(base_url: str, api_key: str, current: str = "") -> str | None:
+def _choose_model(base_url: str, api_key: str, current: str = "", locale: str = "en-US") -> str | None:
     try:
         models = OpenAICompatible(ModelConfig(base_url, api_key, current or "models-placeholder")).list_models()
     except Exception as exc:
-        print(f"Could not load model list ({type(exc).__name__}).")
+        print(t(locale, "model_load_failed"))
         return input(f"Model ID [{current}] (manual fallback) ❯ ").strip() or current or None
     if not models:
         print("Provider returned no models.")
         return input(f"Model ID [{current}] (manual fallback) ❯ ").strip() or current or None
-    print("Available models:")
+    print(t(locale, "choose_model"))
     for index, model_id in enumerate(models, 1):
         print(f"  [{index}] {model_id}")
     while True:
@@ -167,12 +168,12 @@ def main(argv: list[str] | None = None) -> int:
             print(renderer.error("Choose 1, 2, 3, 4, or q."), file=sys.stderr)
             return 2
         if choice in {"1", "2"}:
-            print("API key: paste supported; hidden input; press Enter when done.")
+            print(t(locale, "api_key_hint"))
             saved.api_key = os.getenv("FUN_API_KEY") or getpass.getpass("API key ❯ ").strip()
             if not saved.api_key:
                 print(renderer.error("API key is required."), file=sys.stderr)
                 return 2
-            saved.model = _choose_model(saved.base_url, saved.api_key, saved.model) or ""
+            saved.model = _choose_model(saved.base_url, saved.api_key, saved.model, locale) or ""
             if not saved.model:
                 return 2
             print("Permission mode: [1] ask  [2] smart (recommended)  [3] auto")
@@ -208,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
     if provider:
         print(renderer.welcome(True))
     else:
-        print(renderer.finding("离线模式 · 不会调用模型。" if renderer.zh else "Offline mode · no model calls will be made."))
+        print(renderer.finding(t(locale, "offline")))
         print("输入 /help 查看帮助，/setup 了解配置，或 /quit 退出。" if renderer.zh else "Use /help for commands, /setup to configure later, or /quit to exit.")
 
     command_items = [
@@ -282,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
             if text == "/logout":
                 saved.clear_credentials(config_path)
                 provider = None
-                print("✓ Saved API key, provider, and model removed.")
+                print("✓ " + t(locale, "removed"))
                 continue
             if text == "/permissions":
                 print("Permission mode: [1] ask  [2] smart  [3] auto")
@@ -294,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
                 if not provider:
                     print("Configure a provider first.")
                 else:
-                    selected = _choose_model(base_url, api_key, model)
+                    selected = _choose_model(base_url, api_key, model, locale)
                     if selected:
                         model = selected
                         saved.model = selected
