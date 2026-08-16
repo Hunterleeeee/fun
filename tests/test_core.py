@@ -343,6 +343,24 @@ class CoreTests(unittest.TestCase):
             self.assertFalse(lock.held)
             self.assertFalse(lock.path.exists())
 
+    def test_runtime_context_exception_stops_task_and_releases_resources(self):
+        with TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "context failure"):
+                with Runtime(directory, state_dir=directory) as runtime:
+                    runtime.create_task("exception context")
+                    session_id = runtime.session_id
+                    lock = runtime.lock
+                    durable = runtime.events._durable
+                    raise ValueError("context failure")
+            self.assertFalse(lock.held)
+            self.assertFalse(lock.path.exists())
+            with self.assertRaisesRegex(Exception, "closed"):
+                durable.list()
+            recovered = Runtime.recover(directory, directory, session_id)
+            self.assertEqual(recovered.task.status, "stopped")
+            self.assertIn("task.stopped", [event.type for event in recovered.events.list(session_id)])
+            recovered.close()
+
     def test_runtime_context_manager_closes_store_on_success_and_error(self):
         with TemporaryDirectory() as directory:
             with Runtime(directory, state_dir=directory) as runtime:
