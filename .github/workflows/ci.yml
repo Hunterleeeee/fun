@@ -53,39 +53,31 @@ jobs:
       - name: Compile sources
         run: python -m compileall -q fun tests scripts
       - name: Run tests
+        id: windows_tests
+        continue-on-error: true
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
-          Remove-Item windows-test.log -ErrorAction SilentlyContinue
-          $failed = @()
-          Get-ChildItem tests -Filter "test_*.py" | Sort-Object Name | ForEach-Object {
-            $module = "tests.$($_.BaseName)"
-            Write-Host "=== Discovering $module ==="
-            $list = & python -m unittest $module -q 2>&1
-            $list | Tee-Object -FilePath windows-test.log -Append | Write-Host
-            $names = $list | Select-String -Pattern '^test_[A-Za-z0-9_]+ \(' | ForEach-Object { ($_ -split ' ')[0] }
-            if (-not $names) { $names = @('__module__') }
-            foreach ($name in $names) {
-              $target = if ($name -eq '__module__') { $module } else { "$module.$name" }
-              Write-Host "=== Running $target ==="
-              $output = & python -m unittest $target -v 2>&1
-              $exitCode = $LASTEXITCODE
-              $output | Tee-Object -FilePath windows-test.log -Append | Write-Host
-              if ($exitCode -ne 0) {
-                $failed += $target
-                Write-Host "FAILED: $target (exit $exitCode)"
-                $output | Select-Object -Last 100 | Write-Host
-              }
-            }
-          }
+          python -m unittest discover -s tests -v *> windows-test.log
+          $code = $LASTEXITCODE
+          Write-Host "unittest_exit_code=$code"
           Get-Content windows-test.log
-          if ($failed.Count -gt 0) {
-            Write-Host "--- Failed Windows test modules ---"
-            $failed | ForEach-Object { Write-Host $_ }
-            Write-Host "--- Windows test log tail ---"
-            Get-Content windows-test.log -Tail 160
-            exit 1
+          exit $code
+      - name: Report Windows test log
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path windows-test.log) {
+            Write-Host "--- Complete Windows unittest log ---"
+            Get-Content windows-test.log
+            Write-Host "--- Windows unittest failure tail ---"
+            Get-Content windows-test.log -Tail 240
+          } else {
+            Write-Host "windows-test.log was not created"
           }
+      - name: Fail if Windows tests failed
+        if: steps.windows_tests.outcome == 'failure'
+        run: exit 1
       - name: Upload Windows test log
         if: always()
         uses: actions/upload-artifact@v4
