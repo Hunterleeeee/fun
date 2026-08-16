@@ -40,6 +40,17 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(snapshot["completed"], 1)
             store.close()
 
+    def test_dashboard_lists_background_tasks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with SQLiteEventStore(Path(directory) / "events.db") as store:
+                store.append(Event("background.task.created", "s1", "bg_1", {"goal": "scan", "kind": "subagent", "parent_task_id": "task_1", "run_id": "run_1"}))
+                store.append(Event("background.task.started", "s1", "bg_1", {"kind": "subagent", "parent_task_id": "task_1", "run_id": "run_1"}))
+                store.append(Event("background.task.completed", "s1", "bg_1", {"kind": "subagent", "result": "done"}))
+            tasks = DashboardData(Path(directory) / "events.db").snapshot()["background_tasks"]
+            self.assertEqual(tasks[0]["task_id"], "bg_1")
+            self.assertEqual(tasks[0]["status"], "completed")
+            self.assertEqual(tasks[0]["parent_task_id"], "task_1")
+
 
 if __name__ == "__main__":
     unittest.main()
