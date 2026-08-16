@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from .events import Event, EventStore
+from .background import BackgroundTask, BackgroundTaskManager
 from .policy import ApprovalMode, Policy, Risk
 from .persistence import SQLiteEventStore
 from .provider import OpenAICompatible, tool_schemas
@@ -70,6 +71,7 @@ class Runtime:
         self._telemetry_sent = False
         self._task_started_at: float | None = None
         self._closed = False
+        self.background = BackgroundTaskManager(self._emit_background)
 
     def __enter__(self) -> "Runtime":
         return self
@@ -199,6 +201,20 @@ class Runtime:
                 attempt = event.payload.get("attempts", event.payload.get("attempt", 0))
                 if isinstance(attempt, int):
                     self.task.repair_attempts = max(self.task.repair_attempts, attempt)
+
+    def _emit_background(self, event_type: str, task_id: str, payload: dict[str, Any]) -> None:
+        self.emit(event_type, self.task.id if self.task else None, background_task_id=task_id, **payload)
+
+    def spawn_agent(self, goal: str, worker: Callable[[str, Any], Any]) -> BackgroundTask:
+        if self._closed:
+            raise RuntimeError("RUNTIME_CLOSED")
+        return self.background.spawn(goal, worker, kind="subagent")
+
+    def background_tasks(self) -> list[BackgroundTask]:
+        return self.background.list()
+
+    def cancel_background_task(self, task_id: str) -> None:
+        self.background.cancel(task_id)
 
     def emit(self, event_type: str, task_id: str | None = None, **payload: object) -> Event:
         event = Event(event_type, self.session_id, task_id, dict(payload))
@@ -688,6 +704,7 @@ class Runtime:
         if self._closed:
             return
         self._closed = True
+        self.background.close()
         durable = getattr(self.events, "_durable", None)
         close = getattr(durable, "close", None)
         if callable(close):

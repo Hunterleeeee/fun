@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from .events import Event
@@ -14,8 +15,9 @@ class SQLiteEventStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.path, timeout=30.0)
+        self.connection = sqlite3.connect(self.path, timeout=30.0, check_same_thread=False)
         self.connection.execute("PRAGMA busy_timeout = 30000")
+        self._lock = Lock()
         self.connection.execute(
             "CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, type TEXT NOT NULL, session_id TEXT NOT NULL, task_id TEXT, timestamp TEXT NOT NULL, payload TEXT NOT NULL)"
         )
@@ -35,6 +37,10 @@ class SQLiteEventStore:
         return event
 
     def append_many(self, events: list[Event]) -> list[Event]:
+        with self._lock:
+            return self._append_many(events)
+
+    def _append_many(self, events: list[Event]) -> list[Event]:
         try:
             for event in events:
                 payload = json.dumps(event.payload)
