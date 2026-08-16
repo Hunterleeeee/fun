@@ -424,9 +424,7 @@ def main(argv: list[str] | None = None) -> int:
         if runtime.task and runtime.task.messages:
             tui.state.restore_messages(runtime.task.messages)
         if runtime.task and runtime.task.status == "recovery_required":
-            pending = runtime.recovery_summary() or {}
-            tui.state.status_text = f"recovery required · {pending.get('name', 'tool')} · {pending.get('call_id', '?')}"
-            tui.state.mode = "recovery"
+            tui.set_recovery(runtime.recovery_summary() or {})
         def tui_submit(text: str) -> None:
             if text in {"/quit", "/exit"}:
                 tui.post("quit")
@@ -519,6 +517,7 @@ def main(argv: list[str] | None = None) -> int:
                     tui.post("assistant", "× " + _friendly_error(exc, locale))
                     tui.post("status", "failed")
             threading.Thread(target=worker, daemon=True).start()
+        tui.recovery_handler = lambda action: tui_submit(f"/recover {action}")
         try:
             tui.run(tui_submit)
         finally:

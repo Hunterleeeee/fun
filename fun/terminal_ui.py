@@ -60,6 +60,7 @@ class TerminalUiState:
     history_index: int | None = None
     scroll_offset: int = 0
     background: list[dict[str, str]] = field(default_factory=list)
+    recovery: dict[str, str] | None = None
 
     def history(self, direction: int) -> str:
         if not self.composer_history:
@@ -69,6 +70,12 @@ class TerminalUiState:
         self.history_index = max(0, min(len(self.composer_history), self.history_index + direction))
         self.composer = self.composer_history[self.history_index] if self.history_index < len(self.composer_history) else ""
         return self.composer
+
+    def set_recovery(self, pending: dict[str, Any] | None) -> None:
+        self.recovery = {key: str((pending or {}).get(key, ""))[:300] for key in ("name", "call_id", "arguments")} if pending else None
+        if pending:
+            self.mode = "recovery"
+            self.task_state = "recovery"
 
     def set_background(self, tasks: list[dict[str, str]]) -> None:
         self.background = [
@@ -155,6 +162,11 @@ class TerminalUiState:
         if self.model_name:
             status += f" · model={self.model_name}"
         status += f" · approval={self.approval_mode}"
+        if self.recovery:
+            lines.append(f"┌ recovery required · {self.recovery.get('name', 'tool')} · {self.recovery.get('call_id', '?')}")
+            lines.append(f"│ args={self.recovery.get('arguments', '')}")
+            lines.append("│ [r] resume · [d] discard · [f] mark failed · [s] stop")
+            lines.append("└")
         if self.status_text and self.status_text not in {self.task_state, f"approval={self.approval_mode}"}:
             status += f" · {self.status_text}"
         lines.append(f"· {status}")

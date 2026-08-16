@@ -56,6 +56,13 @@ class TerminalUI:
     def set_status(self, text: str) -> None:
         self.post("status", text)
 
+    def set_recovery(self, pending: dict[str, Any] | None) -> None:
+        self.state.recovery = {key: str((pending or {}).get(key, ""))[:300] for key in ("name", "call_id", "arguments")} if pending else None
+        if pending:
+            self.state.mode = "recovery"
+            self.state.task_state = "recovery"
+        self._dirty = True
+
     def set_background(self, tasks: list[dict[str, Any]]) -> None:
         normalized = [{key: str(item.get(key, ""))[:240] for key in ("id", "status", "goal", "result", "error")} for item in tasks]
         if normalized != self.state.background:
@@ -106,6 +113,11 @@ class TerminalUI:
                 self._approval = payload
                 self.state.mode = "approval"
                 self.state.tool_status("approval.pending", {"call_id": "approval", "name": payload.name, "risk": str(payload.risk), "arguments": payload.arguments})
+            elif kind == "recovery_action":
+                if hasattr(self, "recovery_handler"):
+                    self.recovery_handler(str(payload))
+                self.state.recovery = None
+                self.state.mode = "working" if payload in {"resume", "discard", "mark_failed"} else "ready"
             elif kind == "approval_answer":
                 if self._approval is not None:
                     self._approval.answer = str(payload)
@@ -191,6 +203,8 @@ class TerminalUI:
                     self._dirty = True
                 elif key == "backspace":
                     self.state.composer = self.state.composer[:-1]
+                elif key in {"r", "d", "f", "s"} and self.state.recovery:
+                    self.post("recovery_action", {"r": "resume", "d": "discard", "f": "mark_failed", "s": "stop"}[key])
                 elif key == "cancel":
                     self.state.composer = ""
                     self.set_status("cancelled")
