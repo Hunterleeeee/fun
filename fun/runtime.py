@@ -359,7 +359,7 @@ class Runtime:
         if self.policy.requires_approval(risk):
             self.emit("approval.pending", self.task.id, call_id=call_id, name=name, risk=risk.value, arguments=dict(kwargs))
             if on_status is not None:
-                on_status("approval.pending", {"call_id": call_id, "name": name, "risk": risk.value})
+                on_status("approval.pending", {"call_id": call_id, "name": name, "risk": risk.value, "arguments": dict(kwargs)})
             try:
                 allowed = self.approve(name, risk) if self.approve else False
                 if not isinstance(allowed, bool):

@@ -183,6 +183,9 @@ class AgentLoopTests(unittest.TestCase):
             runtime.create_task("inspect")
             runtime.run_model_turn(on_status=lambda kind, payload: statuses.append((kind, payload)))
             self.assertIn("tool.executing", [kind for kind, _ in statuses])
+            pending = [payload for kind, payload in statuses if kind == "approval.pending"]
+            if pending:
+                self.assertIn("arguments", pending[0])
             completed = next(payload for kind, payload in statuses if kind == "tool.failed")
             self.assertIsInstance(completed["elapsed_ms"], int)
             self.assertIn("text", completed)

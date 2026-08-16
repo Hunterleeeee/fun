@@ -388,6 +388,7 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"\n{t(locale, 'tool_running').format(name=payload.get('name', 'tool'))}", flush=True)
                     elif kind == "approval.pending":
                         print(t(locale, "approval_wait"), flush=True)
+                        print(f"  {payload.get('name', 'tool')} · risk={payload.get('risk', '?')} · args={payload.get('arguments', {})}", flush=True)
                     elif kind == "tool.progress":
                         print(f"  {payload.get('name', 'tool')} · {payload.get('elapsed_ms', 0)}ms", flush=True)
                     elif kind == "tool.completed":
