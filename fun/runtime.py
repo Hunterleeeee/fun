@@ -608,8 +608,6 @@ class Runtime:
                     if on_status is not None:
                         on_status("tool.started", {"name": name, "call_id": call["id"]})
                     result = self.run_tool(name, on_status=on_status, **arguments)
-                    if on_status is not None:
-                        on_status("tool.completed", {"name": name, "call_id": call["id"], "ok": result.ok})
                 self.task.messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})
         finally:
             try:
