@@ -53,7 +53,18 @@ jobs:
       - name: Compile sources
         run: python -m compileall -q fun tests scripts
       - name: Run tests
-        run: python -m unittest discover -s tests -q
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v *> windows-test.log
+          Get-Content windows-test.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload Windows test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-log
+          path: windows-test.log
+          if-no-files-found: error
       - name: Run provider smoke fixture
         run: python -m unittest tests.test_agent_loop.AgentLoopTests.test_local_sse_provider_smoke_script -v
 
