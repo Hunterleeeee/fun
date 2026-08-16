@@ -55,12 +55,25 @@ jobs:
       - name: Run tests
         shell: pwsh
         run: |
-          python -m unittest discover -s tests -v *> windows-test.log
+          $ErrorActionPreference = "Continue"
+          Remove-Item windows-test.log -ErrorAction SilentlyContinue
+          $failed = @()
+          Get-ChildItem tests -Filter "test_*.py" | Sort-Object Name | ForEach-Object {
+            $module = "tests.$($_.BaseName)"
+            Write-Host "=== Running $module ==="
+            python -m unittest $module -v *>> windows-test.log
+            if ($LASTEXITCODE -ne 0) {
+              $failed += $module
+              Write-Host "FAILED: $module"
+            }
+          }
           Get-Content windows-test.log
-          if ($LASTEXITCODE -ne 0) {
+          if ($failed.Count -gt 0) {
+            Write-Host "--- Failed Windows test modules ---"
+            $failed | ForEach-Object { Write-Host $_ }
             Write-Host "--- Windows test log tail ---"
-            Get-Content windows-test.log -Tail 120
-            exit $LASTEXITCODE
+            Get-Content windows-test.log -Tail 160
+            exit 1
           }
       - name: Upload Windows test log
         if: always()
