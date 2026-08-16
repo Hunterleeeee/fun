@@ -37,6 +37,9 @@ class TelemetryTests(unittest.TestCase):
         self.assertIn("配置", t("zh-CN", "cmd_config"))
         self.assertIn("Commands", t("en-US", "commands_title"))
 
+    def test_cli_can_target_a_persisted_session(self):
+        self.assertEqual(build_parser().parse_args(["--resume-session", "ses_demo"]).resume_session, "ses_demo")
+
     def test_cli_approval_can_use_saved_config(self):
         self.assertIsNone(build_parser().parse_args([]).approval)
         self.assertEqual(build_parser().parse_args(["--approval", "ask"]).approval, "ask")
