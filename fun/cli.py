@@ -426,6 +426,9 @@ def main(argv: list[str] | None = None) -> int:
             if text == "/logout":
                 saved.clear_credentials(config_path)
                 provider = None
+                runtime.provider = None
+                runtime.model = ""
+                base_url = api_key = model = ""
                 print("✓ " + t(locale, "removed"))
                 continue
             if text == "/permissions":

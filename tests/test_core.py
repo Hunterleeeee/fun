@@ -578,6 +578,15 @@ class CoreTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.text, "UNSUPPORTED_TOOL")
 
+    def test_runtime_provider_can_be_cleared_after_logout(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, provider=object())
+            runtime.model = "model-x"
+            runtime.provider = None
+            runtime.model = ""
+            self.assertIsNone(runtime.provider)
+            self.assertEqual(runtime.model, "")
+
     def test_renderer_keeps_unicode_header_rows_aligned(self):
         color_header = TerminalRenderer(color=True, locale="zh-CN").header("/tmp/中文-workspace", True, "smart")
         self.assertTrue(all(_display_width(line) == 62 for line in color_header.splitlines()))
