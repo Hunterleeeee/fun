@@ -273,7 +273,9 @@ def main(argv: list[str] | None = None) -> int:
                 runtime.stop()
                 return 1
         else:
-            print("Model not configured. Set --base-url, --api-key, and --model to run the agent loop.")
+            print("Model not configured. Set --base-url, --api-key, and --model to run the agent loop.", file=sys.stderr)
+            runtime.stop()
+            return 2
         runtime.stop()
         return 0
 
