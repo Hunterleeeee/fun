@@ -387,6 +387,16 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "closed"):
                 durable.list()
 
+    def test_runtime_close_is_idempotent_after_context_cleanup(self):
+        with TemporaryDirectory() as directory:
+            with Runtime(directory, state_dir=directory) as runtime:
+                runtime.create_task("close idempotent")
+                durable = runtime.events._durable
+            runtime.close()
+            runtime.close()
+            with self.assertRaisesRegex(Exception, "closed"):
+                durable.list()
+
     def test_memory_runtime_close_is_idempotent(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory)
