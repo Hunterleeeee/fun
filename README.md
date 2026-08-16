@@ -161,19 +161,32 @@ with Runtime(".", state_dir=".fun") as runtime:
 ## 常用命令
 
 ```text
+/              打开 ↑↓ 命令菜单
+/help          查看帮助
+/config        配置 Provider 和凭据
+/model         切换模型
+/permissions   修改审批模式
+/logout        删除已保存凭据并进入离线模式
 /goal         查看当前目标
 /goal <text>  设置目标
-/status       查看 task、agent、usage、recovery
+/status       查看 task、agent、usage、recovery、后台任务和最近 timing
 /plan         查看 PlanStep
 /diff         查看当前 diff
 /usage        查看 token / TTFT
 /pause        暂停
 /resume       继续
+/cancel <id>  取消后台任务
 /checkpoint   创建 checkpoint
 /recover      恢复 pending 状态
-/recover stop 停止 pending 状态
+/recover discard | mark_failed | resume | stop
 /stop         停止任务
-/quit         退出
+/exit         退出
+```
+
+重启后恢复持久化会话：
+
+```bash
+fun --resume-session <session-id>
 ```
 
 本地调试 Dashboard：
