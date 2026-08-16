@@ -53,31 +53,19 @@ jobs:
       - name: Compile sources
         run: python -m compileall -q fun tests scripts
       - name: Run tests
-        id: windows_tests
-        continue-on-error: true
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
-          python -m unittest discover -s tests -v *> windows-test.log
+          python -m unittest discover -s tests -v 2>&1 | Tee-Object -FilePath windows-test.log
           $code = $LASTEXITCODE
           Write-Host "unittest_exit_code=$code"
-          Get-Content windows-test.log
-          exit $code
-      - name: Report Windows test log
-        if: always()
-        shell: pwsh
-        run: |
-          if (Test-Path windows-test.log) {
-            Write-Host "--- Complete Windows unittest log ---"
-            Get-Content windows-test.log
-            Write-Host "--- Windows unittest failure tail ---"
-            Get-Content windows-test.log -Tail 240
-          } else {
-            Write-Host "windows-test.log was not created"
+          if ($code -ne 0) {
+            Write-Host "--- FAILED OR ERRORED TESTS ---"
+            Select-String -Path windows-test.log -Pattern '^(FAIL|ERROR):' | Select-Object -First 100 | ForEach-Object { $_.Line }
+            Write-Host "--- LAST TRACEBACK (tail) ---"
+            Get-Content windows-test.log -Tail 220
           }
-      - name: Fail if Windows tests failed
-        if: steps.windows_tests.outcome == 'failure'
-        run: exit 1
+          if ($code -ne 0) { exit $code }
       - name: Upload Windows test log
         if: always()
         uses: actions/upload-artifact@v4
