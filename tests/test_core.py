@@ -16,6 +16,10 @@ from fun.tools import Tools, file_hash
 from fun.usage import Usage
 
 
+PYTHON_OK = f'"{sys.executable}" -c "pass"'
+PYTHON_FAIL = f'"{sys.executable}" -c "raise SystemExit(1)"'
+
+
 def runtime_usage_summary():
     return Usage().summary()
 
@@ -560,7 +564,7 @@ class CoreTests(unittest.TestCase):
             runtime.create_task("validation node atomic")
             runtime.events._durable = FailingStore()
             with self.assertRaises(OSError):
-                runtime.validate("true")
+                runtime.validate(PYTHON_OK)
             self.assertEqual(runtime.task.agent_state, "ready")
 
     def test_validation_failure_event_does_not_update_plan_step(self):
@@ -574,7 +578,7 @@ class CoreTests(unittest.TestCase):
             runtime.create_task("validation plan atomic")
             runtime.events._durable = FailingStore()
             with self.assertRaises(OSError):
-                runtime.validate("false")
+                runtime.validate(PYTHON_FAIL)
             self.assertIsNone(runtime.task.validation)
 
     def test_validation_does_not_mutate_when_validation_event_fails(self):
@@ -588,7 +592,7 @@ class CoreTests(unittest.TestCase):
             runtime.create_task("validation atomic")
             runtime.events._durable = FailingStore()
             with self.assertRaises(OSError):
-                runtime.validate("true")
+                runtime.validate(PYTHON_OK)
             self.assertIsNone(runtime.task.validation)
 
     def test_repair_node_failure_does_not_change_agent_state(self):
@@ -602,7 +606,7 @@ class CoreTests(unittest.TestCase):
             runtime.create_task("repair node atomic")
             runtime.events._durable = FailingStore()
             with self.assertRaises(OSError):
-                runtime.repair("true")
+                runtime.repair(PYTHON_OK)
             self.assertEqual(runtime.task.agent_state, "ready")
             self.assertEqual(runtime.task.repair_attempts, 1)
 
@@ -616,7 +620,7 @@ class CoreTests(unittest.TestCase):
             runtime = Runtime(directory, "auto")
             runtime.create_task("repair terminal")
             runtime.events._durable = FailingAfterValidation()
-            result = runtime.repair("false")
+            result = runtime.repair(PYTHON_FAIL)
             self.assertFalse(result.ok)
             self.assertEqual(runtime.task.repair_attempts, 1)
             self.assertIsNotNone(runtime.task.validation)
@@ -631,7 +635,7 @@ class CoreTests(unittest.TestCase):
             runtime.create_task("repair original error")
             runtime.events._durable = FailingStore()
             with self.assertRaisesRegex(OSError, "disk full"):
-                runtime.repair("false")
+                runtime.repair(PYTHON_FAIL)
             self.assertEqual(runtime.task.repair_attempts, 0)
 
     def test_repair_failure_event_is_recorded_before_error_propagates(self):
@@ -647,7 +651,7 @@ class CoreTests(unittest.TestCase):
             runtime.create_task("repair failure")
             runtime.events._durable = FailingStore()
             with self.assertRaises(OSError):
-                runtime.repair("false")
+                runtime.repair(PYTHON_FAIL)
             types = [event.type for event in runtime.events.list()]
             self.assertIn("repair.started", types)
             self.assertIn("repair.failed", types)
@@ -663,14 +667,14 @@ class CoreTests(unittest.TestCase):
             runtime.create_task("repair atomic")
             runtime.events._durable = FailingStore()
             with self.assertRaises(OSError):
-                runtime.repair("false")
+                runtime.repair(PYTHON_FAIL)
             self.assertEqual(runtime.task.repair_attempts, 0)
 
     def test_repair_failure_recovery_returns_agent_to_ready(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
             runtime.create_task("repair ready")
-            runtime.repair("false")
+            runtime.repair(PYTHON_FAIL)
             recovered = Runtime.recover(directory, directory, runtime.session_id, approval="auto")
             self.assertEqual(recovered.task.agent_state, "ready")
             recovered.stop()
@@ -679,7 +683,7 @@ class CoreTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto", state_dir=directory)
             runtime.create_task("validation ready")
-            runtime.validate("true")
+            runtime.validate(PYTHON_OK)
             recovered = Runtime.recover(directory, directory, runtime.session_id, approval="auto")
             self.assertEqual(recovered.task.agent_state, "ready")
             recovered.stop()
@@ -975,7 +979,7 @@ class CoreTests(unittest.TestCase):
             runtime.create_task("repair")
             first = runtime.repair("python3 -c \"raise SystemExit(1)\"")
             second = runtime.repair("python3 -c \"raise SystemExit(1)\"")
-            blocked = runtime.repair("true")
+            blocked = runtime.repair(PYTHON_OK)
             self.assertFalse(first.ok)
             self.assertFalse(second.ok)
             self.assertEqual(blocked.text, "REPAIR_BUDGET_EXCEEDED")
