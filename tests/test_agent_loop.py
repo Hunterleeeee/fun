@@ -62,6 +62,22 @@ class FakeProvider:
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_model_request_compacts_oversized_context(self):
+        class CaptureProvider:
+            def __init__(self):
+                self.messages = None
+            def stream(self, messages, tools=None):
+                self.messages = messages
+                yield {"choices": [{"delta": {"content": "ok"}}]}
+        with TemporaryDirectory() as directory:
+            provider = CaptureProvider()
+            runtime = Runtime(directory, provider=provider)
+            runtime.create_task("compact")
+            runtime.task.messages = [{"role": "system", "content": "system"}] + [{"role": "user", "content": "x" * 20000} for _ in range(5)]
+            list(runtime.request_model())
+            self.assertLessEqual(sum(len(str(item.get("content", ""))) for item in provider.messages), 60000)
+            self.assertIn("context.compacted", [event.type for event in runtime.events.list()])
+
     def test_local_sse_provider_smoke_script(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), SmokeHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

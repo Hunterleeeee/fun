@@ -443,13 +443,33 @@ class Runtime:
         if not self.task or self.task.status != "running":
             raise RuntimeError("TASK_NOT_RUNNING")
 
+    def _model_messages(self, max_chars: int = 60000) -> list[dict[str, Any]]:
+        """Keep requests bounded while preserving the system prompt and latest turn."""
+        if not self.task:
+            return []
+        messages = self.task.messages
+        if sum(len(str(item.get("content", ""))) for item in messages) <= max_chars:
+            return messages
+        head = messages[:2]
+        tail: list[dict[str, Any]] = []
+        size = sum(len(str(item.get("content", ""))) for item in head)
+        for item in reversed(messages[2:]):
+            item_size = len(str(item.get("content", "")))
+            if tail and size + item_size > max_chars:
+                break
+            tail.append(item)
+            size += item_size
+        tail.reverse()
+        self.emit("context.compacted", self.task.id, original_messages=len(messages), retained_messages=len(head) + len(tail), max_chars=max_chars)
+        return head + tail
+
     def request_model(self) -> Any:
         if not self.provider or not self.task:
             raise RuntimeError("PROVIDER_NOT_CONFIGURED")
         self._ensure_running()
         self._node("model.requested")
         try:
-            return self.provider.stream(self.task.messages, tool_schemas())
+            return self.provider.stream(self._model_messages(), tool_schemas())
         except Exception as exc:
             try:
                 failure = {"error_type": type(exc).__name__, "error_tag": getattr(exc, "error_tag", "MODEL_REQUEST_FAILED")}
