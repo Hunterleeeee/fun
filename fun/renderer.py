@@ -1,6 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import unicodedata
+
+
+def _display_width(text: str) -> int:
+    return sum(2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1 for char in text)
+
+
+def _fit_display(text: str, width: int) -> str:
+    result = ""
+    used = 0
+    for char in text:
+        char_width = 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
+        if used + char_width > width:
+            break
+        result += char
+        used += char_width
+    return result + " " * max(0, width - used)
 
 
 @dataclass
@@ -26,20 +43,22 @@ class TerminalRenderer:
         slogan = "让写代码变得有意思。" if self.zh else "Coding should feel good."
         width = 59
         def row(text: str) -> str:
-            return f"│ {text[:width]:<{width}}│"
+            return f"│ {_fit_display(text, width)}│"
+        top_text = f"╭─ {title} " + "─" * max(0, 57 - _display_width(title)) + "╮"
+        bottom_text = "╰" + "─" * 60 + "╯"
         return "\n".join([
-            self._style(f"╭─ {title} ─────────────────────────────────────────────╮", "36"),
+            self._style(top_text, "36"),
             row(self._style(slogan, "1;36")),
             row(("工作区  " if self.zh else "workspace  ") + workspace),
             row(("Provider  " if self.zh else "provider   ") + f"{state}  " + ("审批  " if self.zh else "approval  ") + approval),
-            self._style("╰─────────────────────────────────────────────────────────────╯", "36"),
+            self._style(bottom_text, "36"),
         ])
 
     def welcome(self, configured: bool, workspace: str = "") -> str:
         if configured:
             return "命令：/help  /config  /model  /permissions  /status  /plan  /usage  /logout  /exit" if self.zh else "Commands: /help  /config  /model  /permissions  /status  /plan  /usage  /logout  /exit"
         if self.zh:
-            return "\n".join(["╭─ 欢迎使用 Fun ────────────────────────────────────────────╮", "│ 你的终端 Coding 工作区。                                  │", f"│ {workspace[:57]:<57}│", "│                                                            │", "│  [1] OpenAI                                                │", "│  [2] OpenAI-compatible / 自定义 Provider                  │", "│  [3] 使用环境变量                                          │", "│  [4] 先进入离线模式                                        │", "│  [q] 退出                                                  │", "╰─────────────────────────────────────────────────────────────╯"])
+            return "\n".join(["╭─ 欢迎使用 Fun ────────────────────────────────────────────╮", "│ 你的终端 Coding 工作区。                                  │", f"│ {_fit_display(workspace, 58)}│", "│                                                            │", "│  [1] OpenAI                                                │", "│  [2] OpenAI-compatible / 自定义 Provider                  │", "│  [3] 使用环境变量                                          │", "│  [4] 先进入离线模式                                        │", "│  [q] 退出                                                  │", "╰─────────────────────────────────────────────────────────────╯"])
         return "\n".join(["╭─ WELCOME TO FUN ──────────────────────────────────────────╮", "│ Your terminal coding workspace.                            │", f"│ {workspace[:57]:<57}│", "│                                                             │", "│  [1] OpenAI                                                │", "│  [2] OpenAI-compatible / custom provider                  │", "│  [3] Use environment variables                             │", "│  [4] Continue in offline mode                              │", "│  [q] Exit                                                  │", "╰─────────────────────────────────────────────────────────────╯"])
 
     def setup_complete(self) -> str:

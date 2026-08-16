@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 
 from fun.events import Event, EventStore
 from fun.policy import ApprovalMode, Policy, PolicyError
-from fun.renderer import TerminalRenderer
+from fun.renderer import TerminalRenderer, _display_width
 from fun.runtime import Runtime
 from fun.tools import Tools, file_hash
 from fun.usage import Usage
@@ -577,6 +577,13 @@ class CoreTests(unittest.TestCase):
             result = runtime.run_tool("emit", event_type="task.completed")
             self.assertFalse(result.ok)
             self.assertEqual(result.text, "UNSUPPORTED_TOOL")
+
+    def test_renderer_keeps_unicode_header_rows_aligned(self):
+        renderer = TerminalRenderer(color=False, locale="zh-CN")
+        for line in renderer.header("/tmp/中文-workspace", True, "smart").splitlines():
+            self.assertEqual(_display_width(line), 62)
+        welcome = renderer.welcome(False, "/tmp/中文-workspace")
+        self.assertIn("/tmp/中文", welcome)
 
     def test_agent_node_event_is_renderable(self):
         renderer = TerminalRenderer(color=False)
