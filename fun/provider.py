@@ -6,6 +6,7 @@ import time
 import urllib.request
 from dataclasses import dataclass
 from urllib.parse import urlparse
+import urllib.error
 from typing import Any, Iterator
 
 
@@ -47,6 +48,21 @@ class OpenAICompatible:
         if not isinstance(config.max_payload_bytes, int) or isinstance(config.max_payload_bytes, bool) or not 1 <= config.max_payload_bytes <= 16 * 1024 * 1024:
             raise ValueError("INVALID_PROVIDER_PAYLOAD_LIMIT")
         self.config = config
+
+    def list_models(self) -> list[str]:
+        request = urllib.request.Request(self.config.base_url.rstrip("/") + "/models", headers={"Authorization": f"Bearer {self.config.api_key}", "Accept": "application/json"}, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+                payload = json.loads(response.read(self.config.max_payload_bytes).decode("utf-8"))
+            data = payload.get("data", []) if isinstance(payload, dict) else []
+            models = [item.get("id") for item in data if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip()]
+            return sorted(set(models))
+        except urllib.error.HTTPError as exc:
+            raise ProviderError("PROVIDER_AUTH_FAILED" if exc.code in {401, 403} else "PROVIDER_HTTP_FAILED", cause=exc) from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise ProviderError("PROVIDER_NETWORK_FAILED", cause=exc) from exc
+        except (OSError, ValueError, TypeError) as exc:
+            raise ProviderError("PROVIDER_REQUEST_FAILED", cause=exc) from exc
 
     def stream(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> Iterator[dict[str, Any]]:
         if not isinstance(messages, list) or any(not isinstance(message, dict) for message in messages):

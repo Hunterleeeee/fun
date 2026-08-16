@@ -9,9 +9,36 @@ import sys
 
 from .config import FunConfig
 from .dashboard import serve
-from .provider import ModelConfig, OpenAICompatible
+from .provider import ModelConfig, OpenAICompatible, ProviderError
 from .renderer import TerminalRenderer
 from .runtime import Runtime
+
+
+def _choose_model(base_url: str, api_key: str, current: str = "") -> str | None:
+    try:
+        models = OpenAICompatible(ModelConfig(base_url, api_key, current or "models-placeholder")).list_models()
+    except Exception as exc:
+        print(f"Could not load model list ({type(exc).__name__}).")
+        return input(f"Model ID [{current}] (manual fallback) ❯ ").strip() or current or None
+    if not models:
+        print("Provider returned no models.")
+        return input(f"Model ID [{current}] (manual fallback) ❯ ").strip() or current or None
+    print("Available models:")
+    for index, model_id in enumerate(models, 1):
+        print(f"  [{index}] {model_id}")
+    while True:
+        choice = input(f"Choose model [1-{len(models)}] ❯ ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(models):
+            return models[int(choice) - 1]
+        print("Enter a model number, or use Ctrl-C to cancel.")
+
+
+def _secret_input(prompt: str) -> str | None:
+    try:
+        return getpass.getpass(prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\nConfiguration cancelled.", file=sys.stderr)
+        return None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -116,78 +143,42 @@ def main(argv: list[str] | None = None) -> int:
     renderer = TerminalRenderer(color=sys.stdout.isatty(), locale=locale)
     if not provider and not args.goal and sys.stdin.isatty():
         print(renderer.welcome(False, os.path.abspath(args.workspace)))
-        choice = input("\nSelect [1/2/3/q] ❯ ").strip().lower()
+        choice = input("\nSelect [1/2/3/4/q] ❯ ").strip().lower()
         if choice == "q":
             return 0
         if choice == "1":
             saved.base_url = "https://api.openai.com/v1"
-            print("Provider: OpenAI")
-            saved.model = input("Model name [gpt-4o-mini] ❯ ").strip() or "gpt-4o-mini"
-            print("Permission mode: [1] ask  [2] smart (recommended)  [3] auto")
-            approval_choice = input("❯ ").strip()
-            args.approval = {"1": "ask", "2": "smart", "3": "auto"}.get(approval_choice, "smart")
-            print("API key: you can paste it here; input is hidden and will not echo.")
-            saved.api_key = os.getenv("FUN_API_KEY") or getpass.getpass("API key (paste supported) ❯ ").strip()
-            if saved.base_url and saved.model and saved.api_key:
-                os.environ["FUN_API_KEY"] = saved.api_key
-                saved.save(config_path)
-                base_url, api_key, model = saved.base_url, saved.api_key, saved.model
-                provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-                print(renderer.setup_complete())
-            else:
-                print(renderer.error("Setup needs base URL, API key, and model."), file=sys.stderr)
-                return 2
         elif choice == "2":
             saved.base_url = input("Provider base URL ❯ ").strip()
-            saved.model = input("Model name ❯ ").strip()
-            print("Permission mode: [1] ask  [2] smart (recommended)  [3] auto")
-            args.approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), "smart")
-            print("API key: you can paste it here; input is hidden and will not echo.")
-            saved.api_key = os.getenv("FUN_API_KEY") or getpass.getpass("API key (paste supported) ❯ ").strip()
-            if saved.base_url and saved.model and saved.api_key:
-                os.environ["FUN_API_KEY"] = saved.api_key
-                saved.save(config_path)
-                base_url, api_key, model = saved.base_url, saved.api_key, saved.model
-                provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-                print(renderer.setup_complete())
-            else:
-                print(renderer.error("Setup needs base URL, API key, and model."), file=sys.stderr)
-                return 2
         elif choice == "3":
-            if not (os.getenv("FUN_API_URL") and os.getenv("FUN_API_KEY") and os.getenv("FUN_MODEL")):
+            if not all(os.getenv(key) for key in ("FUN_API_URL", "FUN_API_KEY", "FUN_MODEL")):
                 print(renderer.error("Missing FUN_API_URL, FUN_API_KEY, or FUN_MODEL."), file=sys.stderr)
                 return 2
-            base_url, api_key, model = os.environ["FUN_API_URL"], os.environ["FUN_API_KEY"], os.environ["FUN_MODEL"]
-            provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+            saved.base_url, saved.api_key, saved.model = os.environ["FUN_API_URL"], os.environ["FUN_API_KEY"], os.environ["FUN_MODEL"]
         elif choice == "4":
-            pass
-        elif choice != "q":
+            saved.base_url = ""
+        else:
             print(renderer.error("Choose 1, 2, 3, 4, or q."), file=sys.stderr)
             return 2
-        if provider is None and choice == "3":
-            provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-            print("API key: you can paste it here; input is hidden and will not echo.")
-            saved.api_key = os.getenv("FUN_API_KEY") or getpass.getpass("API key (paste supported) ❯ ").strip()
-            saved.model = input("Model name ❯ ").strip()
-            if saved.api_key:
-                os.environ["FUN_API_KEY"] = saved.api_key
-            if saved.base_url and saved.model and saved.api_key:
-                saved.save(config_path)
-                base_url, api_key, model = saved.base_url, saved.api_key, saved.model
-                provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-                print(renderer.setup_complete())
-            else:
-                print(renderer.error("Setup needs base URL, API key, and model."), file=sys.stderr)
+        if choice in {"1", "2"}:
+            print("API key: paste supported; hidden input; press Enter when done.")
+            saved.api_key = os.getenv("FUN_API_KEY") or getpass.getpass("API key ❯ ").strip()
+            if not saved.api_key:
+                print(renderer.error("API key is required."), file=sys.stderr)
                 return 2
-        elif choice == "2":
-            if not (os.getenv("FUN_API_URL") and os.getenv("FUN_API_KEY") and os.getenv("FUN_MODEL")):
-                print(renderer.error("Missing FUN_API_URL, FUN_API_KEY, or FUN_MODEL."), file=sys.stderr)
+            saved.model = _choose_model(saved.base_url, saved.api_key, saved.model) or ""
+            if not saved.model:
                 return 2
-            base_url, api_key, model = os.environ["FUN_API_URL"], os.environ["FUN_API_KEY"], os.environ["FUN_MODEL"]
+            print("Permission mode: [1] ask  [2] smart (recommended)  [3] auto")
+            args.approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), "smart")
+            os.environ["FUN_API_KEY"] = saved.api_key
+            saved.save(config_path)
+            base_url, api_key, model = saved.base_url, saved.api_key, saved.model
             provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-        elif choice != "3":
-            print(renderer.error("Choose 1, 2, 3, or q."), file=sys.stderr)
-            return 2
+            print(renderer.setup_complete())
+        elif choice == "3":
+            base_url, api_key, model = saved.base_url, saved.api_key, saved.model
+            provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
     runtime = Runtime(args.workspace, args.approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
     if args.goal:
         task = runtime.create_task(args.goal)
