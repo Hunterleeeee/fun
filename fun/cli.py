@@ -305,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
         print(renderer.plan(task.plan, task.plan_status))
         if provider:
             try:
+                print(t(locale, "thinking"), end=" ", flush=True)
                 output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True))
                 runtime.complete(output)
                 print()

@@ -17,6 +17,11 @@ TEXT = {
         "cancelled": "Configuration cancelled.",
         "unknown_command": "Unknown command. Type / to browse commands.",
         "no_provider": "Configure a provider first.",
+        "thinking": "Thinking…",
+        "generating": "Generating…",
+        "tool_running": "Running {name}…",
+        "approval_wait": "Waiting for your approval…",
+        "context_compacted": "Context trimmed to keep this turn fast.",
     },
     "zh-CN": {
         "commands_hint": "输入消息 · 输入 / 浏览命令 · ↑↓ 选择 · Ctrl+C 取消",
@@ -34,6 +39,11 @@ TEXT = {
         "cancelled": "配置已取消。",
         "unknown_command": "未知命令。输入 / 浏览可用命令。",
         "no_provider": "请先配置 Provider。",
+        "thinking": "思考中…",
+        "generating": "生成中…",
+        "tool_running": "正在运行 {name}…",
+        "approval_wait": "等待你确认…",
+        "context_compacted": "已压缩上下文，保持当前请求速度。",
     },
 }
 
