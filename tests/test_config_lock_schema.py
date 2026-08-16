@@ -25,6 +25,13 @@ class ConfigLockSchemaTests(unittest.TestCase):
             self.assertTrue(loaded.telemetry)
             self.assertEqual(loaded.telemetry_endpoint, "http://private.test/telemetry")
 
+    def test_config_save_persists_approval_mode(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            config = FunConfig(approval="ask")
+            config.save(path)
+            self.assertEqual(FunConfig.load(path).approval, "ask")
+
     def test_workspace_lock_is_exclusive(self):
         with TemporaryDirectory() as directory:
             first = WorkspaceLock(directory, directory)

@@ -371,6 +371,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(t(locale, "permission") + ": " + t(locale, "permission_options"))
                 args.approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), args.approval)
                 runtime.policy.mode = args.approval
+                saved.approval = args.approval
+                saved.save(config_path)
                 print(f"✓ permission mode: {args.approval}")
                 continue
             if text == "/model":
@@ -447,8 +449,11 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if text.startswith("/recover"):
                 action = text.split(maxsplit=1)[1] if len(text.split()) > 1 else "resume"
-                runtime.acknowledge_recovery(action)
-                print(f"● recovery acknowledged; {action}")
+                try:
+                    runtime.acknowledge_recovery(action)
+                    print(f"● recovery acknowledged; {action}")
+                except RuntimeError as exc:
+                    print(f"× {exc}", file=sys.stderr)
                 continue
             if text == "/stop":
                 runtime.stop()
