@@ -7,6 +7,7 @@ import getpass
 import json
 import shlex
 import sys
+import threading
 try:
     import termios
     import tty
@@ -25,6 +26,7 @@ from .provider import ModelConfig, OpenAICompatible, ProviderError
 from .i18n import t
 from .renderer import TerminalRenderer
 from .runtime import Runtime
+from .tui import TerminalUI
 
 
 def _friendly_error(exc: Exception, locale: str) -> str:
@@ -182,11 +184,14 @@ def main(argv: list[str] | None = None) -> int:
     if base_url and api_key and model:
         provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
     session_approvals: set[str] = set()
+    tui: TerminalUI | None = None
     def approve(name: str, risk: object) -> bool:
         if name in session_approvals:
             return True
         if args.non_interactive or not sys.stdin.isatty():
             return False
+        if tui is not None:
+            return tui.request_approval(name, risk, {})
         try:
             print(t(locale, "approval_wait"), flush=True)
             choice = input("? " + t(locale, "approval_prompt").format(name=name, risk=risk)).strip().lower()
@@ -406,6 +411,45 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("Model not configured. Use --configure or set FUN_API_URL, FUN_API_KEY, and FUN_MODEL.")
             runtime.stop()
+
+    if provider and sys.stdin.isatty() and termios is not None and tty is not None:
+        tui = TerminalUI(locale=locale)
+        def tui_submit(text: str) -> None:
+            if text in {"/quit", "/exit"}:
+                tui.post("quit")
+                return
+            if text == "/help":
+                tui.append_assistant(renderer.help())
+                return
+            if text == "/status":
+                tui.set_status(f"task={runtime.task.status if runtime.task else 'idle'} · model={runtime.model}")
+                return
+            if text == "/clear":
+                tui.state.transcript.clear()
+                return
+            if text.startswith("/"):
+                tui.set_status("Use the legacy command shell for configuration and recovery commands.")
+                return
+            def worker() -> None:
+                try:
+                    task = runtime.create_task(text)
+                    tui.post("status", t(locale, "thinking"))
+                    output = runtime.run_model_turn(
+                        on_text=lambda chunk: tui.post("assistant", chunk),
+                        on_status=lambda kind, payload: tui.post("tool", (kind, payload)),
+                    )
+                    runtime.complete(output)
+                    tui.post("status", "ready")
+                except Exception as exc:
+                    runtime.fail(str(exc))
+                    tui.post("assistant", "× " + _friendly_error(exc, locale))
+                    tui.post("status", "ready")
+            threading.Thread(target=worker, daemon=True).start()
+        try:
+            tui.run(tui_submit)
+        finally:
+            runtime.stop()
+        return 0
 
     try:
         while True:

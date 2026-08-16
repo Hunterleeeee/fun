@@ -54,7 +54,10 @@ class TerminalUiState:
     def add_assistant(self, text: str) -> None:
         if not text:
             return
-        self.transcript.append(TranscriptItem("assistant", text))
+        if self.transcript and self.transcript[-1].role == "assistant":
+            self.transcript[-1].text += text
+        else:
+            self.transcript.append(TranscriptItem("assistant", text))
 
     def tool_status(self, kind: str, payload: dict[str, Any]) -> ToolCard | None:
         call_id = str(payload.get("call_id", ""))
