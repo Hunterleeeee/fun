@@ -8,8 +8,10 @@ import shlex
 import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .policy import Policy, PolicyError, Risk, WorkspaceGuard
 
@@ -112,7 +114,7 @@ class Tools:
         diff = "".join(difflib.unified_diff(old_text.splitlines(True), new_text.splitlines(True), fromfile=path, tofile=path))
         return ToolResult(True, diff, Risk.MEDIUM, changed=[path])
 
-    def exec(self, command: str, timeout: float = 120.0) -> ToolResult:
+    def exec(self, command: str, timeout: float = 120.0, on_progress: Callable[[float], None] | None = None) -> ToolResult:
         risk = self.policy.risk_for("exec")
         safe_env = {key: os.environ[key] for key in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR") if key in os.environ}
         safe_env["PWD"] = str(self.guard.root)
@@ -165,7 +167,20 @@ class Tools:
         try:
             completed = subprocess.Popen(argv, **popen_options)
             try:
-                stdout, stderr = completed.communicate(timeout=timeout)
+                if timeout < 1.0:
+                    stdout, stderr = completed.communicate(timeout=timeout)
+                else:
+                    deadline = time.monotonic() + timeout
+                    while True:
+                        remaining = max(0.0, deadline - time.monotonic())
+                        try:
+                            stdout, stderr = completed.communicate(timeout=min(1.0, remaining))
+                            break
+                        except subprocess.TimeoutExpired:
+                            if on_progress is not None:
+                                on_progress(time.monotonic() - (deadline - timeout))
+                            if remaining <= 0:
+                                raise
             except subprocess.TimeoutExpired:
                 if sys.platform == "win32":
                     completed.kill()

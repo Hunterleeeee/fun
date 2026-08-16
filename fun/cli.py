@@ -326,10 +326,12 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"\n{t(locale, 'tool_running').format(name=payload.get('name', 'tool'))}", flush=True)
                     elif kind == "approval.pending":
                         print(t(locale, "approval_wait"), flush=True)
+                    elif kind == "tool.progress":
+                        print(f"  {payload.get('name', 'tool')} · {payload.get('elapsed_ms', 0)}ms", flush=True)
                     elif kind == "tool.completed":
                         print(f"✓ ({payload.get('elapsed_ms', 0)}ms)", flush=True)
                     elif kind == "tool.failed":
-                        print(f"× ({payload.get('elapsed_ms', 0)}ms)", flush=True)
+                        print(f"× ({payload.get('elapsed_ms', 0)}ms) · try /retry", flush=True)
                 output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True), on_status=status)
                 runtime.complete(output)
                 print()

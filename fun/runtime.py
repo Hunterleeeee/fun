@@ -407,6 +407,8 @@ class Runtime:
         if on_status is not None:
             on_status("tool.executing", {"call_id": call_id, "name": name})
         try:
+            if name == "exec":
+                kwargs["on_progress"] = lambda elapsed: on_status("tool.progress", {"call_id": call_id, "name": name, "elapsed_ms": int(elapsed * 1000)}) if on_status is not None else None
             result = method(**kwargs)
         except Exception as exc:
             self.emit("tool.failed", self.task.id, name=name, error_type=type(exc).__name__, error_tag="TOOL_EXECUTION_FAILED")
