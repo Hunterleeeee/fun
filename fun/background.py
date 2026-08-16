@@ -15,6 +15,8 @@ class BackgroundTask:
     id: str
     goal: str
     kind: str = "subagent"
+    parent_task_id: str | None = None
+    run_id: str = field(default_factory=lambda: f"run_{uuid4().hex[:12]}")
     status: str = "created"
     result: Any = None
     error: str | None = None
@@ -27,23 +29,24 @@ class BackgroundTaskManager:
 
     def __init__(self, emit: Emit) -> None:
         self._emit = emit
+        self._cancelled_events: set[str] = set()
         self._tasks: dict[str, BackgroundTask] = {}
         self._lock = Lock()
 
-    def spawn(self, goal: str, worker: Worker, kind: str = "subagent") -> BackgroundTask:
+    def spawn(self, goal: str, worker: Worker, kind: str = "subagent", parent_task_id: str | None = None) -> BackgroundTask:
         if not isinstance(goal, str) or not goal.strip():
             raise ValueError("EMPTY_BACKGROUND_GOAL")
         if not callable(worker):
             raise TypeError("BACKGROUND_WORKER_REQUIRED")
-        task = BackgroundTask(f"bg_{uuid4().hex[:12]}", goal.strip(), kind=kind)
+        task = BackgroundTask(f"bg_{uuid4().hex[:12]}", goal.strip(), kind=kind, parent_task_id=parent_task_id)
         with self._lock:
             self._tasks[task.id] = task
-        self._emit("background.task.created", task.id, {"goal": task.goal, "kind": task.kind})
+        self._emit("background.task.created", task.id, {"goal": task.goal, "kind": task.kind, "parent_task_id": task.parent_task_id, "run_id": task.run_id})
 
         def run() -> None:
             with self._lock:
                 task.status = "running"
-            self._emit("background.task.started", task.id, {"kind": task.kind})
+            self._emit("background.task.started", task.id, {"kind": task.kind, "parent_task_id": task.parent_task_id, "run_id": task.run_id})
             try:
                 task.result = worker(task.goal, task.cancel_event)
                 with self._lock:
@@ -65,8 +68,12 @@ class BackgroundTaskManager:
         task = self.get(task_id)
         if task is None:
             raise RuntimeError("BACKGROUND_TASK_NOT_FOUND")
-        task.cancel_event.set()
-        self._emit("background.task.cancel_requested", task.id, {"kind": task.kind})
+        with self._lock:
+            if task.cancel_event.is_set() or task.status in {"cancelled", "completed", "failed"}:
+                return
+            task.cancel_event.set()
+            self._cancelled_events.add(task.id)
+        self._emit("background.task.cancel_requested", task.id, {"kind": task.kind, "run_id": task.run_id})
 
     def get(self, task_id: str) -> BackgroundTask | None:
         with self._lock:

@@ -208,7 +208,7 @@ class Runtime:
     def spawn_agent(self, goal: str, worker: Callable[[str, Any], Any]) -> BackgroundTask:
         if self._closed:
             raise RuntimeError("RUNTIME_CLOSED")
-        return self.background.spawn(goal, worker, kind="subagent")
+        return self.background.spawn(goal, worker, kind="subagent", parent_task_id=self.task.id if self.task else None)
 
     def background_tasks(self) -> list[BackgroundTask]:
         return self.background.list()

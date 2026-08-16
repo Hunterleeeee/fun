@@ -22,6 +22,8 @@ class BackgroundTaskTests(unittest.TestCase):
             task.thread.join(2)
             self.assertEqual(task.status, "completed")
             self.assertEqual(task.result, "INSPECT")
+            self.assertEqual(task.parent_task_id, runtime.task.id)
+            self.assertTrue(task.run_id.startswith("run_"))
             events = runtime.events.list(runtime.session_id)
             types = [event.type for event in events]
             self.assertIn("background.task.created", types)
