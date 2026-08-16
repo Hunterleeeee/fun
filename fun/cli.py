@@ -426,9 +426,35 @@ def main(argv: list[str] | None = None) -> int:
                 return
             if text == "/clear":
                 tui.state.transcript.clear()
+                tui.set_status("ready")
+                return
+            if text == "/usage":
+                tui.set_status(runtime.usage.summary())
+                return
+            if text == "/plan":
+                tui.append_assistant(renderer.plan(runtime.task.plan if runtime.task else [], runtime.task.plan_status if runtime.task else []))
+                return
+            if text == "/pause":
+                runtime.pause()
+                tui.set_status("paused")
+                return
+            if text == "/resume":
+                runtime.resume()
+                tui.set_status("ready")
+                return
+            if text == "/stop":
+                runtime.stop()
+                tui.set_status("stopped")
+                return
+            if text.startswith("/cancel "):
+                try:
+                    runtime.cancel_background_task(text.split(maxsplit=1)[1].strip())
+                    tui.set_status("cancellation requested")
+                except RuntimeError as exc:
+                    tui.append_assistant("× " + str(exc))
                 return
             if text.startswith("/"):
-                tui.set_status("Use the legacy command shell for configuration and recovery commands.")
+                tui.append_assistant(t(locale, "unknown_command"))
                 return
             def worker() -> None:
                 try:
