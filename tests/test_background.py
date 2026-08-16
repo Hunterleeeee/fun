@@ -31,6 +31,16 @@ class BackgroundTaskTests(unittest.TestCase):
             self.assertIn("background.task.completed", types)
             runtime.stop()
 
+    def test_background_status_has_safe_owned_fields(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, state_dir=directory)
+            runtime.create_task("parent")
+            task = runtime.spawn_agent("status check", lambda goal, cancel: "done")
+            task.thread.join(2)
+            status = [(item.id, item.status, item.goal, item.result, item.error) for item in runtime.background.list()]
+            self.assertEqual(status[0][1:], ("completed", "status check", "done", None))
+            runtime.stop()
+
     def test_cancel_background_task_is_cooperative(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)

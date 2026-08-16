@@ -513,6 +513,13 @@ def main(argv: list[str] | None = None) -> int:
                     print("! " + t(locale, "task_failed").format(reason=runtime.task.failure_reason[:240]))
                 if runtime.task and runtime.task.result is not None:
                     print(f"result: {runtime.task.result[:240]}")
+                background = runtime.background.list()
+                if background:
+                    print("background:")
+                    for item in background:
+                        result = str(item.result)[:120] if item.result is not None else ""
+                        detail = result or (item.error or "")
+                        print(f"  {item.id} {item.status} · {item.goal[:80]}" + (f" · {detail}" if detail else ""))
                 print(runtime.usage.summary())
                 continue
             if text == "/usage":
