@@ -29,6 +29,9 @@ TEXT = {
         "provider_timeout": "The provider timed out. Try again, or choose a faster model with /model.",
         "provider_bad_response": "The provider returned an invalid response. Check the selected model with /model.",
         "tool_timeout": "Tool timed out after {elapsed_ms}ms. Check /status, then decide whether to continue.",
+        "pending_tool": "Pending tool: {name} · call {call_id}",
+        "recovery_actions": "Recovery actions: /recover discard | /recover mark_failed | /recover resume | /recover stop",
+        "task_failed": "Task failed: {reason}",
     },
     "zh-CN": {
         "commands_hint": "输入消息 · 输入 / 浏览命令 · ↑↓ 选择 · Ctrl+C 取消",
@@ -58,6 +61,9 @@ TEXT = {
         "provider_timeout": "Provider 请求超时。请重试，或用 /model 选择更快的模型。",
         "provider_bad_response": "Provider 返回了无效响应。请用 /model 检查当前模型。",
         "tool_timeout": "工具运行超过 {elapsed_ms}ms 后超时。请用 /status 查看详情，再决定是否继续。",
+        "pending_tool": "等待中的工具：{name} · call {call_id}",
+        "recovery_actions": "恢复操作：/recover discard · /recover mark_failed · /recover resume · /recover stop",
+        "task_failed": "任务失败：{reason}",
     },
 }
 

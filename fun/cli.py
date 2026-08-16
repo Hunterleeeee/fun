@@ -414,15 +414,15 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"session={runtime.session_id} task={status} agent={agent_state} policy={runtime.policy.mode.value}")
                 if recovery:
                     pending = runtime.recovery_summary() or {}
-                    print(f"! recovery required: {recovery} · {pending.get('name', 'unknown tool')} · call={pending.get('call_id', '?')}")
+                    print("! " + t(locale, "pending_tool").format(name=pending.get("name", "unknown tool"), call_id=pending.get("call_id", "?")))
                     print(f"  args: {pending.get('arguments', {})}")
-                    print("  action: /recover discard | /recover mark_failed | /recover resume | /recover stop")
+                    print(t(locale, "recovery_actions"))
                 if runtime.task and runtime.task.plan_error:
                     print(f"! plan rejected: {runtime.task.plan_error}")
                     if runtime.task.plan_error_summary:
                         print(f"  proposal: {runtime.task.plan_error_summary}")
                 if runtime.task and runtime.task.failure_reason:
-                    print(f"! failed: {runtime.task.failure_reason[:240]}")
+                    print("! " + t(locale, "task_failed").format(reason=runtime.task.failure_reason[:240]))
                 if runtime.task and runtime.task.result is not None:
                     print(f"result: {runtime.task.result[:240]}")
                 print(runtime.usage.summary())
