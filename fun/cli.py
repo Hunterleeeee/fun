@@ -35,13 +35,35 @@ def _choose_model(base_url: str, api_key: str, current: str = "", locale: str = 
         print("Provider returned no models.")
         return input(f"Model ID [{current}] (manual fallback) ❯ ").strip() or current or None
     print(t(locale, "choose_model"))
-    for index, model_id in enumerate(models, 1):
-        print(f"  [{index}] {model_id}")
+    if termios is None or tty is None or not sys.stdin.isatty():
+        for index, model_id in enumerate(models, 1):
+            print(f"  [{index}] {model_id}")
+        while True:
+            choice = input(f"Choose model [1-{len(models)}] ❯ ").strip()
+            if choice.isdigit() and 1 <= int(choice) <= len(models):
+                return models[int(choice) - 1]
+            print("Enter a model number, or use Ctrl-C to cancel.")
+    index = 0
     while True:
-        choice = input(f"Choose model [1-{len(models)}] ❯ ").strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(models):
-            return models[int(choice) - 1]
-        print("Enter a model number, or use Ctrl-C to cancel.")
+        print("\033[2J\033[H", end="")
+        print(t(locale, "choose_model") + "\n")
+        for i, model_id in enumerate(models):
+            print(f"{'❯' if i == index else ' '} {model_id}")
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setcbreak(fd)
+            key = sys.stdin.read(1)
+            if key in {"\n", "\r"}:
+                return models[index]
+            if key == "\x1b" and sys.stdin.read(1) == "[":
+                code = sys.stdin.read(1)
+                if code == "A": index = (index - 1) % len(models)
+                elif code == "B": index = (index + 1) % len(models)
+            elif key == "k": index = (index - 1) % len(models)
+            elif key == "j": index = (index + 1) % len(models)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
 def _secret_input(prompt: str) -> str | None:
@@ -290,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(renderer.help())
                 continue
             if text in {"/config", "/setup"}:
-                print("Run `fun --configure` to configure provider, model, and credentials.")
+                print(t(locale, "configure"))
                 continue
             if text == "/logout":
                 saved.clear_credentials(config_path)
@@ -298,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("✓ " + t(locale, "removed"))
                 continue
             if text == "/permissions":
-                print("Permission mode: [1] ask  [2] smart  [3] auto")
+                print(t(locale, "permission") + ": " + t(locale, "permission_options"))
                 args.approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), args.approval)
                 runtime.policy.mode = args.approval
                 print(f"✓ permission mode: {args.approval}")
