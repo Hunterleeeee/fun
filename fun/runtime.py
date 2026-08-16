@@ -70,6 +70,8 @@ class Runtime:
         self._tool_calls = 0
         self._telemetry_sent = False
         self._task_started_at: float | None = None
+        self._model_step_started: float | None = None
+        self._model_step_first_token: float | None = None
         self._closed = False
         self._state_dir = Path(state_dir) if state_dir is not None else None
         self.background = BackgroundTaskManager(self._emit_background)
@@ -478,7 +480,10 @@ class Runtime:
         if not self.provider or not self.task:
             raise RuntimeError("PROVIDER_NOT_CONFIGURED")
         self._ensure_running()
+        self._model_step_started = time.monotonic()
+        self._model_step_first_token = None
         self._node("model.requested")
+        self.emit("model.step_started", self.task.id)
         try:
             return self.provider.stream(self._model_messages(), tool_schemas())
         except Exception as exc:
@@ -523,6 +528,9 @@ class Runtime:
                     stats["chunk_types"].append(chunk_type)
             if chunk.get("_meta", {}).get("ttft_ms") is not None:
                 self.usage.ttft_ms = int(chunk["_meta"]["ttft_ms"])
+                if self._model_step_first_token is None and self._model_step_started is not None:
+                    self._model_step_first_token = time.monotonic()
+                    self.emit("model.first_token", self.task.id, ttft_ms=self.usage.ttft_ms)
             if isinstance(chunk.get("usage"), dict):
                 self.usage.merge_provider(chunk["usage"], self.usage.ttft_ms)
             if isinstance(chunk.get("plan"), list):
@@ -603,7 +611,11 @@ class Runtime:
             if not calls:
                 if content:
                     self.task.messages.append({"role": "assistant", "content": content})
-                self.emit("model.completed", self.task.id, text=content, usage=self.usage.as_dict())
+                timing = {
+                    "step_ms": None if self._model_step_started is None else int((time.monotonic() - self._model_step_started) * 1000),
+                    "ttft_ms": self.usage.ttft_ms,
+                }
+                self.emit("model.completed", self.task.id, text=content, usage=self.usage.as_dict(), timing=timing)
                 self.task.model_error = None
                 return final_text
             self.task.messages.append({"role": "assistant", "content": content or None, "tool_calls": calls})
