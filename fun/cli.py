@@ -414,6 +414,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if provider and sys.stdin.isatty() and termios is not None and tty is not None:
         tui = TerminalUI(locale=locale, commands=["/help", "/status", "/usage", "/plan", "/pause", "/resume", "/cancel", "/clear", "/stop", "/exit"])
+        tui.state.model_name = runtime.model
+        tui.state.approval_mode = runtime.policy.mode.value
+        tui.state.task_state = runtime.task.status if runtime.task else "idle"
         if runtime.task and runtime.task.messages:
             tui.state.restore_messages(runtime.task.messages)
         if runtime.task and runtime.task.status == "recovery_required":

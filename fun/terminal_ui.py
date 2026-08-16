@@ -51,6 +51,9 @@ class TerminalUiState:
     composer: str = ""
     mode: str = "ready"
     status_text: str = ""
+    model_name: str = ""
+    task_state: str = "idle"
+    approval_mode: str = "smart"
     transcript: list[TranscriptItem] = field(default_factory=list)
     tools: dict[str, ToolCard] = field(default_factory=dict)
     composer_history: list[str] = field(default_factory=list)
@@ -141,8 +144,13 @@ class TerminalUiState:
                 if card.error:
                     lines.append(f"│ × {card.error}")
                 lines.append("└")
+        status = f"{self.task_state}"
+        if self.model_name:
+            status += f" · model={self.model_name}"
+        status += f" · approval={self.approval_mode}"
         if self.status_text:
-            lines.append(f"· {self.status_text}")
+            status += f" · {self.status_text}"
+        lines.append(f"· {status}")
         lines.append("─" * min(width, 88))
         lines.append(f"{'> ' if self.mode == 'ready' else '… '}" + self.composer)
         return "\n".join(lines)

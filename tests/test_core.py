@@ -615,6 +615,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("README.md", rendered)
         self.assertIn("Done", rendered)
         self.assertTrue(rendered.endswith("> "))
+        self.assertIn("approval=smart", rendered)
         self.assertEqual(ui.history(-1), "inspect the project")
         self.assertEqual(ui.history(1), "")
         scroll_ui = TerminalUiState()
