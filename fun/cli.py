@@ -96,7 +96,7 @@ def _secret_input(prompt: str) -> str | None:
     try:
         return getpass.getpass(prompt).strip()
     except (EOFError, KeyboardInterrupt):
-        print("\nConfiguration cancelled.", file=sys.stderr)
+        print("\n" + t("en-US", "cancel_status"), file=sys.stderr)
         return None
 
 
