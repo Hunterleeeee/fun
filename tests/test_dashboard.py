@@ -38,6 +38,7 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(snapshot["session_usage"][1]["tool_calls"], 1)
             self.assertEqual(snapshot["tool_calls"], 1)
             self.assertEqual(snapshot["completed"], 1)
+            store.close()
 
 
 if __name__ == "__main__":

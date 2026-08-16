@@ -56,7 +56,7 @@ class Runtime:
         elif state_dir is not None:
             self.events = EventStore(SQLiteEventStore(Path(state_dir) / "events.db"))
         else:
-            self.events = EventStore(SQLiteEventStore(Path(workspace).expanduser() / ".fun" / "events.db"))
+            self.events = EventStore()
         self.workspace = Path(workspace).expanduser().resolve()
         self.policy = Policy(ApprovalMode(approval))
         self.tools = Tools(workspace, self.policy)
@@ -71,11 +71,11 @@ class Runtime:
         self._telemetry_sent = False
         self._task_started_at: float | None = None
         self._closed = False
-        self._state_dir = Path(state_dir) if state_dir is not None else Path(workspace).expanduser() / ".fun"
+        self._state_dir = Path(state_dir) if state_dir is not None else None
         self.background = BackgroundTaskManager(self._emit_background)
 
     def _reopen_if_needed(self) -> None:
-        if self._closed and isinstance(getattr(self.events, "_durable", None), SQLiteEventStore):
+        if self._closed and self._state_dir is not None and isinstance(getattr(self.events, "_durable", None), SQLiteEventStore):
             self.events = EventStore(SQLiteEventStore(self._state_dir / "events.db"))
             self._closed = False
 
