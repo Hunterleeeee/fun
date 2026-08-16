@@ -16,8 +16,8 @@ from fun.tools import Tools, file_hash
 from fun.usage import Usage
 
 
-PYTHON_OK = f'"{sys.executable}" -c "pass"'
-PYTHON_FAIL = f'"{sys.executable}" -c "raise SystemExit(1)"'
+PYTHON_OK = "python -c \"pass\""
+PYTHON_FAIL = "python -c \"raise SystemExit(1)\""
 
 
 def runtime_usage_summary():
