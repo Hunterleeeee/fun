@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from .events import Event
+from .events import Event, advance_event_seq
 
 
 class SQLiteEventStore:
@@ -28,6 +28,8 @@ class SQLiteEventStore:
         self.connection.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, seq)")
         self.connection.execute("CREATE INDEX IF NOT EXISTS idx_events_command ON events(command_key)")
         self.connection.commit()
+        row = self.connection.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
+        advance_event_seq(int(row[0]) + 1)
 
     def begin(self) -> None:
         self.connection.execute("BEGIN")

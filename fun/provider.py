@@ -174,14 +174,14 @@ class OpenAICompatible:
         except urllib.error.HTTPError as exc:
             tag = "PROVIDER_AUTH_FAILED" if exc.code in {401, 403} else "PROVIDER_HTTP_FAILED"
             raise ProviderError(tag, cause=exc) from exc
+        except urllib.error.URLError as exc:
+            raise ProviderError("PROVIDER_NETWORK_FAILED", cause=exc) from exc
         except OSError as exc:
             status = getattr(exc, "code", getattr(exc, "status", None))
             if status is not None:
                 tag = "PROVIDER_AUTH_FAILED" if status in {401, 403} else "PROVIDER_HTTP_FAILED"
                 raise ProviderError(tag, cause=exc) from exc
             raise ProviderError("PROVIDER_REQUEST_FAILED", cause=exc) from exc
-        except urllib.error.URLError as exc:
-            raise ProviderError("PROVIDER_NETWORK_FAILED", cause=exc) from exc
         except Exception as exc:
             raise ProviderError("PROVIDER_REQUEST_FAILED", cause=exc) from exc
 

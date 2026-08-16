@@ -122,6 +122,12 @@ class Tools:
             return ToolResult(False, f"INVALID_COMMAND: {exc}", risk)
         if not argv:
             return ToolResult(False, "INVALID_COMMAND: empty command", risk)
+        if Path(argv[0]).name in {"bash", "sh", "zsh", "fish", "cmd", "powershell", "pwsh"} and len(argv) >= 3 and argv[1] in {"-c", "/c"}:
+            return ToolResult(False, "CRITICAL_WRAPPER_BLOCKED", Risk.CRITICAL)
+        if Path(argv[0]).name in {"python", "python3", "python.exe", "python3.exe"} and "-c" in argv[1:]:
+            code = argv[argv.index("-c") + 1]
+            if any(token in code.lower() for token in ("os.remove", "shutil.rmtree", "subprocess", "unlink", "rmtree")):
+                return ToolResult(False, "CRITICAL_SCRIPT_BLOCKED", Risk.CRITICAL)
         if argv[0] == "python3" and sys.platform == "win32":
             argv[0] = sys.executable
         executable = Path(argv[0]).name

@@ -19,6 +19,13 @@ def next_event_seq() -> int:
         return seq
 
 
+def advance_event_seq(minimum: int) -> None:
+    global _next_event_seq
+    with _event_seq_lock:
+        if minimum > _next_event_seq:
+            _next_event_seq = minimum
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
