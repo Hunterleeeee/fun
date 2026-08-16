@@ -443,24 +443,33 @@ class Runtime:
         if not self.task or self.task.status != "running":
             raise RuntimeError("TASK_NOT_RUNNING")
 
-    def _model_messages(self, max_chars: int = 60000) -> list[dict[str, Any]]:
+    def _model_messages(self, max_chars: int = 32000, max_item_chars: int = 12000) -> list[dict[str, Any]]:
         """Keep requests bounded while preserving the system prompt and latest turn."""
         if not self.task:
             return []
         messages = self.task.messages
-        if sum(len(str(item.get("content", ""))) for item in messages) <= max_chars:
-            return messages
-        head = messages[:2]
+        normalized: list[dict[str, Any]] = []
+        item_trimmed = False
+        for item in messages:
+            content = item.get("content")
+            if isinstance(content, str) and len(content) > max_item_chars:
+                item = dict(item)
+                item["content"] = content[:max_item_chars] + "\n[output truncated for context]"
+                item_trimmed = True
+            normalized.append(item)
+        if sum(len(str(item.get("content", ""))) for item in normalized) <= max_chars and not item_trimmed:
+            return normalized
+        head = normalized[:2]
         tail: list[dict[str, Any]] = []
         size = sum(len(str(item.get("content", ""))) for item in head)
-        for item in reversed(messages[2:]):
+        for item in reversed(normalized[2:]):
             item_size = len(str(item.get("content", "")))
             if tail and size + item_size > max_chars:
                 break
             tail.append(item)
             size += item_size
         tail.reverse()
-        self.emit("context.compacted", self.task.id, original_messages=len(messages), retained_messages=len(head) + len(tail), max_chars=max_chars)
+        self.emit("context.compacted", self.task.id, original_messages=len(messages), retained_messages=len(head) + len(tail), max_chars=max_chars, max_item_chars=max_item_chars, item_trimmed=item_trimmed)
         return head + tail
 
     def request_model(self) -> Any:

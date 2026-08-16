@@ -75,7 +75,7 @@ class AgentLoopTests(unittest.TestCase):
             runtime.create_task("compact")
             runtime.task.messages = [{"role": "system", "content": "system"}] + [{"role": "user", "content": "x" * 20000} for _ in range(5)]
             list(runtime.request_model())
-            self.assertLessEqual(sum(len(str(item.get("content", ""))) for item in provider.messages), 60000)
+            self.assertLessEqual(sum(len(str(item.get("content", ""))) for item in provider.messages), 32000)
             self.assertIn("context.compacted", [event.type for event in runtime.events.list()])
 
     def test_local_sse_provider_smoke_script(self):
