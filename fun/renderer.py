@@ -37,13 +37,13 @@ class TerminalRenderer:
 
     def welcome(self, configured: bool, workspace: str = "") -> str:
         if configured:
-            return "命令：/help  /status  /plan  /usage  /checkpoint  /quit" if self.zh else "Commands: /help  /status  /plan  /usage  /checkpoint  /quit"
+            return "命令：/help  /config  /model  /permissions  /status  /plan  /usage  /logout  /exit" if self.zh else "Commands: /help  /config  /model  /permissions  /status  /plan  /usage  /logout  /exit"
         if self.zh:
             return "\n".join(["╭─ 欢迎使用 Fun ────────────────────────────────────────────╮", "│ 你的终端 Coding 工作区。                                  │", f"│ {workspace[:57]:<57}│", "│                                                            │", "│  [1] OpenAI                                                │", "│  [2] OpenAI-compatible / 自定义 Provider                  │", "│  [3] 使用环境变量                                          │", "│  [4] 先进入离线模式                                        │", "│  [q] 退出                                                  │", "╰─────────────────────────────────────────────────────────────╯"])
         return "\n".join(["╭─ WELCOME TO FUN ──────────────────────────────────────────╮", "│ Your terminal coding workspace.                            │", f"│ {workspace[:57]:<57}│", "│                                                             │", "│  [1] OpenAI                                                │", "│  [2] OpenAI-compatible / custom provider                  │", "│  [3] Use environment variables                             │", "│  [4] Continue in offline mode                              │", "│  [q] Exit                                                  │", "╰─────────────────────────────────────────────────────────────╯"])
 
     def setup_complete(self) -> str:
-        return "✓ 配置已保存 · API key 不会写入配置 · 请重新启动 fun" if self.zh else "✓ Setup saved · API key stays out of config · restart `fun` to begin"
+        return "✓ 配置已保存 · API Key 已安全保存 · 当前会话已生效" if self.zh else "✓ Setup saved · API key is stored securely · active in this session"
 
     def help(self) -> str:
         if self.zh:
