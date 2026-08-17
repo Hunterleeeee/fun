@@ -151,10 +151,10 @@ class TerminalUiState:
         for item in visible:
             if item.role == "user":
                 lines.append("")
-                lines.append("You")
+                lines.append("┌ You")
                 lines.extend(textwrap.wrap(f"› {item.text}", width=max(20, width - 2), replace_whitespace=False) or ["› "])
             elif item.role in {"assistant", "system"}:
-                lines.append("Assistant" if item.role == "assistant" else "System")
+                lines.append("┌ Assistant" if item.role == "assistant" else "┌ System")
                 for paragraph in (item.text.splitlines() or [""]):
                     lines.extend(textwrap.wrap(paragraph, width=width, replace_whitespace=False) or [""])
             elif item.tool is not None:
@@ -188,7 +188,7 @@ class TerminalUiState:
             extras.append(token)
         if extras:
             status += " · " + " ".join(dict.fromkeys(extras))
-        lines.append(f"· {status}")
+        lines.append(f"Status  {status}")
         for task in self.background:
             detail = task.get("result") or task.get("error") or ""
             suffix = f" · {detail}" if detail else ""

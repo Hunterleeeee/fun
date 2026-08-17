@@ -163,11 +163,11 @@ class TerminalUI:
                 options = self.modal["options"]
                 index = int(self.modal["index"])
                 choices = "\n".join(("│ ❯ " if i == index else "│   ") + item for i, item in enumerate(options))
-                frame += "\n\n┌ " + self.modal["title"] + " ┐\n" + choices + "\n│ ↑↓ choose · Enter accept · Esc cancel\n└────────────────────────┘"
+                frame += "\n\n╭─ " + self.modal["title"] + " " + "─" * 24 + "╮\n" + choices + "\n│ ↑↓ choose · Enter accept · Esc cancel\n╰" + "─" * 38 + "╯"
             else:
                 field, secret = self.modal["fields"][int(self.modal["index"])]
                 shown = "•" * len(self.modal["value"]) if secret else self.modal["value"]
-                frame += "\n\n┌ " + self.modal["title"] + " ┐\n│ " + field + ": " + shown + "\n│ Enter next · Ctrl-N newline · Esc cancel\n└────────────────────────┘"
+                frame += "\n\n╭─ " + self.modal["title"] + " " + "─" * 24 + "╮\n│ " + field + ": " + shown + "\n│ Enter next · Ctrl-N newline · Esc cancel\n╰" + "─" * 38 + "╯"
         return "\033[2J\033[H" + frame
 
     def _draw(self) -> None:
