@@ -634,6 +634,11 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn("line-0", scroll_ui.render())
         ui.tool_status("tool.failed", {"call_id": "c1", "name": "read", "error": "permission denied"})
         self.assertIn("permission denied", ui.render())
+        from io import StringIO
+        modal_ui = TerminalUI(output=StringIO())
+        modal_ui.open_modal("Provider configuration", ["base_url", "model"], lambda values: None)
+        modal_ui._last_size = (88, 24)
+        self.assertIn("Provider configuration", modal_ui._frame())
         ui.set_recovery({"name": "exec", "call_id": "c9", "arguments": "command='echo hi'"})
         recovery_text = ui.render()
         self.assertIn("[r] resume", recovery_text)
