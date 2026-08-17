@@ -171,12 +171,14 @@ class TerminalUiState:
             lines.append(f"│ args={self.recovery.get('arguments', '')}")
             lines.append("│ [r] resume · [d] discard · [f] mark failed · [s] stop")
             lines.append("└")
-        extra = self.status_text
-        if self.model_name:
-            extra = extra.replace(f"model={self.model_name}", "").replace(" ·  · ", " · ").strip(" ·")
-        extra = extra.replace(f"approval={self.approval_mode}", "").replace(f"model={self.model_name}", "").replace(" ·  · ", " · ").strip(" ·")
-        if extra and extra != self.task_state:
-            status += f" · {extra}"
+        extras = []
+        raw_status = self.status_text.replace("·", " ")
+        for token in raw_status.split():
+            if token.startswith(("model=", "approval=", "task=")) or token == self.task_state:
+                continue
+            extras.append(token)
+        if extras:
+            status += " · " + " ".join(extras)
         lines.append(f"· {status}")
         for task in self.background:
             detail = task.get("result") or task.get("error") or ""
