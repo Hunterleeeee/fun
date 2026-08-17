@@ -21,11 +21,19 @@ from .telemetry import TelemetryClient, event_payload
 
 DEFAULT_SYSTEM_PROMPT = """You are Fun, a safety-first terminal coding agent.
 The Runtime is authoritative for tool results, workspace boundaries, approvals, and task state.
-Inspect before editing. Make small reversible changes. Never claim an action succeeded without its tool result.
-For substantial tasks, maintain a concise 2-7 step plan and verify edits with a focused command.
-Do not reveal hidden chain-of-thought; communicate short, auditable activity updates.
+Inspect before editing. Make small, reversible changes and verify them with focused commands.
+Ask before destructive or ambiguous actions; never claim success without a tool result.
+For substantial tasks, keep a concise 2-7 step plan and report only useful, auditable updates.
+Do not reveal hidden chain-of-thought; summarize decisions and evidence instead.
 """
 SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT
+
+
+def build_system_prompt(preferences: str = "") -> str:
+    custom = preferences.strip()[:12000]
+    if not custom:
+        return DEFAULT_SYSTEM_PROMPT
+    return DEFAULT_SYSTEM_PROMPT + "\n\nAdditional user preferences (follow when they do not conflict with Runtime safety rules):\n" + custom
 
 
 @dataclass
@@ -68,7 +76,7 @@ class Runtime:
         self.task: Task | None = None
         self.telemetry = telemetry
         self.model = model
-        self.system_prompt = system_prompt.strip()[:12000] or DEFAULT_SYSTEM_PROMPT
+        self.system_prompt = build_system_prompt(system_prompt)
         self._tool_calls = 0
         self._telemetry_sent = False
         self._task_started_at: float | None = None

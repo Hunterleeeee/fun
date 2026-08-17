@@ -434,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
                 tui.append_assistant(renderer.help())
                 return
             if text == "/prompt":
-                preview = runtime.system_prompt.replace("\n", " ").strip()
+                preview = saved.system_prompt.strip() or "(default Fun safety prompt)"
                 tui.append_assistant(f"System prompt: {preview[:500]}")
                 return
             if text.startswith("/prompt "):
