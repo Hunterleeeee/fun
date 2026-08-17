@@ -170,7 +170,7 @@ class TerminalUiState:
         extra = self.status_text
         if self.model_name:
             extra = extra.replace(f"model={self.model_name}", "").replace(" ·  · ", " · ").strip(" ·")
-        extra = extra.replace(f"approval={self.approval_mode}", "").replace(" ·  · ", " · ").strip(" ·")
+        extra = extra.replace(f"approval={self.approval_mode}", "").replace(f"model={self.model_name}", "").replace(" ·  · ", " · ").strip(" ·")
         if extra and extra != self.task_state:
             status += f" · {extra}"
         lines.append(f"· {status}")
