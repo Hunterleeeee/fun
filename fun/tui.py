@@ -62,7 +62,7 @@ class TerminalUI:
         self._dirty = True
 
     def open_select(self, title: str, options: list[str], callback: Callable[[str | None], None]) -> None:
-        self.modal = {"kind": "select", "title": title, "options": options, "index": "0"}
+        self.modal = {"kind": "select", "title": title, "options": options, "index": "0", "current": options[0] if options else ""}
         self.modal_callback = callback
         self._dirty = True
 
@@ -125,6 +125,9 @@ class TerminalUI:
             elif kind == "model_options" and self.modal and self.modal.get("kind") == "select":
                 options = [str(item) for item in (payload or []) if str(item)]
                 if options:
+                    current = self.modal.get("current")
+                    if current in options:
+                        options = [current] + [item for item in options if item != current]
                     self.modal["options"] = options
                     self.modal["index"] = "0"
                     self._dirty = True
