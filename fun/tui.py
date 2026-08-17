@@ -48,10 +48,17 @@ class TerminalUI:
         self._old_termios: list[Any] | None = None
         self._dirty = True
         self._last_size: tuple[int, int] | None = None
+        self.modal: dict[str, Any] | None = None
+        self.modal_callback: Callable[[dict[str, str] | None], None] | None = None
 
     def post(self, kind: str, payload: Any = None) -> None:
         self._dirty = True
         self.events.put((kind, payload))
+
+    def open_modal(self, title: str, fields: list[str], callback: Callable[[dict[str, str] | None], None]) -> None:
+        self.modal = {"title": title, "fields": fields, "index": "0", "value": "", "values": {}}
+        self.modal_callback = callback
+        self._dirty = True
 
     def set_status(self, text: str) -> None:
         self.post("status", text)
@@ -133,7 +140,10 @@ class TerminalUI:
         if current != self._last_size:
             self._last_size = current
             self._dirty = True
-        return "\033[2J\033[H" + self.state.render(current[0], current[1])
+        frame = self.state.render(current[0], current[1])
+        if self.modal:
+            frame += "\n\n┌ " + self.modal["title"] + " ┐\n│ " + self.modal["fields"][int(self.modal["index"])] + ": " + self.modal["value"] + "\n│ Enter next · Ctrl-N newline · Esc cancel\n└────────────────────────┘"
+        return "\033[2J\033[H" + frame
 
     def _draw(self) -> None:
         self._consume()
@@ -183,6 +193,31 @@ class TerminalUI:
                 self._draw()
                 key = self._read_key(fd)
                 if key is None:
+                    continue
+                if self.modal is not None:
+                    if key == "escape":
+                        callback, self.modal = self.modal_callback, None
+                        self.modal_callback = None
+                        if callback: callback(None)
+                    elif key == "enter":
+                        fields = self.modal["fields"]
+                        index = int(self.modal["index"])
+                        self.modal["values"][fields[index]] = self.modal["value"]
+                        if index + 1 < len(fields):
+                            self.modal["index"] = str(index + 1)
+                            self.modal["value"] = ""
+                        else:
+                            values = dict(self.modal["values"])
+                            callback, self.modal = self.modal_callback, None
+                            self.modal_callback = None
+                            if callback: callback(values)
+                    elif key == "newline":
+                        self.modal["value"] += "\n"
+                    elif key == "backspace":
+                        self.modal["value"] = self.modal["value"][:-1]
+                    elif len(key) == 1 and key.isprintable():
+                        self.modal["value"] += key
+                    self._dirty = True
                     continue
                 if self._approval is not None:
                     if key in {"y", "a", "n"}:

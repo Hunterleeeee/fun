@@ -447,7 +447,21 @@ def main(argv: list[str] | None = None) -> int:
                 tui.set_status(f"approval={selected}")
                 return
             if text in {"/config", "/setup"}:
-                tui.append_assistant("Use /config before starting a TUI session; interactive credential forms cannot safely interrupt an active Composer.")
+                def apply_config(values: dict[str, str] | None) -> None:
+                    nonlocal base_url, model, provider
+                    if not values:
+                        tui.set_status("configuration cancelled")
+                        return
+                    base_url = values.get("base_url", base_url).strip() or base_url
+                    model = values.get("model", model).strip() or model
+                    saved.base_url, saved.model = base_url, model
+                    saved.save(config_path)
+                    if api_key and base_url and model:
+                        provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+                        runtime.provider, runtime.model = provider, model
+                    tui.state.model_name = model
+                    tui.set_status("configuration updated")
+                tui.open_modal("Provider configuration", ["base_url", "model"], apply_config)
                 return
             if text == "/model":
                 tui.append_assistant(f"Current model: {model}. Use /model <model-id> to switch without interrupting the Composer.")
