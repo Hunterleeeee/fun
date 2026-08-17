@@ -115,7 +115,8 @@ class TerminalUI:
             except queue.Empty:
                 return
             if kind == "user":
-                self.state.add_user(str(payload))
+                value = str(payload)
+                self.state.add_command(value) if value.startswith("/") else self.state.add_user(value)
             elif kind == "assistant":
                 self.state.add_assistant(str(payload))
             elif kind == "status":
@@ -181,7 +182,8 @@ class TerminalUI:
                 title = self.modal["title"][:max(8, modal_width - 5)]
                 value = self.modal["value"]
                 body = "\n".join("│ " + line[:modal_width - 4] for line in (value.splitlines() or [""]))
-                frame += "\n\n╭─ " + title + " " + "─" * max(0, modal_width - len(title) - 4) + "╮\n" + body + "\n│ Ctrl-N newline · Enter save · Esc cancel\n╰" + "─" * max(0, modal_width - 2) + "╯"
+                count = len(value)
+                frame += "\n\n╭─ " + title + " " + "─" * max(0, modal_width - len(title) - 4) + "╮\n" + body + f"\n│ {count}/12000 chars · Ctrl-N newline · Enter save · Esc cancel\n╰" + "─" * max(0, modal_width - 2) + "╯"
             else:
                 field, secret = self.modal["fields"][int(self.modal["index"])]
                 shown = "•" * len(self.modal["value"]) if secret else self.modal["value"]

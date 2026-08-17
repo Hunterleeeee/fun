@@ -58,6 +58,7 @@ class TranscriptItem:
     role: str
     text: str = ""
     tool: ToolCard | None = None
+    command: bool = False
 
 
 @dataclass
@@ -104,6 +105,11 @@ class TerminalUiState:
     def scroll(self, delta: int) -> int:
         self.scroll_offset = max(0, min(max(0, len(self.transcript) - 1), self.scroll_offset + delta))
         return self.scroll_offset
+
+    def add_command(self, text: str) -> None:
+        text = text.strip()
+        if text:
+            self.transcript.append(TranscriptItem("user", text, command=True))
 
     def add_user(self, text: str) -> None:
         text = text.strip()
@@ -172,6 +178,10 @@ class TerminalUiState:
         previous_role = ""
         for item in visible:
             if item.role == "user":
+                if item.command:
+                    lines.append(f"{ANSI.dim}⌘ {item.text}{ANSI.reset}")
+                    previous_role = "command"
+                    continue
                 if previous_role != "user":
                     lines.append("")
                     lines.append(f"{ANSI.bold}{ANSI.cyan}You{ANSI.reset}")
