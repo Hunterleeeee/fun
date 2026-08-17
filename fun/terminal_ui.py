@@ -7,6 +7,7 @@ of printing unrelated status lines from callbacks.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import textwrap
 from typing import Any
 
 
@@ -141,20 +142,23 @@ class TerminalUiState:
         visible = self.transcript[self.scroll_offset:] if self.scroll_offset else self.transcript
         for item in visible:
             if item.role == "user":
-                lines.append(f"› {item.text}")
+                lines.extend(textwrap.wrap(f"› {item.text}", width=max(20, width - 2), replace_whitespace=False) or ["› "])
             elif item.role in {"assistant", "system"}:
-                lines.extend(item.text.splitlines() or [""])
+                for paragraph in (item.text.splitlines() or [""]):
+                    lines.extend(textwrap.wrap(paragraph, width=width, replace_whitespace=False) or [""])
             elif item.tool is not None:
                 card = item.tool
                 args = " ".join(f"{k}={v!r}" for k, v in card.arguments.items())
                 detail = f" · {args}" if args else ""
                 timing = f" · {card.elapsed_ms}ms" if card.elapsed_ms is not None else ""
-                lines.append(f"┌ {card.name} · {card.status}{timing}{detail}")
+                header = f"┌ {card.name} · {card.status}{timing}{detail}"
+                lines.extend(textwrap.wrap(header, width=width, replace_whitespace=False) or [header[:width]])
                 if card.status == "approval":
                     risk = f" · risk={card.risk}" if card.risk else ""
                     lines.append(f"│ Approval required{risk} · [y] once · [a] this session · [n] deny")
                 if card.output:
-                    lines.append(f"│ {card.output.replace(chr(10), chr(10) + '│ ')[:500]}")
+                    for output_line in card.output[:500].splitlines() or [""]:
+                        lines.extend("│ " + line for line in (textwrap.wrap(output_line, width=max(10, width - 2), replace_whitespace=False) or [""]))
                 if card.error:
                     lines.append(f"│ × {card.error}")
                 lines.append("└")
@@ -179,7 +183,7 @@ class TerminalUiState:
             suffix = f" · {detail}" if detail else ""
             lines.append(f"  bg {task.get('id', '?')} · {task.get('status', '?')} · {task.get('goal', '')}{suffix}")
         lines.append("─" * min(width, 88))
-        lines.append("  Ctrl-N newline · Enter submit · Ctrl-C clear")
+        lines.extend(textwrap.wrap("  Ctrl-N newline · Enter submit · Ctrl-C clear", width=width, replace_whitespace=False) or [""])
         prompt = "> " if self.mode == "ready" else "… "
         draft_lines = self.composer.splitlines() or [""]
         lines.append(prompt + draft_lines[0])
