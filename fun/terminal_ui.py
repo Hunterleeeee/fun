@@ -223,7 +223,7 @@ class TerminalUiState:
             if len(compact) > 42:
                 compact = compact[:39] + "…"
             status += " · " + compact
-        lines[0] = f"{ANSI.bold}{ANSI.cyan}Fun  ·  {status}{ANSI.reset}"[:width]
+        lines[0] = f"{ANSI.bold}{ANSI.cyan}{('Fun  ·  ' + status)[:width]}{ANSI.reset}"
         for task in self.background:
             detail = task.get("result") or task.get("error") or ""
             suffix = f" · {detail}" if detail else ""
