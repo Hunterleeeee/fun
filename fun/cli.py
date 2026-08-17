@@ -448,7 +448,7 @@ def main(argv: list[str] | None = None) -> int:
                 tui.append_assistant(renderer.help())
                 return
             if text == "/prompt":
-                preview = saved.system_prompt.strip() or "(default Fun safety prompt)"
+                preview = saved.system_prompt.strip()
                 tui.open_prompt_modal("System prompt preferences", preview, lambda value: _apply_prompt(value, tui, runtime, saved, config_path))
                 return
             if text.startswith("/prompt "):
