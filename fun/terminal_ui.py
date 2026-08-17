@@ -175,10 +175,11 @@ class TerminalUiState:
                     lines.append(f"│ × {card.error}")
                 lines.append("  ─────────────────────────────────")
         if self.recovery:
-            lines.append(f"┌ recovery required · {self.recovery.get('name', 'tool')} · {self.recovery.get('call_id', '?')}")
-            lines.append(f"│ args={self.recovery.get('arguments', '')}")
-            lines.append("│ [r] resume · [d] discard · [f] mark failed · [s] stop")
-            lines.append("└")
+            lines.append("")
+            lines.append("⚠ Recovery required")
+            lines.append(f"  {self.recovery.get('name', 'tool')} · {self.recovery.get('call_id', '?')}")
+            lines.append(f"  args: {self.recovery.get('arguments', '')}")
+            lines.append("  [r] resume  [d] discard  [f] mark failed  [s] stop")
         extras = []
         raw_status = self.status_text.replace("·", " ")
         for token in raw_status.split():
@@ -191,14 +192,19 @@ class TerminalUiState:
         for task in self.background:
             detail = task.get("result") or task.get("error") or ""
             suffix = f" · {detail}" if detail else ""
+            marker = "✓" if task.get("status") == "completed" else "×" if task.get("status") == "failed" else "•"
+            lines.append(f"  {marker} background · {task.get('id', '?')} · {task.get('status', '?')} · {task.get('goal', '')}{suffix}")
             lines.append(f"  bg {task.get('id', '?')} · {task.get('status', '?')} · {task.get('goal', '')}{suffix}")
-        lines.append("─" * min(width, 88))
-        lines.extend(textwrap.wrap("  Ctrl-N newline · Enter submit · Ctrl-C clear", width=width, replace_whitespace=False) or [""])
+        lines.append("")
+        lines.append("╭─ Composer " + "─" * max(0, width - 14) + "╮")
         prompt = "> " if self.mode == "ready" else "… "
         draft_lines = self.composer.splitlines() or [""]
         lines.append(prompt + draft_lines[0])
         lines.extend("  " + line for line in draft_lines[1:])
+        lines.extend(textwrap.wrap("│ Ctrl-N newline · Enter submit/send · Ctrl-C clear · PgUp/PgDn scroll", width=width, replace_whitespace=False) or [""])
+        lines.append("╰" + "─" * max(0, width - 2) + "╯")
+        lines.append("> " if self.mode == "ready" else "… ")
         if height is not None and height > 4 and len(lines) > height:
-            fixed = len(draft_lines) + 2
+            fixed = len(draft_lines) + 4
             lines = lines[:max(1, height - fixed)] + lines[-fixed:]
         return "\n".join(lines)
