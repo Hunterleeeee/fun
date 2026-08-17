@@ -19,12 +19,13 @@ from .tools import ToolResult, Tools
 from .usage import Usage
 from .telemetry import TelemetryClient, event_payload
 
-SYSTEM_PROMPT = """You are Fun, a safety-first terminal coding agent.
+DEFAULT_SYSTEM_PROMPT = """You are Fun, a safety-first terminal coding agent.
 The Runtime is authoritative for tool results, workspace boundaries, approvals, and task state.
 Inspect before editing. Make small reversible changes. Never claim an action succeeded without its tool result.
 For substantial tasks, maintain a concise 2-7 step plan and verify edits with a focused command.
 Do not reveal hidden chain-of-thought; communicate short, auditable activity updates.
 """
+SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT
 
 
 @dataclass
@@ -49,7 +50,7 @@ class Task:
 
 
 class Runtime:
-    def __init__(self, workspace: str, approval: str = "smart", provider: OpenAICompatible | None = None, event_store: EventStore | None = None, state_dir: str | None = None, approve: Callable[[str, Risk], bool] | None = None, telemetry: TelemetryClient | None = None, model: str = "") -> None:
+    def __init__(self, workspace: str, approval: str = "smart", provider: OpenAICompatible | None = None, event_store: EventStore | None = None, state_dir: str | None = None, approve: Callable[[str, Risk], bool] | None = None, telemetry: TelemetryClient | None = None, model: str = "", system_prompt: str = "") -> None:
         self.session_id = f"ses_{uuid.uuid4().hex[:12]}"
         if event_store is not None:
             self.events = event_store
@@ -67,6 +68,7 @@ class Runtime:
         self.task: Task | None = None
         self.telemetry = telemetry
         self.model = model
+        self.system_prompt = system_prompt.strip()[:12000] or DEFAULT_SYSTEM_PROMPT
         self._tool_calls = 0
         self._telemetry_sent = False
         self._task_started_at: float | None = None
@@ -251,7 +253,7 @@ class Runtime:
         candidate.plan = self._initial_plan(goal)
         candidate.plan_status = ["pending"] * len(candidate.plan)
         candidate.agent_state = "planning"
-        candidate.messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": goal}]
+        candidate.messages = [{"role": "system", "content": self.system_prompt}, {"role": "user", "content": goal}]
         try:
             events = [
                 Event("task.created", self.session_id, candidate.id, {"goal": goal, "messages": candidate.messages}),

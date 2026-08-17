@@ -47,6 +47,7 @@ class FunConfig:
     locale: str = "en-US"
     telemetry: bool = False
     telemetry_endpoint: str = ""
+    system_prompt: str = ""
 
     @classmethod
     def load(cls, path: str | Path) -> "FunConfig":
@@ -54,7 +55,7 @@ class FunConfig:
         if not target.exists():
             return cls()
         data = json.loads(target.read_text(encoding="utf-8"))
-        allowed = {"base_url", "api_key", "model", "approval", "locale", "telemetry", "telemetry_endpoint"}
+        allowed = {"base_url", "api_key", "model", "approval", "locale", "telemetry", "telemetry_endpoint", "system_prompt"}
         loaded = cls(**{key: value for key, value in data.items() if key in allowed})
         loaded.api_key = os.getenv("FUN_API_KEY") or _keychain_get() or loaded.api_key
         if not loaded.api_key and data.get("api_key_store") == "macos-keychain":

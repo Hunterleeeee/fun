@@ -280,7 +280,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"× could not resume session: {exc}", file=sys.stderr)
             return 2
     else:
-        runtime = Runtime(args.workspace, approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model)
+        runtime = Runtime(args.workspace, approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model, system_prompt=saved.system_prompt)
     if args.goal:
         task = runtime.create_task(args.goal)
         print(f"Fun · {args.workspace}")
@@ -413,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
             runtime.stop()
 
     if provider and sys.stdin.isatty() and termios is not None and tty is not None:
-        tui = TerminalUI(locale=locale, commands=["/help", "/status", "/usage", "/plan", "/pause", "/resume", "/cancel", "/clear", "/stop", "/exit"])
+        tui = TerminalUI(locale=locale, commands=["/help", "/prompt", "/status", "/usage", "/plan", "/pause", "/resume", "/cancel", "/clear", "/stop", "/exit"])
         tui.state.model_name = runtime.model
         tui.state.approval_mode = runtime.policy.mode.value
         tui.state.task_state = runtime.task.status if runtime.task else "idle"
@@ -432,6 +432,17 @@ def main(argv: list[str] | None = None) -> int:
                 return
             if text == "/help":
                 tui.append_assistant(renderer.help())
+                return
+            if text == "/prompt":
+                preview = runtime.system_prompt.replace("\n", " ").strip()
+                tui.append_assistant(f"System prompt: {preview[:500]}")
+                return
+            if text.startswith("/prompt "):
+                value = text.split(" ", 1)[1].strip()
+                runtime.system_prompt = value[:12000]
+                saved.system_prompt = runtime.system_prompt
+                saved.save(config_path)
+                tui.set_status("system prompt updated")
                 return
             if text == "/status":
                 tui.set_status(f"task={runtime.task.status if runtime.task else 'idle'} · model={runtime.model}")

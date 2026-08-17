@@ -170,6 +170,8 @@ with Runtime(".", state_dir=".fun") as runtime:
 /goal         查看当前目标
 /goal <text>  设置目标
 /status       查看 task、agent、usage、recovery、后台任务和最近 timing
+/prompt       查看当前 system prompt
+/prompt TEXT  设置并持久化自定义 system prompt
 /plan         查看 PlanStep
 /diff         查看当前 diff
 /usage        查看 token / TTFT
