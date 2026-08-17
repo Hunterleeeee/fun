@@ -143,10 +143,9 @@ class TerminalUiState:
         if self.model_name:
             status += f" · {self.model_name}"
         status += f" · approval={self.approval_mode}"
-        header_text = f"Fun · {status}"
-        header_inner = max(0, width - 4)
-        header_text = header_text[:header_inner]
-        lines.append("╭─" + header_text + "─" * max(0, header_inner - len(header_text)) + "─╮")
+        header_text = f"Fun  ·  {status}"
+        lines.append(header_text[:width])
+        lines.append("─" * min(width, 72))
         visible = self.transcript[self.scroll_offset:] if self.scroll_offset else self.transcript
         if self.scroll_offset:
             lines.append(f"  ↑ older messages · offset {self.scroll_offset} · PgUp/PgDn to navigate")
@@ -156,10 +155,10 @@ class TerminalUiState:
         for item in visible:
             if item.role == "user":
                 lines.append("")
-                lines.append("┌ You")
+                lines.append("You")
                 lines.extend(textwrap.wrap(f"› {item.text}", width=max(20, width - 2), replace_whitespace=False) or ["› "])
             elif item.role in {"assistant", "system"}:
-                lines.append("┌ Assistant" if item.role == "assistant" else "┌ System")
+                lines.append("Assistant" if item.role == "assistant" else "System")
                 for paragraph in (item.text.splitlines() or [""]):
                     lines.extend(textwrap.wrap(paragraph, width=width, replace_whitespace=False) or [""])
             elif item.tool is not None:
@@ -178,7 +177,7 @@ class TerminalUiState:
                         lines.extend("  " + line for line in (textwrap.wrap(output_line, width=max(10, width - 2), replace_whitespace=False) or [""]))
                 if card.error:
                     lines.append(f"  × {card.error}")
-                lines.append("  ─────────────────────────────────")
+                lines.append("")
         if self.recovery:
             lines.append("")
             lines.append("⚠ Recovery required")
@@ -200,13 +199,14 @@ class TerminalUiState:
             marker = "✓" if task.get("status") == "completed" else "×" if task.get("status") == "failed" else "•"
             lines.append(f"  {marker} bg {task.get('id', '?')} · {task.get('status', '?')} · {task.get('goal', '')}{suffix}")
         lines.append("")
-        lines.append("╭─ Composer " + "─" * max(0, width - 14) + "╮")
+        lines.append("─" * min(width, 72))
+        lines.append("Composer")
         prompt = "> " if self.mode == "ready" else "… "
         draft_lines = self.composer.splitlines() or [""]
         lines.append(prompt + draft_lines[0])
         lines.extend("│ " + line for line in draft_lines[1:])
         lines.extend(textwrap.wrap("│ Ctrl-N newline · Enter submit/send · Ctrl-C clear · PgUp/PgDn scroll", width=width, replace_whitespace=False) or [""])
-        lines.append("╰" + "─" * max(0, width - 2) + "╯")
+        lines.append("─" * min(width, 72))
         if height is not None and height > 4 and len(lines) > height:
             fixed = len(draft_lines) + 4
             lines = lines[:max(1, height - fixed)] + lines[-fixed:]

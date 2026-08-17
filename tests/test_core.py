@@ -614,7 +614,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("read · completed · 12ms", rendered)
         self.assertIn("README.md", rendered)
         self.assertIn("Done", rendered)
-        self.assertIn("╭─ Composer", rendered)
+        self.assertIn("Composer", rendered)
         self.assertNotIn("╯\n> ", rendered)
         self.assertIn("approval=smart", rendered)
         empty = TerminalUiState()
