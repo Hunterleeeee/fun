@@ -7,8 +7,24 @@ of printing unrelated status lines from callbacks.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import os
 import textwrap
 from typing import Any
+
+
+class _Ansi:
+    def __init__(self) -> None:
+        enabled = os.getenv("NO_COLOR") is None and os.getenv("TERM", "dumb") != "dumb"
+        self.bold = "\033[1m" if enabled else ""
+        self.dim = "\033[2m" if enabled else ""
+        self.cyan = "\033[36m" if enabled else ""
+        self.green = "\033[32m" if enabled else ""
+        self.yellow = "\033[33m" if enabled else ""
+        self.red = "\033[31m" if enabled else ""
+        self.reset = "\033[0m" if enabled else ""
+
+
+ANSI = _Ansi()
 
 
 @dataclass
@@ -144,7 +160,7 @@ class TerminalUiState:
             status += f"  ·  {self.model_name}"
         status += f"  ·  approval={self.approval_mode}"
         header_text = f"Fun  ·  {status}"
-        lines.append(header_text[:width])
+        lines.append(f"{ANSI.bold}{ANSI.cyan}{header_text[:width]}{ANSI.reset}")
         lines.append("─" * min(width, 72))
         visible = self.transcript[self.scroll_offset:] if self.scroll_offset else self.transcript
         if self.scroll_offset:
@@ -157,12 +173,13 @@ class TerminalUiState:
             if item.role == "user":
                 if previous_role != "user":
                     lines.append("")
-                    lines.append("You")
+                    lines.append(f"{ANSI.bold}{ANSI.cyan}You{ANSI.reset}")
                 previous_role = "user"
                 lines.extend(textwrap.wrap(f"› {item.text}", width=max(20, width - 2), replace_whitespace=False) or ["› "])
             elif item.role in {"assistant", "system"}:
                 if previous_role != item.role:
-                    lines.append("Assistant" if item.role == "assistant" else "System")
+                    role_label = "Assistant" if item.role == "assistant" else "System"
+                    lines.append(f"{ANSI.bold}{role_label}{ANSI.reset}")
                 previous_role = item.role
                 for paragraph in (item.text.splitlines() or [""]):
                     lines.extend(textwrap.wrap(paragraph, width=width, replace_whitespace=False) or [""])
@@ -175,8 +192,11 @@ class TerminalUiState:
                 detail = f" · {args}" if args else ""
                 timing = f" · {card.elapsed_ms}ms" if card.elapsed_ms is not None else ""
                 lines.append("")
-                header = f"  {('✓' if card.status == 'completed' else '×' if card.status == 'failed' else '•')} {card.name} · {card.status}{timing}{detail}"
-                lines.extend(textwrap.wrap(header, width=width, replace_whitespace=False) or [header[:width]])
+                symbol = '✓' if card.status == 'completed' else '×' if card.status == 'failed' else '•'
+                color = ANSI.green if card.status == 'completed' else ANSI.red if card.status == 'failed' else ANSI.yellow
+                header = f"  {symbol} {card.name} · {card.status}{timing}{detail}"
+                wrapped = textwrap.wrap(header, width=width, replace_whitespace=False) or [header[:width]]
+                lines.extend((f"{color}{line}{ANSI.reset}" if i == 0 else line) for i, line in enumerate(wrapped))
                 if card.status == "approval":
                     risk = f" · risk={card.risk}" if card.risk else ""
                     lines.append(f"  Approval required{risk} · [y] once · [a] this session · [n] deny")
@@ -188,7 +208,7 @@ class TerminalUiState:
                 lines.append("")
         if self.recovery:
             lines.append("")
-            lines.append("⚠ Recovery required")
+            lines.append(f"{ANSI.bold}{ANSI.yellow}⚠ Recovery required{ANSI.reset}")
             lines.append(f"  {self.recovery.get('name', 'tool')} · {self.recovery.get('call_id', '?')}")
             lines.append(f"  args: {self.recovery.get('arguments', '')}")
             lines.append("  [r] resume  [d] discard  [f] mark failed  [s] stop")
@@ -203,7 +223,7 @@ class TerminalUiState:
             if len(compact) > 42:
                 compact = compact[:39] + "…"
             status += " · " + compact
-        lines[0] = f"Fun  ·  {status}"[:width]
+        lines[0] = f"{ANSI.bold}{ANSI.cyan}Fun  ·  {status}{ANSI.reset}"[:width]
         for task in self.background:
             detail = task.get("result") or task.get("error") or ""
             suffix = f" · {detail}" if detail else ""
@@ -215,7 +235,7 @@ class TerminalUiState:
             lines.append("  · waiting for approval")
         lines.append("")
         lines.append("─" * min(width, 72))
-        lines.append("Composer")
+        lines.append(f"{ANSI.bold}Composer{ANSI.reset}")
         prompt = "> " if self.mode == "ready" else "… "
         draft_lines = self.composer.splitlines() or [""]
         lines.append(prompt + draft_lines[0])
