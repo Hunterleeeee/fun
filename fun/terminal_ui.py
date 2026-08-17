@@ -178,7 +178,7 @@ class TerminalUiState:
                 continue
             extras.append(token)
         if extras:
-            status += " · " + " ".join(extras)
+            status += " · " + " ".join(dict.fromkeys(extras))
         lines.append(f"· {status}")
         for task in self.background:
             detail = task.get("result") or task.get("error") or ""
