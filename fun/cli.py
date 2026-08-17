@@ -443,7 +443,8 @@ def main(argv: list[str] | None = None) -> int:
                 saved.system_prompt = value[:12000]
                 if runtime.task and runtime.task.messages and runtime.task.messages[0].get("role") == "system":
                     runtime.task.messages[0]["content"] = runtime.system_prompt
-                    runtime.emit("task.message", runtime.task.id, message={"role": "system", "content": runtime.system_prompt})
+                    if not getattr(runtime, "_closed", False):
+                        runtime.emit("task.message", runtime.task.id, message={"role": "system", "content": runtime.system_prompt})
                 saved.save(config_path)
                 tui.set_status("system prompt updated")
                 return
