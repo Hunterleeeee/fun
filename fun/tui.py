@@ -116,8 +116,13 @@ class TerminalUI:
             elif kind == "status":
                 self.state.status_text = str(payload)
                 value = str(payload) if payload else "ready"
-                self.state.task_state = value if value in {"working", "ready", "failed", "stopped", "paused", "recovery"} else ("working" if value in {"thinking", "loading models…"} else self.state.task_state)
-                self.state.mode = "working" if value not in {"ready", "failed", "stopped"} else "ready"
+                known = {"working", "ready", "failed", "stopped", "paused", "recovery"}
+                if value in known:
+                    self.state.task_state = value
+                    self.state.mode = "working" if value == "working" else "ready"
+                elif value in {"thinking", "loading models…"}:
+                    self.state.task_state = "working"
+                    self.state.mode = "working"
             elif kind == "tool":
                 event_kind, event_payload = payload
                 self.state.tool_status(event_kind, event_payload)
