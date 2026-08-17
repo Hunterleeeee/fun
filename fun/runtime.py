@@ -199,7 +199,10 @@ class Runtime:
             elif event.type == "task.message":
                 message = event.payload.get("message")
                 if isinstance(message, dict):
-                    self.task.messages.append(dict(message))
+                    if message.get("role") == "system" and self.task.messages and self.task.messages[0].get("role") == "system":
+                        self.task.messages[0] = dict(message)
+                    else:
+                        self.task.messages.append(dict(message))
             elif event.type == "task.result":
                 self.task.result = str(event.payload.get("result", ""))
                 self.task.agent_state = "completed"
