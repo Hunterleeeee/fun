@@ -82,6 +82,7 @@ class TerminalUiState:
     collapsed_tools: set[str] = field(default_factory=set)
     show_all_commands: bool = False
     toast: str = ""
+    toast_ticks: int = 0
 
     def history(self, direction: int) -> str:
         if not self.composer_history:
@@ -245,6 +246,10 @@ class TerminalUiState:
             extras.append(token)
         if self.toast:
             lines.append(f"{ANSI.green}✓ {self.toast}{ANSI.reset}")
+            self.toast_ticks += 1
+            if self.toast_ticks > 4:
+                self.toast = ""
+                self.toast_ticks = 0
         if extras:
             compact = " ".join(dict.fromkeys(extras))
             if len(compact) > 42:
@@ -259,7 +264,9 @@ class TerminalUiState:
         if self.mode == "working":
             lines.append("  · working…")
         elif self.mode == "approval":
-            lines.append("  · waiting for approval")
+            lines.append("  · waiting for approval · y/a/n")
+        elif self.mode == "recovery":
+            lines.append("  · recovery action required · r/d/f/s")
         lines.append("")
         lines.append("─" * min(width, 72))
         lines.append(f"{ANSI.bold}Composer{ANSI.reset}")
@@ -267,7 +274,12 @@ class TerminalUiState:
         draft_lines = self.composer.splitlines() or [""]
         lines.append(prompt + draft_lines[0])
         lines.extend("│ " + line for line in draft_lines[1:])
-        lines.extend(textwrap.wrap("│ Ctrl-N newline · Enter submit/send · Ctrl-C clear · PgUp/PgDn scroll", width=width, replace_whitespace=False) or [""])
+        hints = "│ Ctrl-N newline · Enter submit/send · Ctrl-C clear · PgUp/PgDn scroll"
+        if self.tools:
+            hints += " · C collapse/expand"
+        if self.show_all_commands:
+            hints += " · C collapse commands"
+        lines.extend(textwrap.wrap(hints, width=width, replace_whitespace=False) or [""])
         lines.append("─" * min(width, 72))
         if height is not None and height > 4 and len(lines) > height:
             fixed = len(draft_lines) + 4
