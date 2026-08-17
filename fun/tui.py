@@ -198,7 +198,7 @@ class TerminalUI:
                 if key is None:
                     continue
                 if self.modal is not None:
-                    if key == "escape":
+                    if key in {"escape", "cancel", "eof"}:
                         callback, self.modal = self.modal_callback, None
                         self.modal_callback = None
                         if callback: callback(None)
