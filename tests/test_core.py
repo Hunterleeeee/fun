@@ -639,6 +639,10 @@ class CoreTests(unittest.TestCase):
         modal_ui.open_modal("Provider configuration", ["base_url", "model"], lambda values: None)
         modal_ui._last_size = (88, 24)
         self.assertIn("Provider configuration", modal_ui._frame())
+        modal_ui.open_modal("Provider configuration", [("api_key", True)], lambda values: None)
+        modal_ui.modal["value"] = "secret-key"
+        self.assertNotIn("secret-key", modal_ui._frame())
+        self.assertIn("••••", modal_ui._frame())
         ui.set_recovery({"name": "exec", "call_id": "c9", "arguments": "command='echo hi'"})
         recovery_text = ui.render()
         self.assertIn("[r] resume", recovery_text)

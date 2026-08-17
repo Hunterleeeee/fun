@@ -55,8 +55,9 @@ class TerminalUI:
         self._dirty = True
         self.events.put((kind, payload))
 
-    def open_modal(self, title: str, fields: list[str], callback: Callable[[dict[str, str] | None], None]) -> None:
-        self.modal = {"title": title, "fields": fields, "index": "0", "value": "", "values": {}}
+    def open_modal(self, title: str, fields: list[str | tuple[str, bool]], callback: Callable[[dict[str, str] | None], None]) -> None:
+        normalized = [(item[0], bool(item[1])) if isinstance(item, tuple) else (item, False) for item in fields]
+        self.modal = {"title": title, "fields": normalized, "index": "0", "value": "", "values": {}}
         self.modal_callback = callback
         self._dirty = True
 
@@ -142,7 +143,9 @@ class TerminalUI:
             self._dirty = True
         frame = self.state.render(current[0], current[1])
         if self.modal:
-            frame += "\n\n┌ " + self.modal["title"] + " ┐\n│ " + self.modal["fields"][int(self.modal["index"])] + ": " + self.modal["value"] + "\n│ Enter next · Ctrl-N newline · Esc cancel\n└────────────────────────┘"
+            field, secret = self.modal["fields"][int(self.modal["index"])]
+            shown = "•" * len(self.modal["value"]) if secret else self.modal["value"]
+            frame += "\n\n┌ " + self.modal["title"] + " ┐\n│ " + field + ": " + shown + "\n│ Enter next · Ctrl-N newline · Esc cancel\n└────────────────────────┘"
         return "\033[2J\033[H" + frame
 
     def _draw(self) -> None:
@@ -202,7 +205,7 @@ class TerminalUI:
                     elif key == "enter":
                         fields = self.modal["fields"]
                         index = int(self.modal["index"])
-                        self.modal["values"][fields[index]] = self.modal["value"]
+                        self.modal["values"][fields[index][0]] = self.modal["value"]
                         if index + 1 < len(fields):
                             self.modal["index"] = str(index + 1)
                             self.modal["value"] = ""

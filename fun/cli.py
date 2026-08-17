@@ -448,20 +448,25 @@ def main(argv: list[str] | None = None) -> int:
                 return
             if text in {"/config", "/setup"}:
                 def apply_config(values: dict[str, str] | None) -> None:
-                    nonlocal base_url, model, provider
+                    nonlocal base_url, api_key, model, provider
                     if not values:
                         tui.set_status("configuration cancelled")
                         return
                     base_url = values.get("base_url", base_url).strip() or base_url
+                    new_key = values.get("api_key", "").strip() or api_key
                     model = values.get("model", model).strip() or model
+                    api_key = new_key
                     saved.base_url, saved.model = base_url, model
+                    if api_key:
+                        saved.api_key = api_key
+                        os.environ["FUN_API_KEY"] = api_key
                     saved.save(config_path)
                     if api_key and base_url and model:
                         provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
                         runtime.provider, runtime.model = provider, model
                     tui.state.model_name = model
                     tui.set_status("configuration updated")
-                tui.open_modal("Provider configuration", ["base_url", "model"], apply_config)
+                tui.open_modal("Provider configuration", ["base_url", ("api_key", True), "model"], apply_config)
                 return
             if text == "/model":
                 tui.append_assistant(f"Current model: {model}. Use /model <model-id> to switch without interrupting the Composer.")
