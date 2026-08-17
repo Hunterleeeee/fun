@@ -148,6 +148,11 @@ class TerminalUiState:
         header_text = header_text[:header_inner]
         lines.append("╭─" + header_text + "─" * max(0, header_inner - len(header_text)) + "─╮")
         visible = self.transcript[self.scroll_offset:] if self.scroll_offset else self.transcript
+        if self.scroll_offset:
+            lines.append(f"  ↑ older messages · offset {self.scroll_offset} · PgUp/PgDn to navigate")
+        if not visible:
+            lines.append("")
+            lines.append("  Start a conversation by describing what you want to build.")
         for item in visible:
             if item.role == "user":
                 lines.append("")
@@ -167,12 +172,12 @@ class TerminalUiState:
                 lines.extend(textwrap.wrap(header, width=width, replace_whitespace=False) or [header[:width]])
                 if card.status == "approval":
                     risk = f" · risk={card.risk}" if card.risk else ""
-                    lines.append(f"│ Approval required{risk} · [y] once · [a] this session · [n] deny")
+                    lines.append(f"  Approval required{risk} · [y] once · [a] this session · [n] deny")
                 if card.output:
                     for output_line in card.output[:500].splitlines() or [""]:
-                        lines.extend("│ " + line for line in (textwrap.wrap(output_line, width=max(10, width - 2), replace_whitespace=False) or [""]))
+                        lines.extend("  " + line for line in (textwrap.wrap(output_line, width=max(10, width - 2), replace_whitespace=False) or [""]))
                 if card.error:
-                    lines.append(f"│ × {card.error}")
+                    lines.append(f"  × {card.error}")
                 lines.append("  ─────────────────────────────────")
         if self.recovery:
             lines.append("")
@@ -199,10 +204,9 @@ class TerminalUiState:
         prompt = "> " if self.mode == "ready" else "… "
         draft_lines = self.composer.splitlines() or [""]
         lines.append(prompt + draft_lines[0])
-        lines.extend("  " + line for line in draft_lines[1:])
+        lines.extend("│ " + line for line in draft_lines[1:])
         lines.extend(textwrap.wrap("│ Ctrl-N newline · Enter submit/send · Ctrl-C clear · PgUp/PgDn scroll", width=width, replace_whitespace=False) or [""])
         lines.append("╰" + "─" * max(0, width - 2) + "╯")
-        lines.append("> " if self.mode == "ready" else "… ")
         if height is not None and height > 4 and len(lines) > height:
             fixed = len(draft_lines) + 4
             lines = lines[:max(1, height - fixed)] + lines[-fixed:]

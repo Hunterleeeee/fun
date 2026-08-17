@@ -163,11 +163,16 @@ class TerminalUI:
                 options = self.modal["options"]
                 index = int(self.modal["index"])
                 choices = "\n".join(("│ ❯ " if i == index else "│   ") + item for i, item in enumerate(options))
-                frame += "\n\n╭─ " + self.modal["title"] + " " + "─" * 24 + "╮\n" + choices + "\n│ ↑↓ choose · Enter accept · Esc cancel\n╰" + "─" * 38 + "╯"
+                modal_width = min(current[0] - 4, 58)
+                title = self.modal["title"][:max(8, modal_width - 5)]
+                frame += "\n\n╭─ " + title + " " + "─" * max(0, modal_width - len(title) - 4) + "╮\n" + choices + "\n│ ↑↓ choose · Enter accept · Esc cancel\n╰" + "─" * max(0, modal_width - 2) + "╯"
             else:
                 field, secret = self.modal["fields"][int(self.modal["index"])]
                 shown = "•" * len(self.modal["value"]) if secret else self.modal["value"]
-                frame += "\n\n╭─ " + self.modal["title"] + " " + "─" * 24 + "╮\n│ " + field + ": " + shown + "\n│ Enter next · Ctrl-N newline · Esc cancel\n╰" + "─" * 38 + "╯"
+                modal_width = min(current[0] - 4, 58)
+                title = self.modal["title"][:max(8, modal_width - 5)]
+                value = (field + ": " + shown)[:max(8, modal_width - 4)]
+                frame += "\n\n╭─ " + title + " " + "─" * max(0, modal_width - len(title) - 4) + "╮\n│ " + value + "\n│ Enter next · Ctrl-N newline · Esc cancel\n╰" + "─" * max(0, modal_width - 2) + "╯"
         return "\033[2J\033[H" + frame
 
     def _draw(self) -> None:
