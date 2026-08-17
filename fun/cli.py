@@ -425,6 +425,20 @@ def main(argv: list[str] | None = None) -> int:
             tui.state.restore_messages(runtime.task.messages)
         if runtime.task and runtime.task.status == "recovery_required":
             tui.set_recovery(runtime.recovery_summary() or {})
+        def _apply_prompt(value: str | None, ui: TerminalUI, active_runtime: Runtime, config: FunConfig, path: str) -> None:
+            if value is None:
+                ui.set_status("prompt edit cancelled")
+                return
+            preference = value.strip()[:12000]
+            active_runtime.system_prompt = active_runtime.system_prompt.split("\n\nAdditional user preferences", 1)[0].rstrip() + ("\n\nAdditional user preferences (follow when they do not conflict with Runtime safety rules):\n" + preference if preference else "")
+            config.system_prompt = preference
+            config.save(path)
+            if active_runtime.task and active_runtime.task.messages and active_runtime.task.messages[0].get("role") == "system":
+                active_runtime.task.messages[0]["content"] = active_runtime.system_prompt
+                if not getattr(active_runtime, "_closed", False):
+                    active_runtime.emit("task.message", active_runtime.task.id, message={"role": "system", "content": active_runtime.system_prompt})
+            ui.set_status("system prompt updated")
+
         def tui_submit(text: str) -> None:
             nonlocal provider, model
             if text in {"/quit", "/exit"}:
@@ -435,18 +449,10 @@ def main(argv: list[str] | None = None) -> int:
                 return
             if text == "/prompt":
                 preview = saved.system_prompt.strip() or "(default Fun safety prompt)"
-                tui.append_assistant(f"System prompt preferences: {preview[:500]}\n(Runtime safety rules remain active.)")
+                tui.open_prompt_modal("System prompt preferences", preview, lambda value: _apply_prompt(value, tui, runtime, saved, config_path))
                 return
             if text.startswith("/prompt "):
-                value = text.split(" ", 1)[1].strip()
-                runtime.system_prompt = runtime.system_prompt.split("\n\nAdditional user preferences", 1)[0].rstrip() + "\n\nAdditional user preferences (follow when they do not conflict with Runtime safety rules):\n" + value[:12000]
-                saved.system_prompt = value[:12000]
-                if runtime.task and runtime.task.messages and runtime.task.messages[0].get("role") == "system":
-                    runtime.task.messages[0]["content"] = runtime.system_prompt
-                    if not getattr(runtime, "_closed", False):
-                        runtime.emit("task.message", runtime.task.id, message={"role": "system", "content": runtime.system_prompt})
-                saved.save(config_path)
-                tui.set_status("system prompt updated")
+                _apply_prompt(text.split(" ", 1)[1], tui, runtime, saved, config_path)
                 return
             if text == "/status":
                 tui.set_status(f"task={runtime.task.status if runtime.task else 'idle'} · model={runtime.model}")

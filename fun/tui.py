@@ -55,6 +55,11 @@ class TerminalUI:
         self._dirty = True
         self.events.put((kind, payload))
 
+    def open_prompt_modal(self, title: str, initial: str, callback: Callable[[str | None], None]) -> None:
+        self.modal = {"kind": "prompt", "title": title, "value": initial, "callback": callback}
+        self.modal_callback = None
+        self._dirty = True
+
     def open_modal(self, title: str, fields: list[str | tuple[str, bool]], callback: Callable[[dict[str, str] | None], None]) -> None:
         normalized = [(item[0], bool(item[1])) if isinstance(item, tuple) else (item, False) for item in fields]
         self.modal = {"kind": "fields", "title": title, "fields": normalized, "index": "0", "value": "", "values": {}}
@@ -171,6 +176,12 @@ class TerminalUI:
                 modal_width = min(current[0] - 4, 58)
                 title = self.modal["title"][:max(8, modal_width - 5)]
                 frame += "\n\n╭─ " + title + " " + "─" * max(0, modal_width - len(title) - 4) + "╮\n" + choices + "\n│ ↑↓ choose · Enter accept · Esc cancel\n╰" + "─" * max(0, modal_width - 2) + "╯"
+            elif self.modal.get("kind") == "prompt":
+                modal_width = min(current[0] - 4, 70)
+                title = self.modal["title"][:max(8, modal_width - 5)]
+                value = self.modal["value"]
+                body = "\n".join("│ " + line[:modal_width - 4] for line in (value.splitlines() or [""]))
+                frame += "\n\n╭─ " + title + " " + "─" * max(0, modal_width - len(title) - 4) + "╮\n" + body + "\n│ Ctrl-N newline · Enter save · Esc cancel\n╰" + "─" * max(0, modal_width - 2) + "╯"
             else:
                 field, secret = self.modal["fields"][int(self.modal["index"])]
                 shown = "•" * len(self.modal["value"]) if secret else self.modal["value"]
@@ -233,6 +244,23 @@ class TerminalUI:
                 if key is None:
                     continue
                 if self.modal is not None:
+                    if self.modal.get("kind") == "prompt":
+                        callback = self.modal.get("callback")
+                        if key in {"escape", "cancel", "eof"}:
+                            self.modal = None
+                            if callback: callback(None)
+                        elif key == "enter":
+                            value = self.modal["value"]
+                            self.modal = None
+                            if callback: callback(value)
+                        elif key == "newline":
+                            self.modal["value"] += "\n"
+                        elif key == "backspace":
+                            self.modal["value"] = self.modal["value"][:-1]
+                        elif len(key) == 1 and key.isprintable():
+                            self.modal["value"] += key
+                        self._dirty = True
+                        continue
                     if self.modal.get("kind") == "select":
                         options = self.modal["options"]
                         if key in {"up", "down"}:
