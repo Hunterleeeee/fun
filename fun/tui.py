@@ -199,6 +199,7 @@ class TerminalUI:
 
     def _draw(self) -> None:
         self._consume()
+        self.state.tick()
         if not self._dirty:
             return
         self.output.write(self._frame())

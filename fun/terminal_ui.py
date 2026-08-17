@@ -161,6 +161,13 @@ class TerminalUiState:
         card.update(mapping.get(kind, kind), payload)
         return card
 
+    def tick(self) -> None:
+        if self.toast:
+            self.toast_ticks += 1
+            if self.toast_ticks > 4:
+                self.toast = ""
+                self.toast_ticks = 0
+
     def render(self, width: int = 88, height: int | None = None) -> str:
         """Render a stable transcript plus a fixed bottom composer area."""
         width = max(40, width)
@@ -246,10 +253,6 @@ class TerminalUiState:
             extras.append(token)
         if self.toast:
             lines.append(f"{ANSI.green}✓ {self.toast}{ANSI.reset}")
-            self.toast_ticks += 1
-            if self.toast_ticks > 4:
-                self.toast = ""
-                self.toast_ticks = 0
         if extras:
             compact = " ".join(dict.fromkeys(extras))
             if len(compact) > 42:
