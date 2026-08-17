@@ -139,11 +139,22 @@ class TerminalUiState:
         """Render a stable transcript plus a fixed bottom composer area."""
         width = max(40, width)
         lines: list[str] = []
+        status = f"{self.task_state}"
+        if self.model_name:
+            status += f" · {self.model_name}"
+        status += f" · approval={self.approval_mode}"
+        header_text = f"Fun · {status}"
+        header_inner = max(0, width - 4)
+        header_text = header_text[:header_inner]
+        lines.append("╭─" + header_text + "─" * max(0, header_inner - len(header_text)) + "─╮")
         visible = self.transcript[self.scroll_offset:] if self.scroll_offset else self.transcript
         for item in visible:
             if item.role == "user":
+                lines.append("")
+                lines.append("You")
                 lines.extend(textwrap.wrap(f"› {item.text}", width=max(20, width - 2), replace_whitespace=False) or ["› "])
             elif item.role in {"assistant", "system"}:
+                lines.append("Assistant" if item.role == "assistant" else "System")
                 for paragraph in (item.text.splitlines() or [""]):
                     lines.extend(textwrap.wrap(paragraph, width=width, replace_whitespace=False) or [""])
             elif item.tool is not None:
@@ -151,7 +162,8 @@ class TerminalUiState:
                 args = " ".join(f"{k}={v!r}" for k, v in card.arguments.items())
                 detail = f" · {args}" if args else ""
                 timing = f" · {card.elapsed_ms}ms" if card.elapsed_ms is not None else ""
-                header = f"┌ {card.name} · {card.status}{timing}{detail}"
+                lines.append("")
+                header = f"  {('✓' if card.status == 'completed' else '×' if card.status == 'failed' else '•')} {card.name} · {card.status}{timing}{detail}"
                 lines.extend(textwrap.wrap(header, width=width, replace_whitespace=False) or [header[:width]])
                 if card.status == "approval":
                     risk = f" · risk={card.risk}" if card.risk else ""
@@ -161,11 +173,7 @@ class TerminalUiState:
                         lines.extend("│ " + line for line in (textwrap.wrap(output_line, width=max(10, width - 2), replace_whitespace=False) or [""]))
                 if card.error:
                     lines.append(f"│ × {card.error}")
-                lines.append("└")
-        status = f"{self.task_state}"
-        if self.model_name:
-            status += f" · model={self.model_name}"
-        status += f" · approval={self.approval_mode}"
+                lines.append("  ─────────────────────────────────")
         if self.recovery:
             lines.append(f"┌ recovery required · {self.recovery.get('name', 'tool')} · {self.recovery.get('call_id', '?')}")
             lines.append(f"│ args={self.recovery.get('arguments', '')}")
