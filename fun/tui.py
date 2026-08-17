@@ -194,7 +194,10 @@ class TerminalUI:
                 if hasattr(self, "background_provider"):
                     self.set_background(self.background_provider())
                 self._draw()
-                key = self._read_key(fd)
+                try:
+                    key = self._read_key(fd)
+                except KeyboardInterrupt:
+                    key = "cancel"
                 if key is None:
                     continue
                 if self.modal is not None:
