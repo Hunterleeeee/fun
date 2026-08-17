@@ -650,6 +650,9 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn("line-0", scroll_ui.render())
         ui.tool_status("tool.failed", {"call_id": "c1", "name": "read", "error": "permission denied"})
         self.assertIn("permission denied", ui.render())
+        tool_id = next(iter(ui.tools))
+        ui.collapsed_tools.add(tool_id)
+        self.assertIn("output hidden", ui.render())
         from io import StringIO
         modal_ui = TerminalUI(output=StringIO())
         modal_ui.open_modal("Provider configuration", ["base_url", "model"], lambda values: None)

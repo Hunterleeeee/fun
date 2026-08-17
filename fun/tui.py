@@ -336,6 +336,14 @@ class TerminalUI:
                 elif key == "pagedown":
                     self.state.scroll(5)
                     self._dirty = True
+                elif key == "c" and self.state.tools:
+                    latest = next(reversed(self.state.tools.values()))
+                    if latest.output:
+                        if latest.call_id in self.state.collapsed_tools:
+                            self.state.collapsed_tools.remove(latest.call_id)
+                        else:
+                            self.state.collapsed_tools.add(latest.call_id)
+                        self._dirty = True
                 elif key == "up":
                     if self.state.composer.startswith("/") and self.commands:
                         self._suggestion_index = (self._suggestion_index - 1) % len(self.commands)

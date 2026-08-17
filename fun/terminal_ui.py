@@ -78,6 +78,7 @@ class TerminalUiState:
     scroll_offset: int = 0
     background: list[dict[str, str]] = field(default_factory=list)
     recovery: dict[str, str] | None = None
+    collapsed_tools: set[str] = field(default_factory=set)
 
     def history(self, direction: int) -> str:
         if not self.composer_history:
@@ -199,10 +200,12 @@ class TerminalUiState:
                 lines.extend((f"{color}{line}{ANSI.reset}" if i == 0 else line) for i, line in enumerate(wrapped))
                 if card.status == "approval":
                     risk = f" · risk={card.risk}" if card.risk else ""
-                    lines.append(f"  Approval required{risk} · [y] once · [a] this session · [n] deny")
-                if card.output:
+                    lines.append(f"{ANSI.yellow}  Approval required{risk} · [y] once · [a] this session · [n] deny{ANSI.reset}")
+                if card.call_id not in self.collapsed_tools and card.output:
                     for output_line in card.output[:500].splitlines() or [""]:
                         lines.extend("  " + line for line in (textwrap.wrap(output_line, width=max(10, width - 2), replace_whitespace=False) or [""]))
+                elif card.output:
+                    lines.append(f"  ↳ output hidden ({len(card.output)} chars)")
                 if card.error:
                     lines.append(f"  × {card.error}")
                 lines.append("")
