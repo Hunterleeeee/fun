@@ -427,7 +427,8 @@ def main(argv: list[str] | None = None) -> int:
             tui.set_recovery(runtime.recovery_summary() or {})
         def _apply_prompt(value: str | None, ui: TerminalUI, active_runtime: Runtime, config: FunConfig, path: str) -> None:
             if value is None:
-                ui.set_status("prompt edit cancelled")
+                ui.state.toast = "Prompt edit cancelled"
+                ui.set_status("ready")
                 return
             preference = value.strip()[:12000]
             active_runtime.system_prompt = active_runtime.system_prompt.split("\n\nAdditional user preferences", 1)[0].rstrip() + ("\n\nAdditional user preferences (follow when they do not conflict with Runtime safety rules):\n" + preference if preference else "")
@@ -437,7 +438,8 @@ def main(argv: list[str] | None = None) -> int:
                 active_runtime.task.messages[0]["content"] = active_runtime.system_prompt
                 if not getattr(active_runtime, "_closed", False):
                     active_runtime.emit("task.message", active_runtime.task.id, message={"role": "system", "content": active_runtime.system_prompt})
-            ui.set_status("system prompt updated")
+            ui.state.toast = "System prompt updated"
+            ui.set_status("ready")
 
         def tui_submit(text: str) -> None:
             nonlocal provider, model

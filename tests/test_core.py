@@ -621,6 +621,10 @@ class CoreTests(unittest.TestCase):
         for index in range(8):
             command_ui.add_command(f"/cmd{index}")
         self.assertIn("earlier commands hidden", command_ui.render())
+        command_ui.show_all_commands = True
+        self.assertIn("showing all", command_ui.render())
+        command_ui.toast = "System prompt updated"
+        self.assertIn("System prompt updated", command_ui.render())
         self.assertNotIn("╯\n> ", rendered)
         self.assertIn("approval=smart", rendered)
         self.assertEqual(rendered.count("You"), 1)

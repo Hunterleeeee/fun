@@ -80,6 +80,8 @@ class TerminalUiState:
     background: list[dict[str, str]] = field(default_factory=list)
     recovery: dict[str, str] | None = None
     collapsed_tools: set[str] = field(default_factory=set)
+    show_all_commands: bool = False
+    toast: str = ""
 
     def history(self, direction: int) -> str:
         if not self.composer_history:
@@ -176,9 +178,11 @@ class TerminalUiState:
             lines.append("")
             lines.append("  Start a conversation by describing what you want to build.")
         command_count = sum(1 for item in visible if item.command)
-        hidden_commands = max(0, command_count - 6)
+        hidden_commands = 0 if self.show_all_commands else max(0, command_count - 6)
         if hidden_commands:
-            lines.append(f"{ANSI.dim}… {hidden_commands} earlier commands hidden{ANSI.reset}")
+            lines.append(f"{ANSI.dim}… {hidden_commands} earlier commands hidden · press C to expand{ANSI.reset}")
+        elif command_count > 6:
+            lines.append(f"{ANSI.dim}… showing all {command_count} commands · press C to collapse{ANSI.reset}")
         shown_commands = 0
         previous_role = ""
         for item in visible:
@@ -239,6 +243,8 @@ class TerminalUiState:
             if token.startswith(("model=", "approval=", "task=")) or token == self.task_state:
                 continue
             extras.append(token)
+        if self.toast:
+            lines.append(f"{ANSI.green}✓ {self.toast}{ANSI.reset}")
         if extras:
             compact = " ".join(dict.fromkeys(extras))
             if len(compact) > 42:
