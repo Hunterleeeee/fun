@@ -426,6 +426,7 @@ def main(argv: list[str] | None = None) -> int:
         if runtime.task and runtime.task.status == "recovery_required":
             tui.set_recovery(runtime.recovery_summary() or {})
         def tui_submit(text: str) -> None:
+            nonlocal provider, model
             if text in {"/quit", "/exit"}:
                 tui.post("quit")
                 return
@@ -445,8 +446,26 @@ def main(argv: list[str] | None = None) -> int:
                 tui.state.approval_mode = selected
                 tui.set_status(f"approval={selected}")
                 return
-            if text in {"/config", "/setup", "/model"}:
-                tui.append_assistant("Configuration forms are available before the TUI: restart with --configure, or use the plain non-TTY shell.")
+            if text in {"/config", "/setup"}:
+                tui.append_assistant("Use /config before starting a TUI session; interactive credential forms cannot safely interrupt an active Composer.")
+                return
+            if text == "/model":
+                tui.append_assistant(f"Current model: {model}. Use /model <model-id> to switch without interrupting the Composer.")
+                return
+            if text.startswith("/model "):
+                selected = text.split(maxsplit=1)[1].strip()
+                if not selected:
+                    tui.append_assistant("Usage: /model <model-id>")
+                    return
+                model = selected
+                saved.model = selected
+                saved.save(config_path)
+                if provider:
+                    provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+                    runtime.provider = provider
+                runtime.model = model
+                tui.state.model_name = model
+                tui.set_status(f"model={model}")
                 return
             if text == "/clear":
                 tui.state.transcript.clear()
