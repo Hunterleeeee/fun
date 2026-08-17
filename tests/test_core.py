@@ -617,6 +617,8 @@ class CoreTests(unittest.TestCase):
         self.assertIn("Composer", rendered)
         self.assertNotIn("╯\n> ", rendered)
         self.assertIn("approval=smart", rendered)
+        long_status = TerminalUiState(status_text="configuration updated with a very long explanatory message that should be compacted")
+        self.assertLessEqual(len(next(line for line in long_status.render().splitlines() if line.startswith("Status"))), 90)
         empty = TerminalUiState()
         self.assertIn("Start a conversation", empty.render())
         empty.add_user("one")

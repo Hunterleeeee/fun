@@ -191,7 +191,10 @@ class TerminalUiState:
                 continue
             extras.append(token)
         if extras:
-            status += " · " + " ".join(dict.fromkeys(extras))
+            compact = " ".join(dict.fromkeys(extras))
+            if len(compact) > 42:
+                compact = compact[:39] + "…"
+            status += " · " + compact
         lines.append(f"Status  {status}")
         for task in self.background:
             detail = task.get("result") or task.get("error") or ""

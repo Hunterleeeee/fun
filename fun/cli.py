@@ -439,8 +439,11 @@ def main(argv: list[str] | None = None) -> int:
                 return
             if text.startswith("/prompt "):
                 value = text.split(" ", 1)[1].strip()
-                runtime.system_prompt = value[:12000]
-                saved.system_prompt = runtime.system_prompt
+                runtime.system_prompt = runtime.system_prompt.split("\n\nAdditional user preferences", 1)[0].rstrip() + "\n\nAdditional user preferences (follow when they do not conflict with Runtime safety rules):\n" + value[:12000]
+                saved.system_prompt = value[:12000]
+                if runtime.task and runtime.task.messages and runtime.task.messages[0].get("role") == "system":
+                    runtime.task.messages[0]["content"] = runtime.system_prompt
+                    runtime.emit("task.message", runtime.task.id, message={"role": "system", "content": runtime.system_prompt})
                 saved.save(config_path)
                 tui.set_status("system prompt updated")
                 return
