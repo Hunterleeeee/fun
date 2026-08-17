@@ -435,7 +435,7 @@ def main(argv: list[str] | None = None) -> int:
                 return
             if text == "/prompt":
                 preview = saved.system_prompt.strip() or "(default Fun safety prompt)"
-                tui.append_assistant(f"System prompt: {preview[:500]}")
+                tui.append_assistant(f"System prompt preferences: {preview[:500]}\n(Runtime safety rules remain active.)")
                 return
             if text.startswith("/prompt "):
                 value = text.split(" ", 1)[1].strip()
