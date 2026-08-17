@@ -62,7 +62,7 @@ class TerminalUI:
         self._dirty = True
 
     def open_select(self, title: str, options: list[str], callback: Callable[[str | None], None]) -> None:
-        self.modal = {"kind": "select", "title": title, "options": options, "index": "0", "current": options[0] if options else ""}
+        self.modal = {"kind": "select", "title": title, "options": options, "index": "0", "current": options[0] if options else "", "loading": False}
         self.modal_callback = callback
         self._dirty = True
 
@@ -130,6 +130,7 @@ class TerminalUI:
                         options = [current] + [item for item in options if item != current]
                     self.modal["options"] = options
                     self.modal["index"] = "0"
+                    self.modal["loading"] = False
                     self._dirty = True
             elif kind == "approval":
                 self._approval = payload
@@ -228,6 +229,9 @@ class TerminalUI:
                             self.modal["index"] = str((int(self.modal["index"]) + step) % len(options))
                             self._dirty = True
                         elif key == "enter":
+                            if self.modal.get("loading"):
+                                self.set_status("loading models…")
+                                continue
                             selected = options[int(self.modal["index"])]
                             callback, self.modal = self.modal_callback, None
                             self.modal_callback = None

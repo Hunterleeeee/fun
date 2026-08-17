@@ -646,6 +646,8 @@ class CoreTests(unittest.TestCase):
         selected = []
         modal_ui.open_select("Choose model", ["old", "new"], lambda value: selected.append(value))
         self.assertIn("old", modal_ui._frame())
+        modal_ui.modal["loading"] = True
+        self.assertIsNotNone(modal_ui.modal)
         ui.set_recovery({"name": "exec", "call_id": "c9", "arguments": "command='echo hi'"})
         recovery_text = ui.render()
         self.assertIn("[r] resume", recovery_text)

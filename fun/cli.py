@@ -488,7 +488,8 @@ def main(argv: list[str] | None = None) -> int:
                         tui.post("model_options", models)
                     except Exception as exc:
                         tui.append_assistant("× " + _friendly_error(exc, locale))
-                tui.open_select("Choose model", [model] if not provider else [model, "(loading models…)"] , choose_model_done)
+                tui.open_select("Choose model", [model, "(loading models…)"], choose_model_done)
+                tui.modal["loading"] = True
                 threading.Thread(target=load_models, daemon=True).start()
                 return
             if text.startswith("/model "):
