@@ -170,6 +170,8 @@ class TerminalUiState:
                 previous_role = "tool"
                 card = item.tool
                 args = " ".join(f"{k}={v!r}" for k, v in card.arguments.items())
+                if len(args) > 56:
+                    args = args[:53] + "…"
                 detail = f" · {args}" if args else ""
                 timing = f" · {card.elapsed_ms}ms" if card.elapsed_ms is not None else ""
                 lines.append("")
@@ -201,12 +203,16 @@ class TerminalUiState:
             if len(compact) > 42:
                 compact = compact[:39] + "…"
             status += " · " + compact
-        lines.append(f"{status}")
+        lines[0] = f"Fun  ·  {status}"[:width]
         for task in self.background:
             detail = task.get("result") or task.get("error") or ""
             suffix = f" · {detail}" if detail else ""
             marker = "✓" if task.get("status") == "completed" else "×" if task.get("status") == "failed" else "•"
             lines.append(f"  {marker} bg {task.get('id', '?')} · {task.get('status', '?')} · {task.get('goal', '')}{suffix}")
+        if self.mode == "working":
+            lines.append("  · working…")
+        elif self.mode == "approval":
+            lines.append("  · waiting for approval")
         lines.append("")
         lines.append("─" * min(width, 72))
         lines.append("Composer")

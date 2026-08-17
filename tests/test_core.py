@@ -618,6 +618,8 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn("╯\n> ", rendered)
         self.assertIn("approval=smart", rendered)
         self.assertEqual(rendered.count("You"), 1)
+        active = TerminalUiState(mode="working")
+        self.assertIn("working…", active.render())
         long_status = TerminalUiState(status_text="configuration updated with a very long explanatory message that should be compacted")
         status_line = next(line for line in long_status.render().splitlines() if "configuration" in line)
         self.assertLessEqual(len(status_line), 90)
