@@ -265,6 +265,13 @@ class AgentLoopTests(unittest.TestCase):
             self.assertIsInstance(completed.payload["timing"]["step_ms"], int)
             self.assertEqual(runtime.last_model_timing, completed.payload["timing"])
 
+    def test_custom_system_prompt_preserves_runtime_safety_rules(self):
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, system_prompt="be concise")
+            task = runtime.create_task("prompt test")
+            self.assertIn("be concise", task.messages[0]["content"])
+            self.assertIn("Runtime is authoritative", task.messages[0]["content"])
+
     def test_model_request_compacts_oversized_context(self):
         class CaptureProvider:
             def __init__(self):
