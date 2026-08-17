@@ -193,8 +193,7 @@ class TerminalUiState:
             detail = task.get("result") or task.get("error") or ""
             suffix = f" · {detail}" if detail else ""
             marker = "✓" if task.get("status") == "completed" else "×" if task.get("status") == "failed" else "•"
-            lines.append(f"  {marker} background · {task.get('id', '?')} · {task.get('status', '?')} · {task.get('goal', '')}{suffix}")
-            lines.append(f"  bg {task.get('id', '?')} · {task.get('status', '?')} · {task.get('goal', '')}{suffix}")
+            lines.append(f"  {marker} bg {task.get('id', '?')} · {task.get('status', '?')} · {task.get('goal', '')}{suffix}")
         lines.append("")
         lines.append("╭─ Composer " + "─" * max(0, width - 14) + "╮")
         prompt = "> " if self.mode == "ready" else "… "
