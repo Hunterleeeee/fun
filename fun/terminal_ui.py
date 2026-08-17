@@ -141,8 +141,8 @@ class TerminalUiState:
         lines: list[str] = []
         status = f"{self.task_state}"
         if self.model_name:
-            status += f" · {self.model_name}"
-        status += f" · approval={self.approval_mode}"
+            status += f"  ·  {self.model_name}"
+        status += f"  ·  approval={self.approval_mode}"
         header_text = f"Fun  ·  {status}"
         lines.append(header_text[:width])
         lines.append("─" * min(width, 72))
@@ -152,16 +152,22 @@ class TerminalUiState:
         if not visible:
             lines.append("")
             lines.append("  Start a conversation by describing what you want to build.")
+        previous_role = ""
         for item in visible:
             if item.role == "user":
-                lines.append("")
-                lines.append("You")
+                if previous_role != "user":
+                    lines.append("")
+                    lines.append("You")
+                previous_role = "user"
                 lines.extend(textwrap.wrap(f"› {item.text}", width=max(20, width - 2), replace_whitespace=False) or ["› "])
             elif item.role in {"assistant", "system"}:
-                lines.append("Assistant" if item.role == "assistant" else "System")
+                if previous_role != item.role:
+                    lines.append("Assistant" if item.role == "assistant" else "System")
+                previous_role = item.role
                 for paragraph in (item.text.splitlines() or [""]):
                     lines.extend(textwrap.wrap(paragraph, width=width, replace_whitespace=False) or [""])
             elif item.tool is not None:
+                previous_role = "tool"
                 card = item.tool
                 args = " ".join(f"{k}={v!r}" for k, v in card.arguments.items())
                 detail = f" · {args}" if args else ""
@@ -195,7 +201,7 @@ class TerminalUiState:
             if len(compact) > 42:
                 compact = compact[:39] + "…"
             status += " · " + compact
-        lines.append(f"Status  {status}")
+        lines.append(f"{status}")
         for task in self.background:
             detail = task.get("result") or task.get("error") or ""
             suffix = f" · {detail}" if detail else ""
