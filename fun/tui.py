@@ -210,7 +210,24 @@ class TerminalUI:
         ready, _, _ = select.select([fd], [], [], 0.08)
         if not ready:
             return None
-        key = os.read(fd, 1).decode("utf-8", "replace")
+        first = os.read(fd, 1)
+        if not first:
+            return None
+        if first == b"\x1b":
+            key = "\x1b"
+        else:
+            needed = 0
+            head = first[0]
+            if head & 0xE0 == 0xC0:
+                needed = 1
+            elif head & 0xF0 == 0xE0:
+                needed = 2
+            elif head & 0xF8 == 0xF0:
+                needed = 3
+            raw = first
+            if needed:
+                raw += os.read(fd, needed)
+            key = raw.decode("utf-8", "replace")
         if key == "\x1b":
             ready, _, _ = select.select([fd], [], [], 0.02)
             if ready:

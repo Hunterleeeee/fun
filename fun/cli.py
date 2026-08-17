@@ -301,16 +301,18 @@ def main(argv: list[str] | None = None) -> int:
         runtime.stop()
         return 0
 
-    print(renderer.header(str(runtime.tools.guard.root), provider is not None, runtime.policy.mode.value))
-    if runtime.task and runtime.task.status == "recovery_required":
-        pending = runtime.recovery_summary() or {}
-        print("! " + t(locale, "pending_tool").format(name=pending.get("name", "unknown tool"), call_id=pending.get("call_id", "?")))
-        print(t(locale, "recovery_actions"))
-    if provider:
-        print(renderer.welcome(True))
-    else:
-        print(renderer.finding(t(locale, "offline")))
-        print("输入 /help 查看帮助，/setup 了解配置，或 /quit 退出。" if renderer.zh else "Use /help for commands, /setup to configure later, or /quit to exit.")
+    use_tui = bool(provider and sys.stdin.isatty() and termios is not None and tty is not None)
+    if not use_tui:
+        print(renderer.header(str(runtime.tools.guard.root), provider is not None, runtime.policy.mode.value))
+        if runtime.task and runtime.task.status == "recovery_required":
+            pending = runtime.recovery_summary() or {}
+            print("! " + t(locale, "pending_tool").format(name=pending.get("name", "unknown tool"), call_id=pending.get("call_id", "?")))
+            print(t(locale, "recovery_actions"))
+        if provider:
+            print(renderer.welcome(True))
+        else:
+            print(renderer.finding(t(locale, "offline")))
+            print("输入 /help 查看帮助，/setup 了解配置，或 /quit 退出。" if renderer.zh else "Use /help for commands, /setup to configure later, or /quit to exit.")
 
     if readline is not None:
         command_names = ["/help", "/config", "/setup", "/model", "/permissions", "/logout", "/status", "/plan", "/usage", "/diff", "/checkpoint", "/clear", "/goal", "/pause", "/resume", "/recover", "/cancel", "/stop", "/exit", "/quit"]
@@ -412,7 +414,7 @@ def main(argv: list[str] | None = None) -> int:
             print("Model not configured. Use --configure or set FUN_API_URL, FUN_API_KEY, and FUN_MODEL.")
             runtime.stop()
 
-    if provider and sys.stdin.isatty() and termios is not None and tty is not None:
+    if use_tui:
         tui = TerminalUI(locale=locale, commands=["/help", "/prompt", "/status", "/usage", "/plan", "/pause", "/resume", "/cancel", "/clear", "/stop", "/exit"])
         tui.state.model_name = runtime.model
         tui.state.approval_mode = runtime.policy.mode.value
