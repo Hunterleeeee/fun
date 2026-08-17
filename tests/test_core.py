@@ -618,6 +618,9 @@ class CoreTests(unittest.TestCase):
         command_ui = TerminalUiState()
         command_ui.add_command("/prompt")
         self.assertIn("⌘ /prompt", command_ui.render())
+        for index in range(8):
+            command_ui.add_command(f"/cmd{index}")
+        self.assertIn("earlier commands hidden", command_ui.render())
         self.assertNotIn("╯\n> ", rendered)
         self.assertIn("approval=smart", rendered)
         self.assertEqual(rendered.count("You"), 1)

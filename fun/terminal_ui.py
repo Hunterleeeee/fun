@@ -175,10 +175,18 @@ class TerminalUiState:
         if not visible:
             lines.append("")
             lines.append("  Start a conversation by describing what you want to build.")
+        command_count = sum(1 for item in visible if item.command)
+        hidden_commands = max(0, command_count - 6)
+        if hidden_commands:
+            lines.append(f"{ANSI.dim}… {hidden_commands} earlier commands hidden{ANSI.reset}")
+        shown_commands = 0
         previous_role = ""
         for item in visible:
             if item.role == "user":
                 if item.command:
+                    shown_commands += 1
+                    if shown_commands <= hidden_commands:
+                        continue
                     lines.append(f"{ANSI.dim}⌘ {item.text}{ANSI.reset}")
                     previous_role = "command"
                     continue

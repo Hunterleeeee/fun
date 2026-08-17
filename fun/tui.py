@@ -181,7 +181,11 @@ class TerminalUI:
                 modal_width = min(current[0] - 4, 70)
                 title = self.modal["title"][:max(8, modal_width - 5)]
                 value = self.modal["value"]
-                body = "\n".join("│ " + line[:modal_width - 4] for line in (value.splitlines() or [""]))
+                max_lines = 8
+                prompt_lines = value.splitlines() or [""]
+                if len(prompt_lines) > max_lines:
+                    prompt_lines = prompt_lines[-max_lines:]
+                body = "\n".join("│ " + line[:modal_width - 4] for line in prompt_lines)
                 count = len(value)
                 frame += "\n\n╭─ " + title + " " + "─" * max(0, modal_width - len(title) - 4) + "╮\n" + body + f"\n│ {count}/12000 chars · Ctrl-N newline · Enter save · Esc cancel\n╰" + "─" * max(0, modal_width - 2) + "╯"
             else:
