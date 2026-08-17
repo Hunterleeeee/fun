@@ -469,7 +469,27 @@ def main(argv: list[str] | None = None) -> int:
                 tui.open_modal("Provider configuration", ["base_url", ("api_key", True), "model"], apply_config)
                 return
             if text == "/model":
-                tui.append_assistant(f"Current model: {model}. Use /model <model-id> to switch without interrupting the Composer.")
+                if not provider:
+                    tui.append_assistant(t(locale, "no_provider"))
+                    return
+                def choose_model_done(selected: str | None) -> None:
+                    nonlocal model, provider
+                    if selected:
+                        model = selected
+                        saved.model = selected
+                        saved.save(config_path)
+                        provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+                        runtime.provider, runtime.model = provider, model
+                        tui.state.model_name = model
+                        tui.set_status(f"model={model}")
+                def load_models() -> None:
+                    try:
+                        models = provider.list_models()
+                        tui.post("model_options", models)
+                    except Exception as exc:
+                        tui.append_assistant("× " + _friendly_error(exc, locale))
+                tui.open_select("Choose model", [model] if not provider else [model, "(loading models…)"] , choose_model_done)
+                threading.Thread(target=load_models, daemon=True).start()
                 return
             if text.startswith("/model "):
                 selected = text.split(maxsplit=1)[1].strip()

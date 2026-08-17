@@ -643,6 +643,9 @@ class CoreTests(unittest.TestCase):
         modal_ui.modal["value"] = "secret-key"
         self.assertNotIn("secret-key", modal_ui._frame())
         self.assertIn("••••", modal_ui._frame())
+        selected = []
+        modal_ui.open_select("Choose model", ["old", "new"], lambda value: selected.append(value))
+        self.assertIn("old", modal_ui._frame())
         ui.set_recovery({"name": "exec", "call_id": "c9", "arguments": "command='echo hi'"})
         recovery_text = ui.render()
         self.assertIn("[r] resume", recovery_text)

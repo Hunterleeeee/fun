@@ -57,7 +57,12 @@ class TerminalUI:
 
     def open_modal(self, title: str, fields: list[str | tuple[str, bool]], callback: Callable[[dict[str, str] | None], None]) -> None:
         normalized = [(item[0], bool(item[1])) if isinstance(item, tuple) else (item, False) for item in fields]
-        self.modal = {"title": title, "fields": normalized, "index": "0", "value": "", "values": {}}
+        self.modal = {"kind": "fields", "title": title, "fields": normalized, "index": "0", "value": "", "values": {}}
+        self.modal_callback = callback
+        self._dirty = True
+
+    def open_select(self, title: str, options: list[str], callback: Callable[[str | None], None]) -> None:
+        self.modal = {"kind": "select", "title": title, "options": options, "index": "0"}
         self.modal_callback = callback
         self._dirty = True
 
@@ -117,6 +122,12 @@ class TerminalUI:
                 self.state.tool_status(event_kind, event_payload)
             elif kind == "background":
                 self.state.set_background(payload if isinstance(payload, list) else [])
+            elif kind == "model_options" and self.modal and self.modal.get("kind") == "select":
+                options = [str(item) for item in (payload or []) if str(item)]
+                if options:
+                    self.modal["options"] = options
+                    self.modal["index"] = "0"
+                    self._dirty = True
             elif kind == "approval":
                 self._approval = payload
                 self.state.mode = "approval"
@@ -143,9 +154,15 @@ class TerminalUI:
             self._dirty = True
         frame = self.state.render(current[0], current[1])
         if self.modal:
-            field, secret = self.modal["fields"][int(self.modal["index"])]
-            shown = "•" * len(self.modal["value"]) if secret else self.modal["value"]
-            frame += "\n\n┌ " + self.modal["title"] + " ┐\n│ " + field + ": " + shown + "\n│ Enter next · Ctrl-N newline · Esc cancel\n└────────────────────────┘"
+            if self.modal.get("kind") == "select":
+                options = self.modal["options"]
+                index = int(self.modal["index"])
+                choices = "\n".join(("│ ❯ " if i == index else "│   ") + item for i, item in enumerate(options))
+                frame += "\n\n┌ " + self.modal["title"] + " ┐\n" + choices + "\n│ ↑↓ choose · Enter accept · Esc cancel\n└────────────────────────┘"
+            else:
+                field, secret = self.modal["fields"][int(self.modal["index"])]
+                shown = "•" * len(self.modal["value"]) if secret else self.modal["value"]
+                frame += "\n\n┌ " + self.modal["title"] + " ┐\n│ " + field + ": " + shown + "\n│ Enter next · Ctrl-N newline · Esc cancel\n└────────────────────────┘"
         return "\033[2J\033[H" + frame
 
     def _draw(self) -> None:
@@ -201,6 +218,22 @@ class TerminalUI:
                 if key is None:
                     continue
                 if self.modal is not None:
+                    if self.modal.get("kind") == "select":
+                        options = self.modal["options"]
+                        if key in {"up", "down"}:
+                            step = -1 if key == "up" else 1
+                            self.modal["index"] = str((int(self.modal["index"]) + step) % len(options))
+                            self._dirty = True
+                        elif key == "enter":
+                            selected = options[int(self.modal["index"])]
+                            callback, self.modal = self.modal_callback, None
+                            self.modal_callback = None
+                            if callback: callback(selected)
+                        elif key in {"escape", "cancel", "eof"}:
+                            callback, self.modal = self.modal_callback, None
+                            self.modal_callback = None
+                            if callback: callback(None)
+                        continue
                     if key in {"escape", "cancel", "eof"}:
                         callback, self.modal = self.modal_callback, None
                         self.modal_callback = None
