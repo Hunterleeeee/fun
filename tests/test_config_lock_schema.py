@@ -62,6 +62,25 @@ class ConfigLockSchemaTests(unittest.TestCase):
             self.assertEqual(on_disk["model"], "m")
             self.assertEqual(on_disk["api_key_store"], "macos-keychain")
 
+    def test_configure_marks_an_environment_key_as_transient(self):
+        from fun.cli import _configure
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            config = FunConfig(base_url="https://example.test/v1", model="model")
+            theme = SimpleNamespace()
+            with patch.dict(os.environ, {"FUN_API_KEY": "sk-shared-ci"}, clear=False), \
+                 patch("fun.cli.sys.stdin.isatty", return_value=True), \
+                 patch("fun.cli.input", side_effect=["", "model", "n"]), \
+                 patch("fun.cli.PlainFrontend.select", side_effect=lambda title, options, callback, loader=None: callback("model")), \
+                 patch("fun.config._keychain_set") as setter:
+                self.assertEqual(_configure(config, str(path), "en-US", theme), 0)
+                setter.assert_not_called()
+            self.assertTrue(config.from_env)
+            on_disk = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(on_disk.get("api_key_env"), "FUN_API_KEY")
+            self.assertNotIn("api_key_store", on_disk)
+
     def test_an_environment_key_is_never_promoted_into_the_keychain(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"

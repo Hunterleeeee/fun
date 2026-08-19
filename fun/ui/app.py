@@ -228,10 +228,12 @@ class App:
         elif kind == "recovery":
             state.set_recovery(payload)
         elif kind == "recovery_action":
+            action = payload.get("action") if isinstance(payload, dict) else payload
+            action = str(action)
             if self.recovery_handler is not None:
-                self.recovery_handler(str(payload))
+                self.recovery_handler(action)
             state.recovery = None
-            state.mode = "working" if payload in {"resume", "discard", "mark_failed"} else "ready"
+            state.mode = "working" if action in {"resume", "discard", "mark_failed"} else "ready"
         elif kind == "quit":
             self._stop = True
 

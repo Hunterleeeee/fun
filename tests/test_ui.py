@@ -1729,6 +1729,17 @@ class InteractionRegressionTests(unittest.TestCase):
             kinds.append(app.events.get_nowait()[0])
         self.assertNotIn("recovery_action", kinds)
 
+    def test_dict_recovery_action_is_normalized_without_crashing_drain(self):
+        actions: list[str] = []
+        app = self._app()
+        app.recovery_handler = actions.append
+        app.state.set_recovery({"name": "exec", "call_id": "c-1"})
+        app.post("recovery_action", {"action": "resume"})
+        app._consume()
+        self.assertEqual(actions, ["resume"])
+        self.assertEqual(app.state.mode, "working")
+        self.assertIsNone(app.state.recovery)
+
     def test_recovery_keys_still_work_from_an_empty_composer(self):
         app = self._app()
         app.state.set_recovery({"name": "exec", "call_id": "c-1"})
