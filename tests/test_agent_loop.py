@@ -127,7 +127,7 @@ class AgentLoopTests(unittest.TestCase):
             thread.join(2)
             server.server_close()
 
-    def test_consecutive_tasks_start_with_fresh_user_context(self):
+    def test_consecutive_tasks_continue_the_conversation(self):
         class CaptureProvider:
             def __init__(self):
                 self.messages = []
@@ -142,7 +142,36 @@ class AgentLoopTests(unittest.TestCase):
             runtime.complete("ok")
             runtime.create_task("second goal")
             runtime.run_model_turn()
-            self.assertEqual([item["content"] for item in provider.messages[1] if item["role"] == "user"], ["second goal"])
+            # A follow-up must be able to refer to what came before.  The
+            # Runtime models a task while the UI shows one continuous
+            # conversation, and nothing bridged them: the second prompt used to
+            # arrive with an empty history, so "what did I just ask you?" was
+            # unanswerable.  Each task still records exactly what it was given.
+            self.assertEqual(
+                [item["content"] for item in provider.messages[1] if item["role"] == "user"],
+                ["first goal", "second goal"],
+            )
+            self.assertEqual(provider.messages[1][0]["role"], "system")
+            runtime.stop()
+
+    def test_carried_history_never_starts_with_an_orphan_tool_reply(self):
+        class CaptureProvider:
+            def __init__(self):
+                self.messages = []
+
+            def stream(self, messages, tools=None):
+                self.messages.append(list(messages))
+                yield {"choices": [{"delta": {"content": "ok"}}]}
+
+        with TemporaryDirectory() as directory:
+            provider = CaptureProvider()
+            runtime = Runtime(directory, provider=provider)
+            runtime.create_task("first goal")
+            runtime.task.messages.append({"role": "assistant", "content": None, "tool_calls": [{"id": "c1"}]})
+            runtime.task.messages.append({"role": "tool", "tool_call_id": "c1", "content": "result"})
+            runtime.complete("ok")
+            carried = runtime._carried_history(max_messages=1)
+            self.assertFalse(carried and carried[0]["role"] == "tool")
             runtime.stop()
 
     def test_runtime_supports_two_consecutive_tasks_after_completion(self):
@@ -727,20 +756,66 @@ class AgentLoopTests(unittest.TestCase):
             recovered.stop()
 
     def test_approval_failure_facts_are_atomic(self):
-        class FailingBatch:
-            def append_many(self, events):
-                raise OSError("disk full")
+        """The store must fail only on the approval-failure batch.
 
-        def broken(name, risk):
+        Failing every write meant the first emit inside run_tool blew up before
+        pending_tool was ever assigned, so the assertion below was about a field
+        that had never been set and the approval path was never reached.
+        """
+        class FailingBatch:
+            def __init__(self, inner):
+                self.inner = inner
+                self.saw_batch = False
+
+            def append(self, event):
+                return None if self.inner is None else self.inner.append(event)
+
+            def append_many(self, events):
+                if any(event.type == "approval.failed" for event in events):
+                    self.saw_batch = True
+                    raise OSError("disk full")
+                return None if self.inner is None else self.inner.append_many(events)
+
+            def __getattr__(self, name):
+                return getattr(self.inner, name)
+
+        def broken(subject, risk):
             raise RuntimeError("callback")
 
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "smart", approve=broken)
             runtime.create_task("approval facts")
-            runtime.events._durable = FailingBatch()
+            # A command that always asks: `echo` is inspection-only now, so it
+            # no longer reaches the approval gate at all in smart mode.
+            store = FailingBatch(runtime.events._durable)
+            runtime.events._durable = store
             with self.assertRaises(OSError):
-                runtime.run_tool("exec", command="echo hi")
+                runtime.run_tool("exec", command="rm -rf victim")
+            self.assertTrue(store.saw_batch, "the approval-failure batch was never attempted")
+            # Atomic means both or neither.  The failure facts did not reach the
+            # store, so the call's outcome was never recorded — and a call whose
+            # outcome is unknown must stay pending, so recovery offers it rather
+            # than silently forgetting it.
+            self.assertIsNotNone(runtime.task.pending_tool)
+            self.assertEqual(runtime.task.pending_tool["name"], "exec")
+
+    def test_a_recorded_approval_failure_clears_the_pending_call(self):
+        """The other half of atomic: facts written, call resolved."""
+        def broken(subject, risk):
+            raise RuntimeError("callback")
+
+        with TemporaryDirectory() as directory:
+            runtime = Runtime(directory, "smart", approve=broken, state_dir=directory)
+            runtime.create_task("approval facts")
+            # A command that always asks: `echo` is inspection-only now, so it
+            # no longer reaches the approval gate at all in smart mode.
+            with self.assertRaises(RuntimeError):
+                runtime.run_tool("exec", command="rm -rf victim")
+            types = [event.type for event in runtime.events.list()]
+            self.assertIn("approval.failed", types)
+            self.assertIn("tool.failed", types)
             self.assertIsNone(runtime.task.pending_tool)
+            runtime.stop()
 
     def test_approval_failure_ready_persistence_keeps_pending_until_ready(self):
         class FailingStore:
@@ -756,14 +831,14 @@ class AgentLoopTests(unittest.TestCase):
             runtime.create_task("approval atomic")
             runtime.events._durable = FailingStore()
             with self.assertRaises(OSError):
-                runtime.run_tool("exec", command="echo hi")
+                runtime.run_tool("exec", command="rm -rf victim")
             self.assertIsNotNone(runtime.task.pending_tool)
 
     def test_approval_rejection_replays_without_pending_tool(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "smart", approve=lambda name, risk: False, state_dir=directory)
             runtime.create_task("approval reject replay")
-            result = runtime.run_tool("exec", command="echo hi")
+            result = runtime.run_tool("exec", command="rm -rf victim")
             self.assertFalse(result.ok)
             runtime.close()
             recovered = Runtime.recover(directory, directory, runtime.session_id)
@@ -776,7 +851,7 @@ class AgentLoopTests(unittest.TestCase):
             runtime = Runtime(directory, "smart", approve=lambda name, risk: "yes", state_dir=directory)
             runtime.create_task("approval type")
             with self.assertRaisesRegex(TypeError, "must return bool"):
-                runtime.run_tool("exec", command="echo hi")
+                runtime.run_tool("exec", command="rm -rf victim")
             failed = next(event for event in runtime.events.list() if event.type == "approval.failed")
             self.assertEqual(failed.payload["error_tag"], "APPROVAL_CALLBACK_FAILED")
             self.assertIsNone(runtime.task.pending_tool)
@@ -791,7 +866,7 @@ class AgentLoopTests(unittest.TestCase):
             runtime = Runtime(directory, "smart", approve=broken_approval, state_dir=directory)
             runtime.create_task("approval failure")
             with self.assertRaisesRegex(RuntimeError, "approval secret"):
-                runtime.run_tool("exec", command="echo hi")
+                runtime.run_tool("exec", command="rm -rf victim")
             failed = next(event for event in runtime.events.list() if event.type == "approval.failed")
             self.assertEqual(failed.payload["error_tag"], "APPROVAL_CALLBACK_FAILED")
             tool_failed = next(event for event in runtime.events.list() if event.type == "tool.failed")
@@ -805,6 +880,9 @@ class AgentLoopTests(unittest.TestCase):
             recovered.stop()
 
     def test_rejected_tool_ready_persistence_failure_keeps_previous_state(self):
+        """The previous state must differ from the one the failing write would
+        set, or the assertion passes either way — which is what it used to do,
+        with "ready" on both sides."""
         class FailingStore:
             def append(self, event):
                 if event.type == "agent.node" and event.payload.get("node") == "ready":
@@ -813,10 +891,11 @@ class AgentLoopTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, "auto")
             runtime.create_task("ready persistence")
+            runtime.task.agent_state = "tool.executing"
             runtime.events._durable = FailingStore()
             with self.assertRaises(OSError):
                 runtime.run_tool("read", path=3)
-            self.assertEqual(runtime.task.agent_state, "ready")
+            self.assertEqual(runtime.task.agent_state, "tool.executing")
 
     def test_schema_failure_replays_ready_state(self):
         with TemporaryDirectory() as directory:

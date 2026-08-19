@@ -10,6 +10,8 @@ import uuid
 from typing import Any
 from urllib.parse import urlparse
 
+from . import __version__
+
 
 ALLOWED_FIELDS = frozenset({
     "event", "install_id", "fun_version", "python_version", "os", "model_family",
@@ -68,7 +70,7 @@ def event_payload(*, event: str, install: str, model: str = "", status: str | No
     payload: dict[str, Any] = {
         "event": event,
         "install_id": hashlib.sha256(install.encode("utf-8")).hexdigest()[:32],
-        "fun_version": "1.0.0a1",
+        "fun_version": __version__,
         "python_version": platform.python_version(),
         "os": platform.system().lower(),
         "model_family": model_family(model),

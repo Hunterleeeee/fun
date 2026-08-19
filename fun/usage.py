@@ -14,6 +14,23 @@ class Usage:
     generation_ms: int | None = None
     tool_ms: int = 0
 
+    def restore(self, snapshot: dict[str, object]) -> None:
+        """Adopt a cumulative snapshot as-is.
+
+        ``merge_provider`` accumulates, which is right for a provider's per-call
+        report and wrong for a stored total; replay needs assignment.
+        """
+        for field_name in ("input_tokens", "output_tokens", "reasoning_tokens", "total_tokens", "ttft_ms", "generation_ms"):
+            value = snapshot.get(field_name)
+            if isinstance(value, int) and not isinstance(value, bool):
+                setattr(self, field_name, value)
+        tool_ms = snapshot.get("tool_ms")
+        if isinstance(tool_ms, int) and not isinstance(tool_ms, bool):
+            self.tool_ms = tool_ms
+        precision = snapshot.get("precision")
+        if isinstance(precision, str) and precision:
+            self.precision = precision
+
     def merge_provider(self, raw: dict[str, object], ttft_ms: int | None = None) -> None:
         prompt = raw.get("prompt_tokens")
         completion = raw.get("completion_tokens")
@@ -34,7 +51,16 @@ class Usage:
         return self.__dict__.copy()
 
     def summary(self) -> str:
-        input_text = str(self.input_tokens if self.input_tokens is not None else "?")
-        output_text = str(self.output_tokens if self.output_tokens is not None else "?")
-        ttft_text = f"{self.ttft_ms}ms" if self.ttft_ms is not None else "?"
-        return f"in {input_text} · out {output_text} · ttft {ttft_text}"
+        """A compact usage line, omitting anything not measured yet.
+
+        Printing "in ? out ? ttft ?" before the first response is noise dressed
+        up as data; an empty string lets the caller drop the segment entirely.
+        """
+        parts = []
+        if self.input_tokens is not None:
+            parts.append(f"in {self.input_tokens}")
+        if self.output_tokens is not None:
+            parts.append(f"out {self.output_tokens}")
+        if self.ttft_ms is not None:
+            parts.append(f"ttft {self.ttft_ms}ms")
+        return " · ".join(parts)

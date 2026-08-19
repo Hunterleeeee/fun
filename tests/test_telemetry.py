@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from unittest import mock
+from unittest.mock import patch
 
 from fun.runtime import Runtime
 from fun.cli import build_parser, resolve_command_prefix
@@ -93,24 +94,46 @@ class TelemetryTests(unittest.TestCase):
             runtime.stop()
             self.assertFalse(runtime.lock.held)
 
-    def test_telemetry_retries_after_transient_failure(self):
-        class FlakyTelemetry:
+    def test_a_failed_telemetry_send_is_isolated_and_not_marked_sent(self):
+        """There is no retry in the product — the previous version of this test
+        performed the 'retry' itself, in the test body, and asserted that the
+        product had done it."""
+        class Failing:
             install = "anon"
+
             def __init__(self):
                 self.calls = 0
+
             def send(self, payload):
                 self.calls += 1
-                if self.calls == 1:
-                    raise RuntimeError("network")
-                return True
+                raise RuntimeError("network")
 
-        telemetry = FlakyTelemetry()
+        telemetry = Failing()
         with tempfile.TemporaryDirectory() as directory:
             runtime = Runtime(directory, telemetry=telemetry)
-            runtime.create_task("retry telemetry")
+            runtime.create_task("telemetry")
+            runtime.stop()                       # must not raise
+            self.assertEqual(telemetry.calls, 1)
+            self.assertFalse(runtime._telemetry_sent)
+
+    def test_a_successful_send_is_marked_and_not_repeated(self):
+        class Counting:
+            install = "anon"
+
+            def __init__(self):
+                self.calls = 0
+
+            def send(self, payload):
+                self.calls += 1
+                return True
+
+        telemetry = Counting()
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Runtime(directory, telemetry=telemetry)
+            runtime.create_task("telemetry")
             runtime.stop()
             runtime._send_telemetry("stopped")
-            self.assertEqual(telemetry.calls, 2)
+            self.assertEqual(telemetry.calls, 1)
             self.assertTrue(runtime._telemetry_sent)
 
     def test_terminal_paths_close_store_when_telemetry_fails(self):
@@ -156,13 +179,23 @@ class TelemetryTests(unittest.TestCase):
             send.assert_called_once()
             self.assertEqual(send.call_args.args[0]["status"], "failed")
 
-    def test_disabled_client_does_not_create_install_file(self):
-        import tempfile
+    def test_a_disabled_client_writes_nothing_and_sends_nothing(self):
+        """The previous version asserted on a temp directory that was never
+        passed to anything, so neither assertion could fail."""
+        import tempfile as _tempfile
         from pathlib import Path
-        with tempfile.TemporaryDirectory() as directory:
-            self.assertFalse((Path(directory) / "telemetry_id").exists())
-            self.assertFalse(TelemetryClient().send(event_payload(event="x", install="local")))
-            self.assertFalse((Path(directory) / "telemetry_id").exists())
+
+        with _tempfile.TemporaryDirectory() as directory:
+            before = set(Path(directory).rglob("*"))
+            with patch("fun.telemetry.urllib.request.urlopen") as urlopen:
+                self.assertFalse(TelemetryClient().send(event_payload(event="x", install="local")))
+                urlopen.assert_not_called()
+            self.assertEqual(set(Path(directory).rglob("*")), before)
+
+    def test_the_reported_version_matches_the_package(self):
+        import fun
+
+        self.assertEqual(event_payload(event="x", install="local")["fun_version"], fun.__version__)
 
     def test_sender_is_disabled_without_explicit_opt_in_and_endpoint(self):
         payload = event_payload(event="task.finished", install="local")

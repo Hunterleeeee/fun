@@ -1,105 +1,46 @@
+"""Command-line entry point: parse arguments, wire a session, hand off.
+
+Everything this module used to do inline now lives behind a seam:
+
+* slash commands   -> :mod:`fun.commands`
+* user interaction -> :mod:`fun.frontends`
+* drawing          -> :mod:`fun.ui`
+
+What is left here is argument parsing, first-run configuration, and choosing
+which frontend a given invocation should get.
+"""
 from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
-import getpass
-import json
-import shlex
 import sys
 import threading
-try:
-    import termios
-    import tty
-except ImportError:  # Windows: menu falls back to typed commands
-    termios = None
-    tty = None
-try:
-    import readline
-except ImportError:
-    readline = None
+import time
+from pathlib import Path
+from typing import Any
 
 from . import __version__
+from .commands import REGISTRY, Session, command_names, dispatch, resolve_command_prefix
 from .config import FunConfig
 from .dashboard import serve
-from .provider import ModelConfig, OpenAICompatible, ProviderError
+from .frontends import AppFrontend, PlainFrontend, friendly_error, run_goal
 from .i18n import t
-from .renderer import TerminalRenderer
-from .runtime import Runtime
-from .tui import TerminalUI
+from .provider import ModelConfig, OpenAICompatible
+from .runtime import SMALL_TALK_PLAN, Runtime
+from .ui import input as keys
+from .ui.app import App
+from .ui.completion import FileIndex
+from .ui.components import banner
+from .ui.fullscreen import FullscreenSurface
+from .ui.stream import StreamSurface
+from .ui.theme import Theme
+
+__all__ = ["build_parser", "main", "resolve_command_prefix"]
 
 
-def _friendly_error(exc: Exception, locale: str) -> str:
-    tag = getattr(exc, "error_tag", "")
-    keys = {"PROVIDER_AUTH_FAILED": "provider_auth", "PROVIDER_NETWORK_FAILED": "provider_network", "PROVIDER_TIMEOUT": "provider_timeout", "PROVIDER_MALFORMED_EVENT": "provider_bad_response", "PROVIDER_UNEXPECTED_CONTENT_TYPE": "provider_bad_response"}
-    return t(locale, keys[tag]) if tag in keys else str(exc)
-
-
-def _choose_model(base_url: str, api_key: str, current: str = "", locale: str = "en-US") -> str | None:
-    try:
-        models = OpenAICompatible(ModelConfig(base_url, api_key, current or "models-placeholder")).list_models()
-    except Exception as exc:
-        print(t(locale, "model_load_failed"))
-        try:
-            return input(f"Model ID [{current}] (manual fallback, Enter cancels) ❯ ").strip() or current or None
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return None
-    if not models:
-        print(t(locale, "model_empty"))
-        try:
-            return input(f"Model ID [{current}] (manual fallback, Enter cancels) ❯ ").strip() or current or None
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return None
-    print(t(locale, "choose_model"))
-    if termios is None or tty is None or not sys.stdin.isatty():
-        for index, model_id in enumerate(models, 1):
-            print(f"  [{index}] {model_id}")
-        while True:
-            choice = input(f"Choose model [1-{len(models)}] ❯ ").strip()
-            if choice.isdigit() and 1 <= int(choice) <= len(models):
-                return models[int(choice) - 1]
-            print("Enter a model number, or use Ctrl-C to cancel.")
-    index = 0
-    while True:
-        print("\033[2J\033[H", end="")
-        print(t(locale, "choose_model") + "\n")
-        for i, model_id in enumerate(models):
-            print(f"{'❯' if i == index else ' '} {model_id}")
-        fd = sys.stdin.fileno()
-        old = termios.tcgetattr(fd)
-        try:
-            tty.setcbreak(fd)
-            key = sys.stdin.read(1)
-            if key in {"\n", "\r"}:
-                return models[index]
-            if key == "\x1b" and sys.stdin.read(1) == "[":
-                code = sys.stdin.read(1)
-                if code == "A": index = (index - 1) % len(models)
-                elif code == "B": index = (index + 1) % len(models)
-            elif key == "k": index = (index - 1) % len(models)
-            elif key == "j": index = (index + 1) % len(models)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
-
-def resolve_command_prefix(text: str, commands: set[str]) -> tuple[str | None, list[str]]:
-    """Resolve an exact or unique slash command without sending it to the model."""
-    if not text.startswith("/") or text in commands:
-        return text, []
-    matches = sorted(command for command in commands if command.startswith(text))
-    if len(matches) == 1:
-        return matches[0], []
-    return None, matches
-
-
-def _secret_input(prompt: str) -> str | None:
-    try:
-        return getpass.getpass(prompt).strip()
-    except (EOFError, KeyboardInterrupt):
-        print("\n" + t("en-US", "cancel_status"), file=sys.stderr)
-        return None
+def _approval_allowed(answer: str) -> bool:
+    """Translate the TUI's semantic approval answer without truthiness bugs."""
+    return answer in {"yes", "always"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -115,6 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--non-interactive", action="store_true", help="Never wait for interactive approval")
     parser.add_argument("--resume-session", help="Resume a persisted session by ID")
     parser.add_argument("--configure", action="store_true", help="Save provider settings interactively")
+    parser.add_argument("--fullscreen", action="store_true", help="Take over the terminal (default)")
+    parser.add_argument("--stream", action="store_true", help="Keep output in the shell's scrollback instead of taking over the terminal")
+    parser.add_argument("--no-color", action="store_true", help="Disable colour output")
+    parser.add_argument("--theme", choices=("sky", "dawn", "ember", "mono"), default=None, help="Colour theme")
     parser.add_argument("--dashboard", action="store_true", help="Open the local-only usage dashboard")
     parser.add_argument("--dashboard-port", type=int, default=8765)
     parser.add_argument("--telemetry", dest="telemetry", action="store_true", help="Enable configured private telemetry")
@@ -123,669 +68,359 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    state_dir = os.getenv("FUN_STATE_DIR", str(os.path.expanduser("~/.fun")))
-    if args.dashboard:
-        serve(os.path.join(state_dir, "events.db"), args.dashboard_port)
-        return 0
-    config_path = os.path.join(state_dir, "config.json")
-    saved = FunConfig.load(config_path)
-    locale = args.locale or saved.locale
-    if not args.locale and not Path(config_path).exists() and sys.stdin.isatty():
-        print("Select language / 选择语言")
-        print("  [1] 中文")
-        print("  [2] English")
-        try:
-            locale = "zh-CN" if input("❯ ").strip() == "1" else "en-US"
-        except (EOFError, KeyboardInterrupt):
-            print(t("en-US", "cancel_status"), file=sys.stderr)
+def _theme(args: argparse.Namespace, name: str = "sky", locale: str = "en-US") -> Theme:
+    chosen = args.theme or name
+    if args.no_color:
+        return Theme(mode="none", unicode=Theme.detect().unicode, name=chosen, locale=locale)
+    detected = Theme.detect(is_tty=sys.stdout.isatty(), name=chosen)
+    return Theme(detected.mode, detected.unicode, detected.name, locale)
+
+
+def _choose_locale(saved: FunConfig, args: argparse.Namespace, config_path: str) -> str | None:
+    if args.locale:
+        return args.locale
+    if Path(config_path).exists() or not sys.stdin.isatty():
+        return saved.locale
+    print("Select language / 选择语言")
+    print("  [1] 中文")
+    print("  [2] English")
+    try:
+        locale = "zh-CN" if input("❯ ").strip() == "1" else "en-US"
+    except (EOFError, KeyboardInterrupt):
+        return None
+    saved.locale = locale
+    saved.save(config_path)
+    return locale
+
+
+def _configure(saved: FunConfig, config_path: str, locale: str, theme: Theme) -> int:
+    """The ``--configure`` flow: provider, key, model and telemetry consent."""
+    if not sys.stdin.isatty():
+        print("Configuration requires an interactive terminal.", file=sys.stderr)
+        return 2
+    frontend = PlainFrontend(locale, theme)
+    saved.base_url = input(f"{t(locale, 'base_url')} [{saved.base_url}]: ").strip() or saved.base_url
+    env_key = os.getenv("FUN_API_KEY", "")
+    if env_key:
+        print("Using FUN_API_KEY from environment; no key input needed.")
+        saved.api_key = env_key
+    else:
+        print("API key: paste is supported; input is hidden and will not echo.")
+        entered = frontend._ask(t(locale, "api_key_keep") + ": ", secret=True)
+        if entered is None:
             return 130
-        saved.locale = locale
-        saved.save(config_path)
-    renderer = TerminalRenderer(color=sys.stdout.isatty(), locale=locale)
-    if args.configure:
-        if not sys.stdin.isatty():
-            print("Configuration requires an interactive terminal.", file=sys.stderr)
-            return 2
-        saved.base_url = input(f"{t(locale, 'base_url')} [{saved.base_url}]: ").strip() or saved.base_url
-        env_key = os.getenv("FUN_API_KEY", "")
-        if env_key:
-            print("Using FUN_API_KEY from environment; no key input needed.")
-            saved.api_key = env_key
-        else:
-            print("API key: paste is supported; input is hidden and will not echo.")
-            entered_key = _secret_input(t(locale, "api_key_keep") + ": ")
-            if entered_key is None:
-                return 130
-            saved.api_key = entered_key or saved.api_key
-        saved.model = _choose_model(saved.base_url, saved.api_key, saved.model, locale) or saved.model
-        if not saved.model:
-            print(t(locale, "model_required_cli"), file=sys.stderr)
-            return 2
-        telemetry_choice = input(f"{t(locale, 'telemetry_prompt')} [{'Y/n' if saved.telemetry else 'y/N'}]: ").strip().lower()
-        if telemetry_choice in {"y", "yes"}:
-            saved.telemetry = True
-            saved.telemetry_endpoint = input(f"{t(locale, 'telemetry_endpoint')} [{saved.telemetry_endpoint}]: ").strip() or saved.telemetry_endpoint
-        elif telemetry_choice in {"n", "no"}:
-            saved.telemetry = False
-            saved.telemetry_endpoint = ""
-        saved.save(config_path)
-        print(t(locale, "saved_to").format(path=config_path))
-        if saved.api_key:
-            store = "macOS Keychain" if json.loads(Path(config_path).read_text(encoding="utf-8")).get("api_key_store") == "macos-keychain" else "FUN_API_KEY environment variable"
-            print(f"API key stored via {store}; it is not written to config.json.")
-        return 0
-    base_url = args.base_url or saved.base_url
-    api_key = args.api_key or saved.api_key
-    model = args.model or saved.model
-    approval = args.approval or saved.approval
-    provider = None
-    if base_url and api_key and model:
-        provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-    session_approvals: set[str] = set()
-    tui: TerminalUI | None = None
-    def approve(name: str, risk: object) -> bool:
-        if name in session_approvals:
-            return True
-        if args.non_interactive or not sys.stdin.isatty():
-            return False
-        if tui is not None:
-            return tui.request_approval(name, risk)
-        try:
-            print(t(locale, "approval_wait"), flush=True)
-            choice = input("? " + t(locale, "approval_prompt").format(name=name, risk=risk)).strip().lower()
-            if choice in {"a", "always", "本会话"}:
-                session_approvals.add(name)
-                print(t(locale, "approval_session").format(name=name), flush=True)
-                return True
-            return choice in {"y", "yes"}
-        except (EOFError, KeyboardInterrupt):
-            return False
-    telemetry_enabled = saved.telemetry if args.telemetry is None else args.telemetry
+        saved.api_key = entered or saved.api_key
+    picked: list[str | None] = [None]
+    provider = OpenAICompatible(ModelConfig(saved.base_url, saved.api_key, saved.model or "models-placeholder")) if saved.base_url and saved.api_key else None
+    frontend.select("Choose model", [saved.model] if saved.model else [], lambda value: picked.__setitem__(0, value), loader=provider.list_models if provider else None)
+    saved.model = picked[0] or saved.model
+    if not saved.model:
+        print(t(locale, "model_required_cli"), file=sys.stderr)
+        return 2
+    choice = input(f"{t(locale, 'telemetry_prompt')} [{'Y/n' if saved.telemetry else 'y/N'}]: ").strip().lower()
+    if choice in {"y", "yes"}:
+        saved.telemetry = True
+        saved.telemetry_endpoint = input(f"{t(locale, 'telemetry_endpoint')} [{saved.telemetry_endpoint}]: ").strip() or saved.telemetry_endpoint
+    elif choice in {"n", "no"}:
+        saved.telemetry, saved.telemetry_endpoint = False, ""
+    saved.save(config_path)
+    print(t(locale, "saved_to").format(path=config_path))
+    return 0
+
+
+def _telemetry_client(args: argparse.Namespace, saved: FunConfig, state_dir: str, config_path: str) -> Any:
+    enabled = saved.telemetry if args.telemetry is None else args.telemetry
     if args.telemetry is True:
         from .telemetry import valid_endpoint
+
         if not valid_endpoint(saved.telemetry_endpoint):
             print("Telemetry requires a private http(s) endpoint. Use --configure first.", file=sys.stderr)
-            saved.telemetry = False
-            telemetry_enabled = False
+            saved.telemetry, enabled = False, False
         else:
             saved.telemetry = True
     if args.telemetry is False:
-        saved.telemetry = False
-        saved.telemetry_endpoint = ""
+        saved.telemetry, saved.telemetry_endpoint = False, ""
         try:
             os.remove(os.path.join(state_dir, "telemetry_id"))
         except FileNotFoundError:
             pass
         saved.save(config_path)
-    telemetry = None
-    if telemetry_enabled and saved.telemetry_endpoint:
-        from .telemetry import TelemetryClient, load_or_create_install_id
-        telemetry = TelemetryClient(enabled=True, endpoint=saved.telemetry_endpoint, install=load_or_create_install_id(state_dir))
+    if not (enabled and saved.telemetry_endpoint):
+        return None
+    from .telemetry import TelemetryClient, load_or_create_install_id
+
+    return TelemetryClient(enabled=True, endpoint=saved.telemetry_endpoint, install=load_or_create_install_id(state_dir))
+
+
+def _run_interactive_app(session: Session, app: App, locale: str, theme: Theme) -> int:
+    """The full terminal experience: streaming by default, fullscreen on request."""
+    frontend = AppFrontend(app, locale)
+    runtime = session.runtime
+    app.completer.commands = {name: command.summary for name, command in sorted(REGISTRY.items())}
+    app.completer.files = FileIndex(runtime.tools.guard.root)
+    app.state.agent_mode = runtime.policy.agent_mode
+
+    def set_mode(name: str) -> None:
+        runtime.policy.agent_mode = name
+
+    app.mode_handler = set_mode
+    app.state.model_name = runtime.model
+    app.state.approval_mode = runtime.policy.mode.value
+    app.state.workspace = str(runtime.tools.guard.root)
+    app.state.version = f"v{__version__}"
+    app.state.session_label = runtime.session_id
+    app.state.task_state = runtime.task.status if runtime.task else "idle"
+    if runtime.task:
+        app.state.restore_messages(runtime.task.messages)
+        app.state.set_plan(runtime.task.plan, runtime.task.plan_status)
+    if runtime.task and runtime.task.status == "recovery_required":
+        app.state.set_recovery(runtime.recovery_summary() or {})
+    app.background_provider = lambda: [
+        # The rail truncates for its own column; the answer must arrive whole,
+        # because the transcript report is built from this same dict and 120
+        # characters cut a six-sentence answer mid-word with no ellipsis.
+        {"id": item.id, "status": item.status, "goal": item.goal, "result": str(item.result) if item.result is not None else "", "error": item.error or ""}
+        for item in runtime.background.list()
+    ]
+    app.recovery_handler = lambda action: submit(f"/recover {action}")
+
+    def interrupt() -> bool:
+        """Stop an in-flight task so Ctrl-C interrupts work before it exits.
+
+        ``run_model_turn`` re-checks task status between stream chunks and
+        between tool calls, so flipping the task out of ``running`` unwinds the
+        worker thread at the next safe point rather than killing it mid-write.
+        """
+        task = runtime.task
+        if task is None or task.status not in {"running", "paused"}:
+            return False
+        try:
+            runtime.stop()
+        except RuntimeError:
+            return False
+        return True
+
+    app.interrupt_handler = interrupt
+
+    def turn_footer(elapsed: float) -> str:
+        """The one-line receipt under a finished reply: mode, model, cost, time.
+
+        Only facts that were actually measured appear; a missing token count is
+        omitted rather than printed as a zero.
+        """
+        parts = [app.state.agent_mode, runtime.model or "model"]
+        tokens = runtime.usage.output_tokens
+        if isinstance(tokens, int) and tokens > 0:
+            parts.append(f"{tokens} tok")
+        parts.append(f"{elapsed:.1f}s")
+        return "  ·  ".join(parts)
+
+    def on_plan(steps: list[str], statuses: list[str]) -> None:
+        trivial = tuple(steps) == SMALL_TALK_PLAN
+        app.post("plan", ([], []) if trivial else (steps, statuses))
+
+    runtime.on_plan = on_plan
+
+    def on_status(kind: str, payload: dict[str, Any]) -> None:
+        app.post("tool", (kind, payload))
+
+    def worker(text: str) -> None:
+        started = time.monotonic()
+        run_goal(session, frontend, text, on_text=lambda chunk: app.post("assistant", chunk), on_status=on_status)
+        app.post("turn", turn_footer(time.monotonic() - started))
+        task = runtime.task
+        if task:
+            # "understand the request / respond" as a 0/2 progress bar tells a
+            # reader nothing except that something is unfinished, which is
+            # exactly the wrong thing to say after a greeting.
+            trivial = tuple(task.plan) == SMALL_TALK_PLAN
+            app.post("plan", ([], []) if trivial else (task.plan, task.plan_status))
+        app.post("usage", runtime.usage.summary())
+        app.state.model_name = runtime.model
+        app.state.approval_mode = runtime.policy.mode.value
+
+    def submit(text: str) -> None:
+        if dispatch(text, session, frontend):
+            # No command names here.  Matching the raw text meant "/cle" — which
+            # dispatch resolves to /clear and reports as cleared — silently left
+            # the transcript in place; the side effect belongs to the handler.
+            app.state.model_name = runtime.model
+            app.state.approval_mode = runtime.policy.mode.value
+            return
+        app.state.goal = text
+        threading.Thread(target=worker, args=(text,), daemon=True).start()
+
+    try:
+        app.run(submit)
+    finally:
+        runtime.shutdown()
+    return 0
+
+
+def _run_plain(session: Session, locale: str, theme: Theme) -> int:
+    """Fallback loop for pipes, dumb terminals and Windows consoles."""
+    frontend = PlainFrontend(locale, theme)
+    runtime = session.runtime
+    for line in banner(theme, 72, f"v{__version__}"):
+        print(line)
+    print()
+    if runtime.provider is None:
+        frontend.say(t(locale, "offline"))
+    try:
+        while not frontend.stopped:
+            try:
+                text = input("fun ❯ ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not text:
+                continue
+            if dispatch(text, session, frontend):
+                continue
+            run_goal(session, frontend, text, on_text=lambda chunk: print(chunk, end="", flush=True))
+            print()
+    finally:
+        runtime.shutdown()
+    return 0
+
+
+def _prepare_paths(workspace: str, state_dir: str) -> str:
+    """Validate the workspace and state directory before anything uses them.
+
+    Both used to reach their consumers unchecked, so a mistyped ``--workspace``
+    surfaced as a raw ``PolicyError`` traceback and a ``FUN_STATE_DIR`` pointing
+    at a file as ``FileExistsError`` — a Python stack trace for a typo.
+    """
+    target = Path(workspace).expanduser()
+    if not target.exists():
+        return f"× workspace does not exist: {target}"
+    if not target.is_dir():
+        return f"× workspace is not a directory: {target}"
+    if not os.access(target, os.R_OK | os.W_OK):
+        return f"× workspace is not readable and writable: {target}"
+    state = Path(state_dir).expanduser()
+    if state.exists() and not state.is_dir():
+        return f"× state directory is not a directory: {state}"
+    try:
+        state.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return f"× cannot create state directory {state}: {exc}"
+    return ""
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    state_dir = os.getenv("FUN_STATE_DIR", str(os.path.expanduser("~/.fun")))
+    problem = _prepare_paths(args.workspace, state_dir)
+    if problem:
+        print(problem, file=sys.stderr)
+        return 2
+    if args.dashboard:
+        serve(os.path.join(state_dir, "events.db"), args.dashboard_port)
+        return 0
+    config_path = os.path.join(state_dir, "config.json")
+    saved = FunConfig.load(config_path)
+    locale = _choose_locale(saved, args, config_path)
+    theme = _theme(args, saved.theme, locale or saved.locale or "en-US")
+    if locale is None:
+        print(t("en-US", "cancel_status"), file=sys.stderr)
+        return 130
+    if args.configure:
+        return _configure(saved, config_path, locale, theme)
     if locale != saved.locale:
         saved.locale = locale
         saved.save(config_path)
-    renderer = TerminalRenderer(color=sys.stdout.isatty(), locale=locale)
-    if not provider and not args.goal and not args.resume_session and sys.stdin.isatty():
-        print(renderer.welcome(False, os.path.abspath(args.workspace)))
+
+    base_url = args.base_url or saved.base_url
+    api_key = args.api_key or saved.api_key
+    model = args.model or saved.model
+    approval = args.approval or saved.approval
+    provider = OpenAICompatible(ModelConfig(base_url, api_key, model)) if base_url and api_key and model else None
+    telemetry = _telemetry_client(args, saved, state_dir, config_path)
+
+    session_approvals: set[str] = set()
+    app_holder: dict[str, App] = {}
+
+    def approve(name: str, risk: object) -> bool:
+        # "Always allow" never covers a critical operation.  Approving
+        # `rm -rf build` once used to remember `exec:rm` for the session, so the
+        # next `rm -rf` — of anything — ran with no prompt at all.
+        critical = str(getattr(risk, "value", risk)) == "critical"
+        if not critical and name in session_approvals:
+            return True
+        if args.non_interactive or not sys.stdin.isatty():
+            return False
+        app = app_holder.get("app")
+        if app is not None:
+            answer = app.request_approval(name, risk)
+            if answer == "always":
+                # The UI offers "always allow in this session"; only the plain
+                # input() fallback ever recorded it, so in the real frontend the
+                # choice allowed one call and then asked again immediately.
+                if not critical:
+                    session_approvals.add(name)
+                return True
+            # request_approval returns semantic strings.  In particular,
+            # ``"no"`` is non-empty and therefore truthy, so bool(answer)
+            # silently turned an explicit rejection into permission.
+            return _approval_allowed(answer)
         try:
-            choice = input("\nSelect [1/2/3/4/q] ❯ ").strip().lower()
+            choice = input("? " + t(locale, "approval_prompt").format(name=name, risk=risk)).strip().lower()
         except (EOFError, KeyboardInterrupt):
-            print(t(locale, "cancel_status"), file=sys.stderr)
-            return 130
-        if choice == "q":
-            return 0
-        if choice == "1":
-            saved.base_url = "https://api.openai.com/v1"
-        elif choice == "2":
-            saved.base_url = input("Provider base URL ❯ ").strip()
-        elif choice == "3":
-            if not all(os.getenv(key) for key in ("FUN_API_URL", "FUN_API_KEY", "FUN_MODEL")):
-                print(renderer.error("Missing FUN_API_URL, FUN_API_KEY, or FUN_MODEL."), file=sys.stderr)
-                return 2
-            saved.base_url, saved.api_key, saved.model = os.environ["FUN_API_URL"], os.environ["FUN_API_KEY"], os.environ["FUN_MODEL"]
-        elif choice == "4":
-            saved.base_url = ""
-        else:
-            print(renderer.error("Choose 1, 2, 3, 4, or q."), file=sys.stderr)
-            return 2
-        if choice in {"1", "2"}:
-            print(t(locale, "api_key_hint"))
-            entered_key = _secret_input("API key ❯ ") if not os.getenv("FUN_API_KEY") else os.getenv("FUN_API_KEY")
-            if entered_key is None:
-                return 130
-            saved.api_key = entered_key
-            if not saved.api_key:
-                print(renderer.error("API key is required."), file=sys.stderr)
-                return 2
-            saved.model = _choose_model(saved.base_url, saved.api_key, saved.model, locale) or ""
-            if not saved.model:
-                return 2
-            print("Permission mode: [1] ask  [2] smart (recommended)  [3] auto")
-            approval = {"1": "ask", "2": "smart", "3": "auto"}.get(input("❯ ").strip(), approval)
-            saved.approval = approval
-            os.environ["FUN_API_KEY"] = saved.api_key
-            saved.save(config_path)
-            base_url, api_key, model = saved.base_url, saved.api_key, saved.model
-            provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-            print(renderer.setup_complete())
-        elif choice == "3":
-            base_url, api_key, model = saved.base_url, saved.api_key, saved.model
-            provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
+            return False
+        if choice in {"a", "always"}:
+            if not critical:
+                session_approvals.add(name)
+            return True
+        return choice in {"y", "yes"}
+
     if args.resume_session:
         try:
-            runtime = Runtime.recover(args.workspace, state_dir, args.resume_session, approval=approval, provider=provider, approve=approve)
+            runtime = Runtime.recover(
+                args.workspace, state_dir, args.resume_session, approval=approval, provider=provider,
+                approve=approve, telemetry=telemetry, model=model, system_prompt=saved.system_prompt,
+            )
+        except RuntimeError as exc:
+            if str(exc).startswith("UNKNOWN_SESSION"):
+                print(f"× no such session in {state_dir}: {args.resume_session}", file=sys.stderr)
+                return 2
+            print(f"× could not resume session: {exc}", file=sys.stderr)
+            return 2
         except Exception as exc:
             print(f"× could not resume session: {exc}", file=sys.stderr)
             return 2
     else:
         runtime = Runtime(args.workspace, approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model, system_prompt=saved.system_prompt)
+
+    session = Session(runtime, saved, config_path, base_url, api_key, model)
+
     if args.goal:
-        task = runtime.create_task(args.goal)
-        print(f"Fun · {args.workspace}")
-        print(renderer.plan(task.plan))
-        if provider:
-            try:
-                output = runtime.run_model_turn(on_text=lambda text: print(text, end="", flush=True))
-                runtime.complete(output)
-                print()
-            except Exception as exc:
-                print(f"\n× {_friendly_error(exc, locale)}", file=__import__("sys").stderr)
-                runtime.stop()
-                return 1
-        else:
+        if provider is None:
             print("Model not configured. Set --base-url, --api-key, and --model to run the agent loop.", file=sys.stderr)
-            runtime.stop()
+            runtime.shutdown()
             return 2
-        runtime.stop()
-        return 0
-
-    use_tui = bool(provider and sys.stdin.isatty() and termios is not None and tty is not None)
-    if not use_tui:
-        print(renderer.header(str(runtime.tools.guard.root), provider is not None, runtime.policy.mode.value))
-        if runtime.task and runtime.task.status == "recovery_required":
-            pending = runtime.recovery_summary() or {}
-            print("! " + t(locale, "pending_tool").format(name=pending.get("name", "unknown tool"), call_id=pending.get("call_id", "?")))
-            print(t(locale, "recovery_actions"))
-        if provider:
-            print(renderer.welcome(True))
-        else:
-            print(renderer.finding(t(locale, "offline")))
-            print("输入 /help 查看帮助，/setup 了解配置，或 /quit 退出。" if renderer.zh else "Use /help for commands, /setup to configure later, or /quit to exit.")
-
-    if readline is not None:
-        command_names = ["/help", "/config", "/setup", "/model", "/permissions", "/logout", "/status", "/plan", "/usage", "/diff", "/checkpoint", "/clear", "/goal", "/pause", "/resume", "/recover", "/cancel", "/stop", "/exit", "/quit"]
-        def complete_command(text: str, state: int) -> str | None:
-            line = readline.get_line_buffer() if readline is not None else text
-            if line and not line.lstrip().startswith("/"):
-                return None
-            prefix = line[:readline.get_begidx()] if readline is not None else text
-            matches = [item for item in command_names if item.startswith(prefix or text)]
-            return matches[state] if state < len(matches) else None
-        readline.set_completer(complete_command)
-        readline.parse_and_bind('tab: complete')
-
-    command_items = [
-        ("/help", t(locale, "cmd_help")), ("/config", t(locale, "cmd_config")),
-        ("/model", t(locale, "cmd_model")), ("/permissions", t(locale, "cmd_permissions")),
-        ("/logout", t(locale, "cmd_logout")), ("/status", t(locale, "cmd_status")),
-        ("/plan", t(locale, "cmd_plan")), ("/usage", t(locale, "cmd_usage")), ("/diff", t(locale, "cmd_diff")),
-        ("/checkpoint", t(locale, "cmd_checkpoint")), ("/clear", t(locale, "cmd_clear")), ("/cancel", t(locale, "cmd_cancel")), ("/exit", t(locale, "cmd_exit")),
-    ]
-
-    def command_menu() -> str:
-        if not sys.stdin.isatty() or termios is None or tty is None:
-            return "/help"
-        index = 0
-        while True:
-            print("\033[2J\033[H", end="")
-            print(t(locale, "commands_title") + "\n")
-            for i, (command, description) in enumerate(command_items):
-                marker = "❯" if i == index else " "
-                print(f"{marker} {command:<14} {description}")
-            fd = sys.stdin.fileno()
-            old = termios.tcgetattr(fd)
-            try:
-                tty.setcbreak(fd)
-                key = sys.stdin.read(1)
-                if key in {"\n", "\r"}:
-                    return command_items[index][0]
-                if key == "\x1b":
-                    if sys.stdin.read(1) == "[":
-                        code = sys.stdin.read(1)
-                        if code == "A": index = (index - 1) % len(command_items)
-                        elif code == "B": index = (index + 1) % len(command_items)
-                    else:
-                        return ""
-                elif key == "k": index = (index - 1) % len(command_items)
-                elif key == "j": index = (index + 1) % len(command_items)
-            finally:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
-    def reconfigure_current_session() -> None:
-        nonlocal provider, base_url, api_key, model
-        new_url = input(f"Provider base URL [{base_url}] ❯ ").strip() or base_url
-        print(t(locale, "api_key_hint"))
-        new_key = os.getenv("FUN_API_KEY") or _secret_input("API key ❯ ")
-        if new_key is None:
-            return
-        if not new_key:
-            print(t(locale, "api_key_required"))
-            return
-        new_model = _choose_model(new_url, new_key, model, locale)
-        if not new_model:
-            return
-        base_url, api_key, model = new_url, new_key, new_model
-        saved.base_url, saved.api_key, saved.model = base_url, api_key, model
-        os.environ["FUN_API_KEY"] = api_key
-        saved.save(config_path)
-        provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-        runtime.provider = provider
-        runtime.model = model
-        print(t(locale, "saved"))
-
-    def run_interactive_task(task: object) -> None:
-        print(renderer.plan(task.plan, task.plan_status))
-        if provider:
-            try:
-                print(t(locale, "thinking"), end=" ", flush=True)
-                def status(kind: str, payload: dict[str, object]) -> None:
-                    if kind in {"tool.started", "tool.executing"}:
-                        print(f"\n{t(locale, 'tool_running').format(name=payload.get('name', 'tool'))}", flush=True)
-                    elif kind == "approval.pending":
-                        print(f"{t(locale, 'approval_details')} · {payload.get('name', 'tool')} · risk={payload.get('risk', '?')} · args={payload.get('arguments', {})}", flush=True)
-                    elif kind == "tool.progress":
-                        print(f"  {payload.get('name', 'tool')} · {payload.get('elapsed_ms', 0)}ms", flush=True)
-                    elif kind == "tool.completed":
-                        print(f"✓ ({payload.get('elapsed_ms', 0)}ms)", flush=True)
-                    elif kind == "tool.failed":
-                        if payload.get("error") == "TimeoutExpired" or "COMMAND_TIMEOUT" in str(payload.get("text", "")):
-                            print("× " + t(locale, "tool_timeout").format(elapsed_ms=payload.get("elapsed_ms", 0)), flush=True)
-                        else:
-                            print(f"× ({payload.get('elapsed_ms', 0)}ms) · use /status for details", flush=True)
-                output = runtime.run_model_turn(on_text=lambda chunk: print(chunk, end="", flush=True), on_status=status)
-                runtime.complete(output)
-                print()
-            except Exception as exc:
-                print(f"\n× {_friendly_error(exc, locale)}", file=sys.stderr)
-                runtime.fail(str(exc))
-        else:
-            print("Model not configured. Use --configure or set FUN_API_URL, FUN_API_KEY, and FUN_MODEL.")
-            runtime.stop()
-
-    if use_tui:
-        tui = TerminalUI(locale=locale, commands=["/help", "/prompt", "/status", "/usage", "/plan", "/pause", "/resume", "/cancel", "/clear", "/stop", "/exit"])
-        tui.state.model_name = runtime.model
-        tui.state.approval_mode = runtime.policy.mode.value
-        tui.state.task_state = runtime.task.status if runtime.task else "idle"
-        tui.background_provider = lambda: [
-            {"id": item.id, "status": item.status, "goal": item.goal, "result": str(item.result)[:120] if item.result is not None else "", "error": item.error or ""}
-            for item in runtime.background.list()
-        ]
-        if runtime.task and runtime.task.messages:
-            tui.state.restore_messages(runtime.task.messages)
-        if runtime.task and runtime.task.status == "recovery_required":
-            tui.set_recovery(runtime.recovery_summary() or {})
-        def _apply_prompt(value: str | None, ui: TerminalUI, active_runtime: Runtime, config: FunConfig, path: str) -> None:
-            if value is None:
-                ui.state.toast = "Prompt edit cancelled"
-                ui.set_status("ready")
-                return
-            preference = value.strip()[:12000]
-            active_runtime.system_prompt = active_runtime.system_prompt.split("\n\nAdditional user preferences", 1)[0].rstrip() + ("\n\nAdditional user preferences (follow when they do not conflict with Runtime safety rules):\n" + preference if preference else "")
-            config.system_prompt = preference
-            config.save(path)
-            if active_runtime.task and active_runtime.task.messages and active_runtime.task.messages[0].get("role") == "system":
-                active_runtime.task.messages[0]["content"] = active_runtime.system_prompt
-                if not getattr(active_runtime, "_closed", False):
-                    active_runtime.emit("task.message", active_runtime.task.id, message={"role": "system", "content": active_runtime.system_prompt})
-            ui.state.toast = "System prompt updated"
-            ui.set_status("ready")
-
-        def tui_submit(text: str) -> None:
-            nonlocal provider, model
-            if text in {"/quit", "/exit"}:
-                tui.post("quit")
-                return
-            if text == "/help":
-                tui.append_assistant(renderer.help())
-                return
-            if text == "/prompt":
-                preview = saved.system_prompt.strip()
-                tui.open_prompt_modal("System prompt preferences", preview, lambda value: _apply_prompt(value, tui, runtime, saved, config_path))
-                return
-            if text.startswith("/prompt "):
-                _apply_prompt(text.split(" ", 1)[1], tui, runtime, saved, config_path)
-                return
-            if text == "/status":
-                tui.set_status(f"task={runtime.task.status if runtime.task else 'idle'} · model={runtime.model}")
-                return
-            if text == "/permissions":
-                modes = ["ask", "smart", "auto"]
-                current = runtime.policy.mode.value
-                selected = modes[(modes.index(current) + 1) % len(modes)] if current in modes else "smart"
-                runtime.policy.mode = selected
-                saved.approval = selected
-                saved.save(config_path)
-                tui.state.approval_mode = selected
-                tui.set_status(f"approval={selected}")
-                return
-            if text in {"/config", "/setup"}:
-                def apply_config(values: dict[str, str] | None) -> None:
-                    nonlocal base_url, api_key, model, provider
-                    if not values:
-                        tui.set_status("configuration cancelled")
-                        return
-                    base_url = values.get("base_url", base_url).strip() or base_url
-                    new_key = values.get("api_key", "").strip() or api_key
-                    model = values.get("model", model).strip() or model
-                    api_key = new_key
-                    saved.base_url, saved.model = base_url, model
-                    if api_key:
-                        saved.api_key = api_key
-                        os.environ["FUN_API_KEY"] = api_key
-                    saved.save(config_path)
-                    if api_key and base_url and model:
-                        provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-                        runtime.provider, runtime.model = provider, model
-                    tui.state.model_name = model
-                    tui.set_status("configuration updated")
-                tui.open_modal("Provider configuration", ["base_url", ("api_key", True), "model"], apply_config)
-                return
-            if text == "/model":
-                if not provider:
-                    tui.append_assistant(t(locale, "no_provider"))
-                    return
-                def choose_model_done(selected: str | None) -> None:
-                    nonlocal model, provider
-                    if selected:
-                        model = selected
-                        saved.model = selected
-                        saved.save(config_path)
-                        provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-                        runtime.provider, runtime.model = provider, model
-                        tui.state.model_name = model
-                        tui.set_status(f"model={model}")
-                def load_models() -> None:
-                    try:
-                        models = provider.list_models()
-                        tui.post("model_options", models)
-                    except Exception as exc:
-                        tui.append_assistant("× " + _friendly_error(exc, locale))
-                tui.open_select("Choose model", [model, "(loading models…)"], choose_model_done)
-                tui.modal["loading"] = True
-                threading.Thread(target=load_models, daemon=True).start()
-                return
-            if text.startswith("/model "):
-                selected = text.split(maxsplit=1)[1].strip()
-                if not selected:
-                    tui.append_assistant("Usage: /model <model-id>")
-                    return
-                model = selected
-                saved.model = selected
-                saved.save(config_path)
-                if provider:
-                    provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-                    runtime.provider = provider
-                runtime.model = model
-                tui.state.model_name = model
-                tui.set_status(f"model={model}")
-                return
-            if text == "/clear":
-                tui.state.transcript.clear()
-                tui.set_status("ready")
-                return
-            if text == "/usage":
-                tui.set_status(runtime.usage.summary())
-                return
-            if text == "/plan":
-                tui.append_assistant(renderer.plan(runtime.task.plan if runtime.task else [], runtime.task.plan_status if runtime.task else []))
-                return
-            if text == "/pause":
-                runtime.pause()
-                tui.set_status("paused")
-                return
-            if text == "/resume":
-                runtime.resume()
-                tui.set_status("ready")
-                return
-            if text == "/stop":
-                runtime.stop()
-                tui.set_status("stopped")
-                return
-            if text.startswith("/recover"):
-                action = text.split(maxsplit=1)[1] if len(text.split()) > 1 else "resume"
-                try:
-                    runtime.acknowledge_recovery(action)
-                    tui.state.mode = "working" if action in {"resume", "discard", "mark_failed"} else "ready"
-                    tui.set_status(f"recovery={action}")
-                    if provider and action in {"resume", "discard", "mark_failed"} and runtime.task and runtime.task.status == "running":
-                        def continue_recovered() -> None:
-                            tui.post("status", "working")
-                            try:
-                                output = runtime.run_model_turn(on_text=lambda chunk: tui.post("assistant", chunk), on_status=lambda kind, payload: tui.post("tool", (kind, payload)))
-                                runtime.complete(output)
-                                tui.post("status", "ready")
-                            except Exception as exc:
-                                runtime.fail(str(exc))
-                                tui.post("assistant", "× " + _friendly_error(exc, locale))
-                                tui.post("status", "failed")
-                        threading.Thread(target=continue_recovered, daemon=True).start()
-                except RuntimeError as exc:
-                    tui.append_assistant("× " + str(exc))
-                return
-            if text.startswith("/cancel "):
-                try:
-                    runtime.cancel_background_task(text.split(maxsplit=1)[1].strip())
-                    tui.set_status("cancellation requested")
-                except RuntimeError as exc:
-                    tui.append_assistant("× " + str(exc))
-                return
-            if text.startswith("/"):
-                tui.append_assistant(t(locale, "unknown_command"))
-                return
-            def worker() -> None:
-                tui.post("status", "working")
-                try:
-                    task = runtime.create_task(text)
-                    tui.post("status", t(locale, "thinking"))
-                    output = runtime.run_model_turn(
-                        on_text=lambda chunk: tui.post("assistant", chunk),
-                        on_status=lambda kind, payload: (tui.bind_approval(str(payload.get("call_id", "")), str(payload.get("name", "tool")), dict(payload.get("arguments") or {})) if kind == "approval.pending" else None) or tui.post("tool", (kind, payload)),
-                    )
-                    runtime.complete(output)
-                    tui.post("status", "ready")
-                except Exception as exc:
-                    runtime.fail(str(exc))
-                    tui.post("assistant", "× " + _friendly_error(exc, locale))
-                    tui.post("status", "failed")
-            threading.Thread(target=worker, daemon=True).start()
-        tui.recovery_handler = lambda action: tui_submit(f"/recover {action}")
-        try:
-            tui.run(tui_submit)
-        finally:
-            runtime.stop()
-        return 0
-
-    try:
-        while True:
-            text = input(f"\n{renderer.prompt(provider is not None)}").strip()
-            if text == "/":
-                text = command_menu()
-                if text:
-                    print(text)
-            if not text:
-                continue
-            if text.startswith("/") and not text.startswith(("/goal ", "/recover ", "/cancel ")):
-                known = {item[0] for item in command_items} | {"/setup", "/quit"}
-                resolved, matches = resolve_command_prefix(text, known)
-                if resolved is not None:
-                    text = resolved
-                elif matches:
-                    print("\n".join(matches))
-                    continue
-                else:
-                    print(t(locale, "unknown_command"), file=sys.stderr)
-                    continue
-            if text in {"/quit", "/exit"}:
-                break
-            if text == "/help":
-                print(renderer.help())
-                continue
-            if text in {"/config", "/setup"}:
-                reconfigure_current_session()
-                continue
-            if text == "/logout":
-                saved.clear_credentials(config_path)
-                provider = None
-                runtime.provider = None
-                runtime.model = ""
-                base_url = api_key = model = ""
-                print("\033[2J\033[H", end="")
-                print(renderer.header(str(runtime.tools.guard.root), False, runtime.policy.mode.value))
-                print(renderer.finding(t(locale, "offline")))
-                print("✓ " + t(locale, "removed"))
-                continue
-            if text == "/permissions":
-                print(t(locale, "permission") + ": " + t(locale, "permission_options"))
-                try:
-                    selected_approval = input("❯ ").strip()
-                except (EOFError, KeyboardInterrupt):
-                    print(t(locale, "cancel_status"), file=sys.stderr)
-                    continue
-                approval = {"1": "ask", "2": "smart", "3": "auto"}.get(selected_approval, approval)
-                runtime.policy.mode = approval
-                saved.approval = approval
-                saved.save(config_path)
-                print(f"✓ permission mode: {approval}")
-                continue
-            if text == "/model":
-                if not provider:
-                    print("Configure a provider first.")
-                else:
-                    selected = _choose_model(base_url, api_key, model, locale)
-                    if selected:
-                        model = selected
-                        saved.model = selected
-                        saved.save(config_path)
-                        provider = OpenAICompatible(ModelConfig(base_url, api_key, model))
-                        runtime.provider = provider
-                        runtime.model = model
-                        print(f"✓ model: {model}")
-                continue
-            if text == "/clear":
-                print("\033[2J\033[H", end="")
-                continue
-            if text.startswith("/cancel"):
-                parts = text.split(maxsplit=1)
-                if len(parts) != 2 or not parts[1].strip():
-                    print("Usage: /cancel <background-task-id>", file=sys.stderr)
-                    continue
-                try:
-                    runtime.cancel_background_task(parts[1].strip())
-                    print(f"✓ cancellation requested: {parts[1].strip()}")
-                except RuntimeError as exc:
-                    print(f"× {exc}", file=sys.stderr)
-                continue
-            if text == "/goal":
-                print(runtime.goal() or "(no active goal)")
-                continue
-            if text.startswith("/goal"):
-                try:
-                    parts = shlex.split(text)
-                except ValueError as exc:
-                    print(f"× invalid goal syntax: {exc}", file=sys.stderr)
-                    continue
-                goal_text = " ".join(parts[1:]).strip()
-                if not goal_text:
-                    print("Usage: /goal <what you want Fun to do>", file=sys.stderr)
-                    continue
-                try:
-                    task = runtime.set_goal(goal_text)
-                    run_interactive_task(task)
-                except Exception as exc:
-                    print(f"× {exc}", file=sys.stderr)
-                continue
-            if text == "/status":
-                status = runtime.task.status if runtime.task else "idle"
-                agent_state = runtime.task.agent_state if runtime.task else "idle"
-                recovery = runtime.task.recovery_reason if runtime.task else None
-                print(f"session={runtime.session_id} task={status} agent={agent_state} policy={runtime.policy.mode.value}")
-                if runtime.last_model_timing:
-                    timing = runtime.last_model_timing
-                    print(f"model timing: ttft={timing.get('ttft_ms', '?')}ms · step={timing.get('step_ms', '?')}ms")
-                if recovery:
-                    pending = runtime.recovery_summary() or {}
-                    print("! " + t(locale, "pending_tool").format(name=pending.get("name", "unknown tool"), call_id=pending.get("call_id", "?")))
-                    print(f"  args: {pending.get('arguments', {})}")
-                    print(t(locale, "recovery_actions"))
-                if runtime.task and runtime.task.plan_error:
-                    print(f"! plan rejected: {runtime.task.plan_error}")
-                    if runtime.task.plan_error_summary:
-                        print(f"  proposal: {runtime.task.plan_error_summary}")
-                if runtime.task and runtime.task.failure_reason:
-                    print("! " + t(locale, "task_failed").format(reason=runtime.task.failure_reason[:240]))
-                if runtime.task and runtime.task.result is not None:
-                    print(f"result: {runtime.task.result[:240]}")
-                background = runtime.background.list()
-                if background:
-                    print("background:")
-                    for item in background:
-                        result = str(item.result)[:120] if item.result is not None else ""
-                        detail = result or (item.error or "")
-                        print(f"  {item.id} {item.status} · {item.goal[:80]}" + (f" · {detail}" if detail else ""))
-                print(runtime.usage.summary())
-                continue
-            if text == "/usage":
-                print(runtime.usage.summary())
-                continue
-            if text == "/diff":
-                snapshot = runtime.checkpoint("view")
-                print(snapshot["diff"] or "(no working tree diff)")
-                continue
-            if text == "/plan":
-                print(renderer.plan(runtime.task.plan if runtime.task else [], runtime.task.plan_status if runtime.task else []))
-                continue
-            if text == "/pause":
-                runtime.pause()
-                print("● paused")
-                continue
-            if text == "/resume":
-                runtime.resume()
-                print("● running")
-                continue
-            if text.startswith("/recover"):
-                action = text.split(maxsplit=1)[1] if len(text.split()) > 1 else "resume"
-                try:
-                    runtime.acknowledge_recovery(action)
-                    print(f"● recovery acknowledged; {action}")
-                    if provider and action in {"resume", "discard", "mark_failed"} and runtime.task and runtime.task.status == "running":
-                        run_interactive_task(runtime.task)
-                    elif not provider and action in {"resume", "discard", "mark_failed"}:
-                        print(t(locale, "offline"))
-                except RuntimeError as exc:
-                    print(f"× {exc}", file=sys.stderr)
-                continue
-            if text == "/stop":
-                runtime.stop()
-                print("✓ stopped")
-                continue
-            if text == "/checkpoint":
-                runtime.checkpoint()
-                print(renderer.success("checkpoint created"))
-                continue
-            if text.startswith("/restore"):
-                print("Restore requires a checkpoint snapshot in the current process.")
-                continue
-            if not provider:
-                print(renderer.finding("离线模式：请先配置 Provider，再开始任务。" if renderer.zh else "Offline mode: configure a provider before starting a task."))
-                continue
-            task = runtime.create_task(text)
-            run_interactive_task(task)
-    except (KeyboardInterrupt, EOFError):
+        frontend = PlainFrontend(locale, theme)
+        run_goal(session, frontend, args.goal, on_text=lambda chunk: print(chunk, end="", flush=True))
         print()
-    return 0
+        failed = runtime.task is not None and runtime.task.status not in {"completed"}
+        runtime.shutdown()
+        return 1 if failed else 0
+
+    # A missing provider is not a reason to withhold the interface.  Offline you
+    # can still browse the session, run commands and configure a provider from
+    # inside the app; only submitting a goal needs a model, and `run_goal` says
+    # so plainly when one is absent.
+    interactive = keys.supports_raw_mode() and sys.stdout.isatty()
+    if not interactive:
+        return _run_plain(session, locale, theme)
+
+    # Fullscreen is the default: the session reads as an application rather than
+    # as a command that scrolled past.  `--stream` opts back into scrollback for
+    # anyone who wants to select and copy history with the mouse, or pipe it.
+    surface = StreamSurface() if args.stream and not args.fullscreen else FullscreenSurface(theme=theme)
+    app = App(surface, theme=theme, locale=locale, commands=command_names())
+    app_holder["app"] = app
+    return _run_interactive_app(session, app, locale, theme)
 
 
 if __name__ == "__main__":

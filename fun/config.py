@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 
 def _keychain_get() -> str:
@@ -28,10 +28,19 @@ def _keychain_delete() -> bool:
 
 
 def _keychain_set(value: str) -> bool:
+    """Store the key, reading it from stdin rather than passing it in argv.
+
+    ``security ... -w <key>`` puts the plaintext credential in the process
+    argument table, where any same-user process polling ``ps`` can read it for
+    the duration of the call.  With a bare ``-w`` the tool prompts on stdin.
+    """
     if shutil.which("security") is None:
         return False
     try:
-        result = subprocess.run(["security", "add-generic-password", "-a", "fun", "-s", "fun-api-key", "-w", value, "-U"], capture_output=True, text=True, check=False, timeout=3)
+        result = subprocess.run(
+            ["security", "add-generic-password", "-a", "fun", "-s", "fun-api-key", "-U", "-w"],
+            input=f"{value}\n{value}\n", capture_output=True, text=True, check=False, timeout=5,
+        )
         return result.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -48,48 +57,103 @@ class FunConfig:
     telemetry: bool = False
     telemetry_endpoint: str = ""
     system_prompt: str = ""
+    theme: str = "sky"
+    # Not persisted.  True when the key came from FUN_API_KEY this run, and
+    # therefore must not be written into durable storage on the user's behalf,
+    # and True when the Keychain could not be read so the endpoint and model on
+    # disk must not be overwritten with the blanks that produced.
+    from_env: bool = field(default=False, repr=False, compare=False)
+    keychain_unreadable: bool = field(default=False, repr=False, compare=False)
 
     @classmethod
     def load(cls, path: str | Path) -> "FunConfig":
         target = Path(path).expanduser()
         if not target.exists():
-            return cls()
+            # Still honour the environment: a first run driven entirely by
+            # FUN_API_KEY previously returned a blank config and reported the
+            # provider as unconfigured.
+            from_env = os.getenv("FUN_API_KEY") or ""
+            return cls(api_key=from_env, from_env=bool(from_env))
         data = json.loads(target.read_text(encoding="utf-8"))
-        allowed = {"base_url", "api_key", "model", "approval", "locale", "telemetry", "telemetry_endpoint", "system_prompt"}
+        allowed = {"base_url", "api_key", "model", "approval", "locale", "telemetry", "telemetry_endpoint", "system_prompt", "theme"}
         loaded = cls(**{key: value for key, value in data.items() if key in allowed})
-        loaded.api_key = os.getenv("FUN_API_KEY") or _keychain_get() or loaded.api_key
+        from_env = os.getenv("FUN_API_KEY") or ""
+        stored = "" if from_env else _keychain_get()
+        loaded.api_key = from_env or stored or loaded.api_key
+        loaded.from_env = bool(from_env)
         if not loaded.api_key and data.get("api_key_store") == "macos-keychain":
-            loaded.base_url = ""
-            loaded.model = ""
+            # The Keychain says a key is stored but we cannot read it — locked
+            # login keychain, an SSH session, a denied prompt.  That is "cannot
+            # read right now", not "never configured", so the endpoint and model
+            # are kept in memory and marked unwritable rather than blanked and
+            # then persisted as blanks by the next unrelated save.
+            loaded.keychain_unreadable = True
         return loaded
 
-    def save(self, path: str | Path) -> None:
+    def save(self, path: str | Path) -> tuple[bool, bool]:
+        """Persist the config.  Returns ``(key_written, durable)``.
+
+        The return value exists so the caller can tell the user the truth: the
+        message used to say "stored securely" unconditionally, including on
+        every machine without a Keychain, where the key was in fact nowhere but
+        this process.
+        """
         target = Path(path).expanduser()
         target.parent.mkdir(parents=True, exist_ok=True)
+        previous: dict[str, object] = {}
+        if target.exists():
+            try:
+                previous = json.loads(target.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                previous = {}
         data = asdict(self)
-        data.pop("api_key_store", None)
-        data.pop("api_key_env", None)
-        if data.get("api_key"):
-            key = data.pop("api_key")
+        for transient in ("api_key_store", "api_key_env", "from_env", "keychain_unreadable"):
+            data.pop(transient, None)
+        if self.keychain_unreadable:
+            # Keep whatever is already on disk for the fields we could not
+            # verify, instead of overwriting them with what we failed to load.
+            for field_name in ("base_url", "model"):
+                if not data.get(field_name) and previous.get(field_name):
+                    data[field_name] = previous[field_name]
+            if previous.get("api_key_store"):
+                data["api_key_store"] = previous["api_key_store"]
+        key_written = False
+        durable = False
+        key = data.pop("api_key", "")
+        if key and self.from_env:
+            # A key that arrived in the environment is the caller's to manage.
+            # Promoting it into the Keychain silently made a CI or shared key
+            # permanent on the user's machine.
+            data["api_key_env"] = "FUN_API_KEY"
+        elif key:
+            key_written = True
             if _keychain_set(key) and _keychain_get() == key:
                 data["api_key_store"] = "macos-keychain"
+                durable = True
             else:
-                # Do not claim durable storage when Keychain cannot read it back.
-                # The caller keeps FUN_API_KEY in the current process; next launch
-                # must ask for it again rather than silently sending no credentials.
                 data["api_key_env"] = "FUN_API_KEY"
         target.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         try:
             target.chmod(0o600)
         except OSError:
             pass
+        return key_written, durable
 
-    def clear_credentials(self, path: str | Path) -> None:
-        _keychain_delete()
+    def clear_credentials(self, path: str | Path) -> bool:
+        """Forget the credentials.  Returns whether the Keychain entry is gone.
+
+        The result used to be discarded, so a locked Keychain reported "removed"
+        while the key stayed on the machine indefinitely.
+        """
+        had_entry = bool(_keychain_get())
+        deleted = _keychain_delete() or not had_entry
         self.api_key = ""
         self.base_url = ""
         self.model = ""
+        self.keychain_unreadable = False
+        self.from_env = False
         self.save(path)
+        return deleted and not _keychain_get()
 
     def ready(self) -> bool:
         return bool(self.base_url and self.api_key and self.model)

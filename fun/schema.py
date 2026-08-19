@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import math
 from typing import Any
+
+# The exec timeout is the only bound on the highest-risk tool, so a model
+# argument must not be able to remove it.  ``json.loads`` accepts the
+# non-standard literals ``Infinity`` and ``NaN``, and ``bool`` is an ``int``.
+MAX_EXEC_TIMEOUT = 900.0
 
 
 class SchemaError(ValueError):
@@ -30,6 +36,9 @@ def validate_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             raise SchemaError("INVALID_ARGUMENTS")
         if key in {"limit", "start", "end"} and (not isinstance(value, int) or isinstance(value, bool)):
             raise SchemaError("INVALID_ARGUMENTS")
-        if key == "timeout" and (not isinstance(value, (int, float)) or value <= 0):
-            raise SchemaError("INVALID_ARGUMENTS")
+        if key == "timeout":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise SchemaError("INVALID_ARGUMENTS")
+            if not math.isfinite(value) or not 0 < value <= MAX_EXEC_TIMEOUT:
+                raise SchemaError("INVALID_ARGUMENTS")
     return arguments

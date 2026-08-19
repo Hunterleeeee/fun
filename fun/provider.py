@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import codecs
 import math
 import socket
 import time
@@ -20,17 +21,40 @@ class ModelConfig:
     max_payload_bytes: int = 1024 * 1024
 
 
+def _classify_empty_stream(body: str) -> str:
+    """Name the failure behind a 200 that produced no events."""
+    lowered = body.lower()
+    if any(marker in lowered for marker in ("invalid api key", "invalid_api_key", "unauthorized", "authentication", "invalid token")):
+        return "PROVIDER_AUTH_FAILED"
+    return "PROVIDER_EMPTY_STREAM"
+
+
 class ProviderError(RuntimeError):
     """Provider failure with a stable, privacy-safe classification."""
 
-    def __init__(self, error_tag: str, *, cause: Exception | None = None) -> None:
+    def __init__(self, error_tag: str, *, cause: Exception | None = None, endpoint: str = "", key_hint: str = "") -> None:
         self.error_tag = error_tag
         self.cause_type = type(cause).__name__ if cause is not None else None
+        # Which address, and which key by its first and last few characters.
+        # An auth failure the user cannot attribute to a specific endpoint is a
+        # message that says "it did not work" and nothing else.
+        self.endpoint = endpoint
+        self.key_hint = key_hint
         super().__init__(error_tag)
+
+
+def mask_key(value: str) -> str:
+    """A key rendered as an identity, never as a credential."""
+    value = (value or "").strip()
+    if len(value) <= 8:
+        return "?" * len(value)
+    return f"{value[:4]}…{value[-4:]} ({len(value)} 位)"
 
 
 class OpenAICompatible:
     """Minimal OpenAI-compatible chat-completions streaming adapter."""
+
+    MAX_STREAM_BUFFER = 8 * 1024 * 1024
 
     def __init__(self, config: ModelConfig) -> None:
         parsed = urlparse(config.base_url)
@@ -59,30 +83,36 @@ class OpenAICompatible:
             models = [item.get("id") for item in data if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip()]
             return sorted(set(models))
         except urllib.error.HTTPError as exc:
-            raise ProviderError("PROVIDER_AUTH_FAILED" if exc.code in {401, 403} else "PROVIDER_HTTP_FAILED", cause=exc) from exc
+            raise ProviderError("PROVIDER_AUTH_FAILED" if exc.code in {401, 403} else "PROVIDER_HTTP_FAILED", cause=exc, **self._identity()) from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise ProviderError("PROVIDER_NETWORK_FAILED", cause=exc) from exc
         except (OSError, ValueError, TypeError) as exc:
             raise ProviderError("PROVIDER_REQUEST_FAILED", cause=exc) from exc
+
+    def _identity(self) -> dict[str, str]:
+        """The endpoint and a masked key, for error messages only."""
+        return {"endpoint": self.config.base_url, "key_hint": mask_key(self.config.api_key)}
 
     def stream(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> Iterator[dict[str, Any]]:
         if not isinstance(messages, list) or any(not isinstance(message, dict) for message in messages):
             raise ProviderError("PROVIDER_INVALID_MESSAGES")
         if tools is not None and (not isinstance(tools, list) or any(not isinstance(tool, dict) for tool in tools)):
             raise ProviderError("PROVIDER_INVALID_TOOLS")
-        try:
-            serialized_messages = json.dumps(messages, separators=(",", ":"))
-            serialized_tools = json.dumps(tools, separators=(",", ":")) if tools is not None else ""
-        except (TypeError, ValueError) as exc:
-            raise ProviderError("PROVIDER_INVALID_PAYLOAD", cause=exc) from exc
-        if len(serialized_messages.encode()) + len(serialized_tools.encode()) > self.config.max_payload_bytes:
-            raise ProviderError("PROVIDER_PAYLOAD_TOO_LARGE")
         payload: dict[str, Any] = {"model": self.config.model, "messages": messages, "stream": True}
         if tools:
             payload["tools"] = tools
+        try:
+            # Bound exactly what is sent, including model, stream and JSON
+            # escaping overhead.  Estimating only messages + tools let the real
+            # HTTP body exceed the configured ceiling.
+            body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError) as exc:
+            raise ProviderError("PROVIDER_INVALID_PAYLOAD", cause=exc) from exc
+        if len(body) > self.config.max_payload_bytes:
+            raise ProviderError("PROVIDER_PAYLOAD_TOO_LARGE")
         request = urllib.request.Request(
             self.config.base_url.rstrip("/") + "/chat/completions",
-            data=json.dumps(payload).encode(),
+            data=body,
             headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json", "Accept": "text/event-stream"},
             method="POST",
         )
@@ -109,20 +139,38 @@ class OpenAICompatible:
                     raise ProviderError("PROVIDER_INVALID_STATUS")
                 if status >= 400:
                     tag = "PROVIDER_AUTH_FAILED" if status in {401, 403} else "PROVIDER_HTTP_FAILED"
-                    raise ProviderError(tag)
+                    raise ProviderError(tag, **self._identity())
                 headers = getattr(response, "headers", None)
                 raw_content_type = headers.get("Content-Type", "") if headers is not None else ""
                 content_type = raw_content_type if isinstance(raw_content_type, str) else ""
                 if content_type and "text/event-stream" not in content_type.lower():
                     raise ProviderError("PROVIDER_UNEXPECTED_CONTENT_TYPE")
+                if content_type and "json" in content_type.lower():
+                    raise ProviderError("PROVIDER_UNEXPECTED_CONTENT_TYPE")
                 first = True
                 buffer = ""
                 data_parts: list[str] = []
                 done = False
+                # An incremental decoder, not a per-chunk decode: a 3-byte CJK
+                # character split across two reads decoded to replacement
+                # characters, silently corrupting the text instead of failing.
+                decoder = codecs.getincrementaldecoder("utf-8")("strict")
+                # A silence deadline, not a total budget.  Bounding the whole
+                # stream would kill a healthy long completion mid-flight and
+                # throw away everything it had produced; what actually needs
+                # bounding is a provider that has stopped saying anything, which
+                # urlopen's per-socket-operation timeout does not catch once
+                # bytes trickle in.
+                last_progress = time.monotonic()
                 for raw in response:
                     if done:
                         break
-                    buffer += raw.decode(errors="replace")
+                    if time.monotonic() - last_progress > self.config.timeout:
+                        raise ProviderError("PROVIDER_TIMEOUT", **self._identity())
+                    last_progress = time.monotonic()
+                    buffer += decoder.decode(raw)
+                    if len(buffer) > self.MAX_STREAM_BUFFER:
+                        raise ProviderError("PROVIDER_MALFORMED_EVENT", **self._identity())
                     lines: list[str] = []
                     while True:
                         newline_positions = [position for position in (buffer.find("\n"), buffer.find("\r")) if position >= 0]
@@ -154,8 +202,17 @@ class OpenAICompatible:
                         if line.startswith(":") or not line.startswith("data:"):
                             continue
                         value = line[5:].strip()
+                        if value.startswith("{") and '"error"' in value:
+                            # Some gateways frame the failure as a normal SSE
+                            # event.  Yielding it fed a provider error into the
+                            # tool-call parser as if the model had said it.
+                            raise ProviderError(_classify_empty_stream(value), **self._identity())
                         if value == "[DONE]":
                             done = True
+                            # `continue` only ends this *line*; the rest of the
+                            # chunk kept being parsed and yielded, so anything a
+                            # proxy appended after [DONE] reached the tool-call
+                            # parser as if the model had produced it.
                             if data_parts:
                                 try:
                                     item = json.loads("\n".join(data_parts))
@@ -166,9 +223,12 @@ class OpenAICompatible:
                                     item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
                                     first = False
                                 yield item
-                            continue
+                            break
                         data_parts.append(value)
                 if done:
+                    if first:
+                        # A stream whose only content was [DONE] said nothing.
+                        raise ProviderError("PROVIDER_EMPTY_STREAM", **self._identity())
                     return
                 if buffer.strip():
                     line = buffer.strip()
@@ -183,21 +243,31 @@ class OpenAICompatible:
                         raise ProviderError("PROVIDER_MALFORMED_EVENT", cause=exc) from exc
                     if first:
                         item.setdefault("_meta", {})["ttft_ms"] = int((time.monotonic() - started) * 1000)
+                        first = False
                     yield item
+                if first:
+                    # Nothing was ever yielded.  Gateways commonly answer 200
+                    # with a JSON error body and no event-stream content type;
+                    # returning an empty stream turned "invalid api key" into a
+                    # blank reply with no diagnostic anywhere.
+                    tail = (buffer + decoder.decode(b"", True)).strip()
+                    raise ProviderError(_classify_empty_stream(tail), **self._identity())
         except ProviderError:
             raise
         except (TimeoutError, socket.timeout) as exc:
             raise ProviderError("PROVIDER_TIMEOUT", cause=exc) from exc
         except urllib.error.HTTPError as exc:
             tag = "PROVIDER_AUTH_FAILED" if exc.code in {401, 403} else "PROVIDER_HTTP_FAILED"
-            raise ProviderError(tag, cause=exc) from exc
+            raise ProviderError(tag, cause=exc, **self._identity()) from exc
         except urllib.error.URLError as exc:
             raise ProviderError("PROVIDER_NETWORK_FAILED", cause=exc) from exc
+        except UnicodeError as exc:
+            raise ProviderError("PROVIDER_MALFORMED_EVENT", cause=exc, **self._identity()) from exc
         except OSError as exc:
             status = getattr(exc, "code", getattr(exc, "status", None))
             if status is not None:
                 tag = "PROVIDER_AUTH_FAILED" if status in {401, 403} else "PROVIDER_HTTP_FAILED"
-                raise ProviderError(tag, cause=exc) from exc
+                raise ProviderError(tag, cause=exc, **self._identity()) from exc
             raise ProviderError("PROVIDER_REQUEST_FAILED", cause=exc) from exc
         except Exception as exc:
             raise ProviderError("PROVIDER_REQUEST_FAILED", cause=exc) from exc

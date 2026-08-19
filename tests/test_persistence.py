@@ -204,17 +204,47 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(rows[0]["type"], "task.created")
             store.close()
 
-    def test_sqlite_event_store_rejects_seq_conflict_and_rolls_back(self):
+    def test_a_seq_conflict_is_renumbered_rather_than_losing_the_event(self):
+        """seq is allocated by a process-global counter starting at 1, so two
+        processes on one events.db collide.  Losing the batch was the wrong
+        answer: the events are valid, only their numbering was hopeful."""
         with tempfile.TemporaryDirectory() as directory:
             store = SQLiteEventStore(Path(directory) / "events.db")
-            first = Event("task.created", "ses_1", "task_1", id="evt_one", seq=7)
-            store.append(first)
-            conflicting = Event("plan.created", "ses_1", "task_1", id="evt_two", seq=7)
-            with self.assertRaisesRegex(Exception, "UNIQUE"):
-                store.append(conflicting)
+            store.append(Event("task.created", "ses_1", "task_1", id="evt_one", seq=7))
+            store.append(Event("plan.created", "ses_1", "task_1", id="evt_two", seq=7))
             rows = store.list("ses_1")
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]["id"], "evt_one")
+            self.assertEqual([row["id"] for row in rows], ["evt_one", "evt_two"])
+            self.assertEqual(len({row["seq"] for row in rows}), 2)
+            store.close()
+
+    def test_a_duplicate_id_is_still_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SQLiteEventStore(Path(directory) / "events.db")
+            store.append(Event("task.created", "ses_1", "task_1", {"a": 1}, id="evt_one", seq=7))
+            with self.assertRaisesRegex(Exception, "UNIQUE"):
+                store.append(Event("plan.created", "ses_1", "task_1", {"b": 2}, id="evt_one", seq=8))
+            self.assertEqual(len(store.list("ses_1")), 1)
+            store.close()
+
+    def test_concurrent_writers_do_not_lose_events(self):
+        import subprocess
+        import sys
+
+        program = (
+            "import sys; sys.path.insert(0, %r)\n"
+            "from fun.persistence import SQLiteEventStore\n"
+            "from fun.events import Event, EventStore\n"
+            "store = EventStore(SQLiteEventStore(sys.argv[1] + '/events.db'))\n"
+            "[store.append(Event('t', 's' + sys.argv[2], None, {'i': i})) for i in range(30)]\n"
+        ) % str(Path(__file__).resolve().parent.parent)
+        with tempfile.TemporaryDirectory() as directory:
+            processes = [subprocess.Popen([sys.executable, "-c", program, directory, str(index)], stderr=subprocess.PIPE, text=True) for index in range(4)]
+            errors = [process.communicate()[1] for process in processes]
+            self.assertEqual([error for error in errors if error.strip()], [])
+            store = SQLiteEventStore(Path(directory) / "events.db")
+            rows = store.list()
+            self.assertEqual(len(rows), 120)
+            self.assertEqual(len({row["seq"] for row in rows}), 120)
             store.close()
 
     def test_sqlite_event_store_round_trip(self):
@@ -231,3 +261,66 @@ class PersistenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConcurrencyRegressionTests(unittest.TestCase):
+    def test_concurrent_appends_do_not_lose_or_duplicate_events(self):
+        """The Runtime emits from worker and background threads at once."""
+        from fun.events import EventStore
+
+        store = EventStore()
+        errors: list[Exception] = []
+
+        def emit(count: int) -> None:
+            try:
+                for _ in range(count):
+                    store.append(Event("threaded", "ses_1"))
+            except Exception as exc:  # pragma: no cover - only on regression
+                errors.append(exc)
+
+        threads = [threading.Thread(target=emit, args=(40,)) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(errors, [])
+        events = store.list("ses_1")
+        self.assertEqual(len(events), 320)
+        self.assertEqual(len({event.id for event in events}), 320)
+        self.assertEqual(len({event.seq for event in events}), 320)
+
+    def test_concurrent_appends_stay_consistent_with_a_durable_store(self):
+        from fun.events import EventStore
+
+        with tempfile.TemporaryDirectory() as directory:
+            durable = SQLiteEventStore(Path(directory) / "events.db")
+            store = EventStore(durable)
+            errors: list[Exception] = []
+
+            def emit() -> None:
+                try:
+                    for _ in range(25):
+                        store.append(Event("threaded", "ses_1"))
+                except Exception as exc:  # pragma: no cover - only on regression
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=emit) for _ in range(6)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            self.assertEqual(errors, [])
+            self.assertEqual(len(store.list("ses_1")), 150)
+            self.assertEqual(len(durable.events("ses_1")), 150)
+            durable.close()
+
+    def test_load_rejecting_a_batch_leaves_the_projection_usable(self):
+        from fun.events import EventStore
+
+        store = EventStore()
+        store.load([Event("original", "ses_1", id="evt_a", seq=5)])
+        with self.assertRaises(ValueError):
+            store.load([Event("changed", "ses_1", id="evt_a", seq=6)])
+        self.assertEqual(len(store.list()), 1)
+        store.append(Event("after", "ses_1"))
+        self.assertEqual(len(store.list()), 2)

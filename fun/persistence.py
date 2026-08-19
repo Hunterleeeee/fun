@@ -6,6 +6,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
+from dataclasses import replace
+
 from .events import Event, advance_event_seq
 
 
@@ -28,6 +30,7 @@ class SQLiteEventStore:
         self.connection.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, seq)")
         self.connection.execute("CREATE INDEX IF NOT EXISTS idx_events_command ON events(command_key)")
         self.connection.commit()
+        self.connection.rollback()
         row = self.connection.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
         advance_event_seq(int(row[0]) + 1)
 
@@ -44,9 +47,52 @@ class SQLiteEventStore:
         self.append_many([event])
         return event
 
+    MAX_SEQ_ATTEMPTS = 6
+
     def append_many(self, events: list[Event]) -> list[Event]:
+        """Append a batch, claiming sequence numbers no other writer holds.
+
+        The whole read-max-then-insert runs inside ``BEGIN IMMEDIATE`` so SQLite
+        serialises writers across processes; without it two processes read the
+        same maximum and the loser's batch is rolled back on a primary-key
+        collision.  The retry covers the remaining case where another process
+        wrote between our transaction ending and the next one starting.
+        """
         with self._lock:
-            return self._append_many(events)
+            last: Exception | None = None
+            for _ in range(self.MAX_SEQ_ATTEMPTS):
+                try:
+                    self.connection.execute("BEGIN IMMEDIATE")
+                    try:
+                        return self._append_many(events)
+                    except sqlite3.IntegrityError as exc:
+                        if "events.id" in str(exc):
+                            raise
+                        last = exc
+                        events[:] = self._renumber(events)
+                except sqlite3.OperationalError as exc:
+                    self.connection.rollback()
+                    last = exc
+            raise last if last is not None else RuntimeError("EVENT_APPEND_FAILED")
+
+    def _renumber(self, events: list[Event]) -> list[Event]:
+        """Re-issue seq numbers from what is actually on disk.
+
+        ``seq`` is this table's primary key, but it is handed out by a
+        *process-global* counter that starts at 1.  Two processes writing one
+        events.db — which two workspaces sharing a state dir now do — both start
+        at 1 and collide, and the loser's whole batch is rolled back.  Reading
+        the real maximum inside the write lock and renumbering is what makes the
+        allocation authoritative rather than hopeful.
+        """
+        self.connection.rollback()
+        row = self.connection.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
+        next_seq = int(row[0]) + 1
+        advance_event_seq(next_seq + len(events))
+        renumbered = []
+        for offset, event in enumerate(events):
+            renumbered.append(replace(event, seq=next_seq + offset))
+        return renumbered
 
     def _append_many(self, events: list[Event]) -> list[Event]:
         try:
@@ -71,13 +117,21 @@ class SQLiteEventStore:
         return events
 
     def list(self, session_id: str | None = None) -> list[dict[str, Any]]:
+        """Read the log.
+
+        Under the same lock as the writer: the connection is shared across
+        threads (``check_same_thread=False``) and ``_append_many`` is a
+        multi-statement transaction, so an unlocked reader could interleave with
+        it and observe rows that were about to be rolled back.
+        """
         query = "SELECT seq,id,type,session_id,task_id,timestamp,payload,parent_task_id,run_id,correlation_id,command_key FROM events"
         args: tuple[str, ...] = ()
         if session_id:
             query += " WHERE session_id = ?"
             args = (session_id,)
         query += " ORDER BY seq"
-        rows = self.connection.execute(query, args).fetchall()
+        with self._lock:
+            rows = self.connection.execute(query, args).fetchall()
         return [
             {"seq": row[0], "id": row[1], "type": row[2], "session_id": row[3], "task_id": row[4], "timestamp": row[5], "payload": json.loads(row[6]), "parent_task_id": row[7], "run_id": row[8], "correlation_id": row[9], "command_key": row[10]}
             for row in rows
@@ -88,10 +142,12 @@ class SQLiteEventStore:
         return [Event(row["type"], row["session_id"], row["task_id"], row["payload"], row["id"], row["seq"], row["timestamp"], row["parent_task_id"], row["run_id"], row["correlation_id"], row["command_key"]) for row in rows]
 
     def checkpoint(self) -> None:
-        self.connection.commit()
+        with self._lock:
+            self.connection.commit()
 
     def close(self) -> None:
-        self.connection.close()
+        with self._lock:
+            self.connection.close()
 
     def __enter__(self) -> "SQLiteEventStore":
         return self
