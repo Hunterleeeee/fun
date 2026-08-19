@@ -6,6 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from .config import FunConfig
+
 
 class DashboardData:
     def __init__(self, db_path: str | Path) -> None:
@@ -19,13 +21,17 @@ class DashboardData:
                 config = json.loads(config_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 config = {}
-        # ``api_key_env`` is written by ``FunConfig.save`` exactly when Keychain
-        # storage failed, so treating it as evidence of a configured provider
-        # showed "ready to run" for an install with no credential at all.
-        stored = bool(config.get("api_key") or config.get("api_key_store"))
+        # Read credentials through the same loader as the CLI.  A marker saying
+        # "macos-keychain" is not proof the Keychain is currently readable, and
+        # the dashboard must not claim ready while Runtime starts offline.
+        try:
+            loaded = FunConfig.load(config_path)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            loaded = FunConfig()
         setup = {
-            "configured": bool(config.get("base_url") and config.get("model") and stored),
-            "needs_env": bool(config.get("api_key_env") and not stored),
+            "configured": loaded.ready(),
+            "needs_env": bool((config.get("api_key_env") or loaded.keychain_unreadable) and not loaded.api_key),
+            "keychain_unreadable": loaded.keychain_unreadable,
             "config_path": str(config_path),
         }
         if not self.db_path.exists():
@@ -129,7 +135,7 @@ function empty(span,text){const tr=document.createElement('tr'),td=document.crea
 function fill(id,nodes,span,text){const host=document.querySelector(id);host.replaceChildren();if(!nodes.length){host.appendChild(empty(span,text));return}for(const n of nodes)host.appendChild(n)}
 function setup(d){const host=document.querySelector('#setup');host.replaceChildren();
  if(d.setup.configured){host.appendChild(el('strong','\u2713 Provider configured'));host.appendChild(el('p','Fun is ready to run model tasks.'))}
- else if(d.setup.needs_env){host.appendChild(el('strong','API key not stored'));host.appendChild(el('p','The key could not be saved to the Keychain. Export FUN_API_KEY before each run, or run fun --configure again.'))}
+ else if(d.setup.needs_env){host.appendChild(el('strong',d.setup.keychain_unreadable?'API key unavailable':'API key not stored'));host.appendChild(el('p',d.setup.keychain_unreadable?'The saved Keychain credential could not be read. Unlock or allow Keychain access, export FUN_API_KEY, or run fun --configure again.':'The key could not be saved to the Keychain. Export FUN_API_KEY before each run, or run fun --configure again.'))}
  else{host.appendChild(el('strong','First run setup'));host.appendChild(el('p','Provider is not configured. Run fun --configure, or export FUN_API_URL, FUN_API_KEY and FUN_MODEL.'))}}
 async function load(){const d=await fetch('/api/summary').then(r=>r.json());setup(d);
  const cards=document.querySelector('#cards');cards.replaceChildren();
