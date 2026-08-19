@@ -169,6 +169,37 @@ class CommandDispatchTests(unittest.TestCase):
             self.assertEqual(runtime.task.status, "running")
             runtime.stop()
 
+    def test_lifecycle_commands_report_invalid_idle_state_without_status_lie(self):
+        with TemporaryDirectory() as directory:
+            for command in ("/pause", "/resume", "/stop"):
+                session, runtime = self._session(directory)
+                frontend = RecordingFrontend()
+                self.assertTrue(dispatch(command, session, frontend))
+                self.assertIn("NO_ACTIVE_TASK", frontend.text, command)
+                self.assertEqual(frontend.statuses, [], command)
+                runtime.close()
+
+    def test_resume_and_stop_report_completed_state_without_raising(self):
+        with TemporaryDirectory() as directory:
+            session, runtime = self._session(directory)
+            runtime.create_task("done")
+            runtime.complete("ok")
+            frontend = RecordingFrontend()
+            for command in ("/resume", "/stop"):
+                self.assertTrue(dispatch(command, session, frontend))
+            self.assertEqual(len([line for line in frontend.said if "INVALID_TASK_TRANSITION" in line]), 2)
+            self.assertEqual(frontend.statuses, [])
+
+    def test_lifecycle_runtime_errors_are_rendered_not_raised(self):
+        with TemporaryDirectory() as directory:
+            session, runtime = self._session(directory)
+            runtime.create_task("pause")
+            frontend = RecordingFrontend()
+            with patch.object(runtime, "pause", side_effect=RuntimeError("TRANSITION_FAILED")):
+                self.assertTrue(dispatch("/pause", session, frontend))
+            self.assertIn("TRANSITION_FAILED", frontend.text)
+            runtime.stop()
+
     def test_cancel_requires_an_identifier(self):
         with TemporaryDirectory() as directory:
             session, runtime = self._session(directory)

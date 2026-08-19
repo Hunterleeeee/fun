@@ -455,21 +455,50 @@ def _checkpoint(ctx: CommandContext) -> None:
     ctx.notify("checkpoint created")
 
 
+def _lifecycle_error(ctx: CommandContext, expected: set[str]) -> bool:
+    task = ctx.runtime.task
+    if task is None:
+        ctx.say("× NO_ACTIVE_TASK")
+        return True
+    if task.status not in expected:
+        ctx.say(f"× INVALID_TASK_TRANSITION: {task.status}")
+        return True
+    return False
+
+
 @register("/pause", "pause the running task", group="task")
 def _pause(ctx: CommandContext) -> None:
-    ctx.runtime.pause()
+    if _lifecycle_error(ctx, {"running"}):
+        return
+    try:
+        ctx.runtime.pause()
+    except RuntimeError as exc:
+        ctx.say(f"× {exc}")
+        return
     ctx.frontend.status("paused")
 
 
 @register("/resume", "resume a paused task", group="task")
 def _resume(ctx: CommandContext) -> None:
-    ctx.runtime.resume()
+    if _lifecycle_error(ctx, {"paused"}):
+        return
+    try:
+        ctx.runtime.resume()
+    except RuntimeError as exc:
+        ctx.say(f"× {exc}")
+        return
     ctx.frontend.status("ready")
 
 
 @register("/stop", "stop the current task", group="task")
 def _stop(ctx: CommandContext) -> None:
-    ctx.runtime.stop()
+    if _lifecycle_error(ctx, {"running", "paused", "recovery_required"}):
+        return
+    try:
+        ctx.runtime.stop()
+    except RuntimeError as exc:
+        ctx.say(f"× {exc}")
+        return
     ctx.frontend.status("stopped")
 
 
