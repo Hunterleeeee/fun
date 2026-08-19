@@ -374,6 +374,8 @@ class Tools:
         cost minutes.  This walks level by level, prunes as it goes, and stops
         at the limit.
         """
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            return ToolResult(False, "INVALID_ARGUMENTS")
         root = self.guard.resolve(path)
         rows: list[str] = []
         truncated = False
@@ -407,6 +409,10 @@ class Tools:
         return ToolResult(True, text)
 
     def read(self, path: str, start: int = 1, end: int | None = None) -> ToolResult:
+        if not isinstance(start, int) or isinstance(start, bool) or start < 1:
+            return ToolResult(False, "INVALID_ARGUMENTS")
+        if end is not None and (not isinstance(end, int) or isinstance(end, bool) or end < start):
+            return ToolResult(False, "INVALID_ARGUMENTS")
         # Check the lexical name before resolve() follows symlinks; otherwise a
         # protected alias such as `.env -> public.txt` is checked only under the
         # harmless target name.

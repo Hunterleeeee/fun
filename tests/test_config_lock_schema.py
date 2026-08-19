@@ -148,6 +148,17 @@ class ConfigLockSchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(SchemaError, "INVALID_ARGUMENTS"):
             validate_tool_arguments("exec", {"command": "echo", "timeout": "fast"})
 
+    def test_tool_schema_rejects_invalid_pagination_ranges(self):
+        for name, arguments in (
+            ("explore", {"limit": -1}),
+            ("explore", {"limit": 0}),
+            ("read", {"path": "a", "start": -1}),
+            ("read", {"path": "a", "end": 0}),
+            ("read", {"path": "a", "start": 5, "end": 4}),
+        ):
+            with self.assertRaisesRegex(SchemaError, "INVALID_ARGUMENTS", msg=(name, arguments)):
+                validate_tool_arguments(name, arguments)
+
 
 if __name__ == "__main__":
     unittest.main()

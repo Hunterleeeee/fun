@@ -148,6 +148,20 @@ class CoreTests(unittest.TestCase):
             self.assertIn("hello.txt", tools.explore().text)
             self.assertIn("world", tools.read("hello.txt").text)
 
+    def test_public_tools_reject_invalid_pagination_ranges(self):
+        with TemporaryDirectory() as directory:
+            Path(directory, "a.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
+            tools = Tools(directory)
+            for result in (
+                tools.explore(".", -1),
+                tools.explore(".", 0),
+                tools.read("a.txt", -1),
+                tools.read("a.txt", 1, 0),
+                tools.read("a.txt", 3, 2),
+            ):
+                self.assertFalse(result.ok)
+                self.assertEqual(result.text, "INVALID_ARGUMENTS")
+
     def test_runtime_recovers_agent_state_from_events(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)
