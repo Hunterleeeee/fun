@@ -113,6 +113,7 @@ def _configure(saved: FunConfig, config_path: str, locale: str, theme: Theme) ->
         if entered:
             saved.api_key = entered
             saved.from_env = False
+            saved.keychain_backed = False
     picked: list[str | None] = [None]
     provider = OpenAICompatible(ModelConfig(saved.base_url, saved.api_key, saved.model or "models-placeholder")) if saved.base_url and saved.api_key else None
     frontend.select("Choose model", [saved.model] if saved.model else [], lambda value: picked.__setitem__(0, value), loader=provider.list_models if provider else None)

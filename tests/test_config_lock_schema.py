@@ -96,6 +96,22 @@ class ConfigLockSchemaTests(unittest.TestCase):
             self.assertNotIn("api_key", on_disk)
             self.assertEqual(on_disk.get("api_key_env"), "FUN_API_KEY")
 
+    def test_ordinary_save_preserves_readable_keychain_provenance_without_rewriting(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps({"base_url": "https://x/v1", "model": "m", "api_key_store": "macos-keychain"}), encoding="utf-8")
+            with patch.dict(os.environ, {"FUN_API_KEY": ""}, clear=False), \
+                 patch("fun.config._keychain_get", return_value="sk-live"), \
+                 patch("fun.config._keychain_set") as setter:
+                config = FunConfig.load(path)
+                self.assertTrue(config.keychain_backed)
+                config.theme = "mono"
+                self.assertEqual(config.save(path), (False, True))
+                setter.assert_not_called()
+            on_disk = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(on_disk.get("api_key_store"), "macos-keychain")
+            self.assertNotIn("api_key_env", on_disk)
+
     def test_save_reports_whether_the_key_actually_reached_durable_storage(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"

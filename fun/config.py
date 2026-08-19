@@ -64,6 +64,7 @@ class FunConfig:
     # disk must not be overwritten with the blanks that produced.
     from_env: bool = field(default=False, repr=False, compare=False)
     keychain_unreadable: bool = field(default=False, repr=False, compare=False)
+    keychain_backed: bool = field(default=False, repr=False, compare=False)
 
     @classmethod
     def load(cls, path: str | Path) -> "FunConfig":
@@ -81,6 +82,7 @@ class FunConfig:
         stored = "" if from_env else _keychain_get()
         loaded.api_key = from_env or stored or loaded.api_key
         loaded.from_env = bool(from_env)
+        loaded.keychain_backed = bool(stored and data.get("api_key_store") == "macos-keychain")
         if not loaded.api_key and data.get("api_key_store") == "macos-keychain":
             # The Keychain says a key is stored but we cannot read it — locked
             # login keychain, an SSH session, a denied prompt.  That is "cannot
@@ -107,7 +109,7 @@ class FunConfig:
             except (OSError, json.JSONDecodeError):
                 previous = {}
         data = asdict(self)
-        for transient in ("api_key_store", "api_key_env", "from_env", "keychain_unreadable"):
+        for transient in ("api_key_store", "api_key_env", "from_env", "keychain_unreadable", "keychain_backed"):
             data.pop(transient, None)
         if self.keychain_unreadable:
             # Keep whatever is already on disk for the fields we could not
@@ -125,6 +127,12 @@ class FunConfig:
             # Promoting it into the Keychain silently made a CI or shared key
             # permanent on the user's machine.
             data["api_key_env"] = "FUN_API_KEY"
+        elif key and self.keychain_backed:
+            # Ordinary setting saves must not rewrite a credential that was just
+            # read from Keychain.  Preserve provenance and leave the secret in
+            # place; only a newly entered key takes the write path below.
+            data["api_key_store"] = "macos-keychain"
+            durable = True
         elif key:
             key_written = True
             if _keychain_set(key) and _keychain_get() == key:
@@ -151,6 +159,7 @@ class FunConfig:
         self.base_url = ""
         self.model = ""
         self.keychain_unreadable = False
+        self.keychain_backed = False
         self.from_env = False
         self.save(path)
         return deleted and not _keychain_get()
