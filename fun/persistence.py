@@ -20,17 +20,25 @@ class SQLiteEventStore:
         self.connection = sqlite3.connect(self.path, timeout=30.0, check_same_thread=False)
         self.connection.execute("PRAGMA busy_timeout = 30000")
         self._lock = Lock()
-        self.connection.execute(
-            "CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, type TEXT NOT NULL, session_id TEXT NOT NULL, task_id TEXT, timestamp TEXT NOT NULL, payload TEXT NOT NULL, parent_task_id TEXT, run_id TEXT, correlation_id TEXT, command_key TEXT)"
-        )
-        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(events)")}
-        for name in ("parent_task_id", "run_id", "correlation_id", "command_key"):
-            if name not in columns:
-                self.connection.execute(f"ALTER TABLE events ADD COLUMN {name} TEXT")
-        self.connection.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, seq)")
-        self.connection.execute("CREATE INDEX IF NOT EXISTS idx_events_command ON events(command_key)")
-        self.connection.commit()
-        self.connection.rollback()
+        # Schema discovery and ALTER must be one cross-process write
+        # transaction.  Two first openers previously both saw a missing column
+        # and one failed with "duplicate column name".
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            self.connection.execute(
+                "CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, type TEXT NOT NULL, session_id TEXT NOT NULL, task_id TEXT, timestamp TEXT NOT NULL, payload TEXT NOT NULL, parent_task_id TEXT, run_id TEXT, correlation_id TEXT, command_key TEXT)"
+            )
+            columns = {row[1] for row in self.connection.execute("PRAGMA table_info(events)")}
+            for name in ("parent_task_id", "run_id", "correlation_id", "command_key"):
+                if name not in columns:
+                    self.connection.execute(f"ALTER TABLE events ADD COLUMN {name} TEXT")
+            self.connection.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id, seq)")
+            self.connection.execute("CREATE INDEX IF NOT EXISTS idx_events_command ON events(command_key)")
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            self.connection.close()
+            raise
         row = self.connection.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
         advance_event_seq(int(row[0]) + 1)
 

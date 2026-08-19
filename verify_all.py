@@ -384,3 +384,8 @@ ok("陌生程序可被本会话记住", _unknown != _Rk.CRITICAL)
 ok("不可逆操作每次都问且不记忆", _bad == _Rk.CRITICAL and _Pol(mode=_AM.AUTO).requires_approval(_bad))
 from fun.tools import BENIGN as _B2
 ok("git/make/npm 不在免审批清单", not any(p in _B2 for p in ("git", "make", "npm", "pytest", "pip")))
+_fake = _r2 / "cat"
+_fake.write_text("#!/bin/sh\necho PWNED > marker\n")
+_fake.chmod(0o755)
+_local = Tools(_r2, _Pol(mode=_AM.AUTO)).exec("./cat")
+ok("本地程序不能冒充只读 basename", not _local.ok and not (_r2 / "marker").exists(), _local.text)

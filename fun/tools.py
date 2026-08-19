@@ -226,6 +226,41 @@ class CommandPlan:
     refusal: str = ""
 
 
+def _trusted_benign(program: str, argv: list[str], root: Path) -> bool:
+    """Whether a benign basename resolves to a system executable.
+
+    A basename is not an identity: ``./cat`` and a workspace-prepended PATH can
+    point at arbitrary project code.  Only a bare program name found outside the
+    workspace may inherit the closed BENIGN classification.
+    """
+    token = argv[0]
+    if token != program or any(separator in token for separator in ("/", "\\")):
+        return False
+    candidates = [token]
+    if os.name == "nt" and not Path(token).suffix:
+        candidates = [token + suffix.lower() for suffix in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if suffix]
+    found = None
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        base = Path(directory or os.curdir)
+        for candidate in candidates:
+            path = base / candidate
+            try:
+                if path.is_file() and (os.name == "nt" or os.access(path, os.X_OK)):
+                    found = path
+                    break
+            except OSError:
+                continue
+        if found is not None:
+            break
+    if found is None:
+        return False
+    try:
+        resolved = found.resolve()
+    except (OSError, RuntimeError):
+        return False
+    return resolved != root and root not in resolved.parents
+
+
 def classify_command(command: str, root: Path) -> CommandPlan:
     """Resolve ``command`` and decide what gate it belongs behind.
 
@@ -248,7 +283,7 @@ def classify_command(command: str, root: Path) -> CommandPlan:
         return CommandPlan(argv, program, Risk.CRITICAL, "CRITICAL_SCRIPT_BLOCKED")
     if is_critical(program, resolved) or escapes_workspace(root, resolved):
         return CommandPlan(argv, program, Risk.CRITICAL)
-    if program in BENIGN:
+    if program in BENIGN and _trusted_benign(program, resolved, root):
         return CommandPlan(argv, program, Risk.LOW)
     # Unknown, not unsafe.  HIGH asks once in every mode and can be remembered
     # for the session; CRITICAL is reserved for what is provably irreversible.
@@ -403,14 +438,18 @@ class Tools:
         diff = "".join(difflib.unified_diff(old_text.splitlines(True), new_text.splitlines(True), fromfile=path, tofile=path))
         return ToolResult(True, diff, Risk.MEDIUM, changed=[path])
 
-    def exec(self, command: str, timeout: float = 120.0, on_progress: Callable[[float], None] | None = None, approved: bool = False) -> ToolResult:
-        """Run a command in the workspace.
+    def exec(self, command: str, timeout: float = 120.0, on_progress: Callable[[float], None] | None = None) -> ToolResult:
+        """Public exec entry point; commands requiring approval never run here."""
+        plan = classify_command(command, self.guard.root)
+        return self._exec_plan(plan, timeout, on_progress, authorized=False)
 
-        ``approved`` says the Runtime already put this exact call through the
-        approval gate at the risk :func:`classify_command` assessed, so a
-        critical command the user allowed actually runs instead of being refused
-        a second time by this function.
-        """
+    def _exec_authorized(self, plan: CommandPlan, timeout: float = 120.0, on_progress: Callable[[float], None] | None = None) -> ToolResult:
+        """Runtime-only path after its approval gate accepted this exact plan."""
+        if not isinstance(plan, CommandPlan):
+            return ToolResult(False, "INVALID_COMMAND_PLAN", Risk.CRITICAL)
+        return self._exec_plan(plan, timeout, on_progress, authorized=True)
+
+    def _exec_plan(self, plan: CommandPlan, timeout: float, on_progress: Callable[[float], None] | None, authorized: bool) -> ToolResult:
         # Belt and braces: the schema bounds what the model can ask for, and
         # this bounds what any caller can pass.  An infinite deadline turns the
         # poll loop into a spin that never returns.
@@ -423,13 +462,12 @@ class Tools:
         python_dir = str(Path(sys.executable).parent)
         if python_dir not in safe_env.get("PATH", "").split(os.pathsep):
             safe_env["PATH"] = python_dir + os.pathsep + safe_env.get("PATH", "")
-        plan = classify_command(command, self.guard.root)
         if plan.refusal:
             return ToolResult(False, plan.refusal, plan.risk)
         argv = list(plan.argv)
         if argv[0] == "python3" and sys.platform == "win32":
             argv[0] = sys.executable
-        if not approved and self.policy.requires_approval(plan.risk):
+        if not authorized and self.policy.requires_approval(plan.risk):
             # Defence in depth.  run_tool is the gate, but Tools.exec is a
             # public entry point too, and it must not be the looser of the two.
             if plan.risk == Risk.CRITICAL and self.policy.mode != self.policy.mode.ASK:

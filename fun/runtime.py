@@ -696,8 +696,10 @@ class Runtime:
         # asked to approve `rm -rf` as a medium-risk call, and then the tool
         # refused it anyway after they said yes.
         subject = name
+        exec_plan = None
         if name == "exec":
-            plan = classify_command(str(kwargs.get("command", "")), self.tools.guard.root)
+            exec_plan = classify_command(str(kwargs.get("command", "")), self.tools.guard.root)
+            plan = exec_plan
             if plan.refusal:
                 return refuse(ToolResult(False, plan.refusal, plan.risk), error_tag=plan.refusal.split(":")[0])
             risk = plan.risk
@@ -755,11 +757,15 @@ class Runtime:
         try:
             call_kwargs = dict(kwargs)
             if name == "exec":
-                # Tell the tool the gate was already passed, so it does not
-                # refuse a command the user just allowed.
-                call_kwargs["approved"] = approved
-                call_kwargs["on_progress"] = lambda elapsed: on_status("tool.progress", {"call_id": call_id, "name": name, "elapsed_ms": int(elapsed * 1000)}) if on_status is not None else None
-            result = method(**call_kwargs)
+                progress = lambda elapsed: on_status("tool.progress", {"call_id": call_id, "name": name, "elapsed_ms": int(elapsed * 1000)}) if on_status is not None else None
+                timeout = call_kwargs.get("timeout", 120.0)
+                if exec_plan is None:
+                    raise RuntimeError("INVALID_COMMAND_PLAN")
+                # Bind execution to the exact plan classified before approval;
+                # no public boolean can forge this path or swap the command.
+                result = self.tools._exec_authorized(exec_plan, timeout=timeout, on_progress=progress)
+            else:
+                result = method(**call_kwargs)
         except Exception as exc:
             elapsed_ms = int((time.monotonic() - started) * 1000)
             self.emit("tool.failed", self.task.id, call_id=call_id, name=name, error_type=type(exc).__name__, error_tag="TOOL_EXECUTION_FAILED", elapsed_ms=elapsed_ms)
@@ -1264,8 +1270,10 @@ class Runtime:
             if self._active_turns > 0:
                 # Deferred even for a shutdown.  Closing the store under a live
                 # turn is exactly the race the counter exists to prevent, and
-                # the sub-agents have already been cancelled above.
+                # the sub-agents have already been cancelled above.  Ownership
+                # is released by _leave_turn only after that writer is gone.
                 self._close_pending = True
+                self._release_pending = True
                 return
             self._closed = True
             self._close_pending = False
@@ -1275,6 +1283,10 @@ class Runtime:
             with self._store_lock:
                 self._durable_closed = True
             close()
+        # A closed Runtime no longer owns or mutates the workspace.  Releasing
+        # explicitly preserves immediate same-process recover without letting a
+        # second live Runtime adopt ownership merely because the PID matches.
+        self.lock.release()
 
     def _enter_turn(self) -> None:
         with self._store_lock:

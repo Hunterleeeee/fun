@@ -148,27 +148,15 @@ class WorkspaceLock:
             raise
 
     def adopt_if_owned(self) -> bool:
+        """Reattach only to this exact lock capability, never merely this PID."""
         data = self._metadata()
         if data is None:
             return False
         try:
-            if int(data.get("pid", 0)) == os.getpid():
-                # Older locks had no owner token.  Record a fresh token while
-                # holding the guard so release can prove ownership later.
-                with self._guard():
-                    current = self._metadata()
-                    if current != data:
-                        return False
-                    current["owner"] = self.owner
-                    temporary = self.path.with_name(f".{self.path.name}.{self.owner}.tmp")
-                    with temporary.open("x", encoding="utf-8") as stream:
-                        json.dump(current, stream)
-                        stream.flush()
-                        os.fsync(stream.fileno())
-                    os.replace(temporary, self.path)
+            if int(data.get("pid", 0)) == os.getpid() and data.get("owner") == self.owner:
                 self.held = True
                 return True
-        except (OSError, ValueError, TypeError, WorkspaceLockError):
+        except (ValueError, TypeError):
             return False
         return False
 

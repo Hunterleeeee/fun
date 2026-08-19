@@ -1714,6 +1714,16 @@ class WorkspaceLockContentionTests(unittest.TestCase):
                 WorkspaceLock(directory, directory).acquire()
             first.release()
 
+    def test_a_second_runtime_in_the_same_process_cannot_adopt_by_pid(self):
+        with TemporaryDirectory() as directory:
+            first = WorkspaceLock(directory, directory)
+            first.acquire()
+            second = WorkspaceLock(directory, directory)
+            self.assertFalse(second.adopt_if_owned())
+            with self.assertRaises(WorkspaceLockError):
+                second.acquire()
+            first.release()
+
     def test_invalid_or_partial_lock_metadata_fails_closed(self):
         with TemporaryDirectory() as directory:
             lock = WorkspaceLock(directory, directory)
@@ -2139,6 +2149,36 @@ class ReviewFindingsTests(unittest.TestCase):
             self.assertNotIn(program, BENIGN, program)
         for program in ("ls", "cat", "grep", "wc", "diff", "head"):
             self.assertIn(program, BENIGN, program)
+
+    def test_a_local_executable_cannot_impersonate_a_benign_basename(self):
+        from fun.policy import ApprovalMode, Policy, Risk
+        from fun.tools import classify_command
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            fake = root / "cat"
+            fake.write_text("#!/bin/sh\necho PWNED > marker\n", encoding="utf-8")
+            fake.chmod(0o755)
+            for command in ("./cat", "env ./cat"):
+                self.assertEqual(classify_command(command, root).risk, Risk.HIGH, command)
+                result = Tools(root, Policy(mode=ApprovalMode.AUTO)).exec(command)
+                self.assertFalse(result.ok, command)
+                self.assertEqual(result.text, "APPROVAL_REQUIRED")
+            with patch.dict(os.environ, {"PATH": str(root) + os.pathsep + os.environ.get("PATH", "")}):
+                self.assertEqual(classify_command("cat", root).risk, Risk.HIGH)
+                self.assertEqual(Tools(root, Policy(mode=ApprovalMode.AUTO)).exec("cat").text, "APPROVAL_REQUIRED")
+            self.assertFalse((root / "marker").exists())
+
+    def test_public_exec_has_no_forgeable_approval_flag(self):
+        import inspect
+
+        self.assertNotIn("approved", inspect.signature(Tools.exec).parameters)
+        with TemporaryDirectory() as directory:
+            victim = Path(directory) / "victim"
+            victim.mkdir()
+            with self.assertRaises(TypeError):
+                Tools(directory, Policy(mode=ApprovalMode.AUTO)).exec("rm -rf victim", approved=True)
+            self.assertTrue(victim.exists())
 
     def test_an_unfamiliar_program_asks_once_even_in_auto_mode(self):
         """A gap in this tool's knowledge must not fail open in the mode people
