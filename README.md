@@ -98,6 +98,8 @@ export FUN_MODEL="your-model"
 fun "inspect this project and fix the smallest safe issue"
 ```
 
+`FUN_API_KEY` 只在当前进程中使用，`fun --configure` 不会把环境变量里的共享/CI 凭据偷偷写进系统 Keychain。手工输入的 key 才会尝试进入 macOS Keychain；Keychain 锁定或拒绝访问时，CLI 和 Dashboard 都会明确显示凭据当前不可用，而不是误报 provider ready。切换主题、模型、权限、语言或 prompt 不会重复写 key，也不会丢失已有的 Keychain 记录。
+
 ### Approval 模式
 
 ```bash
@@ -192,7 +194,7 @@ Ctrl+N         换行                Enter            发送
 - **东亚字宽按列计算**，中文、全角标点、组合字符都不会撑破边框；ANSI 转义不计入宽度
 - 非 UTF-8 环境自动降级为 ASCII 字形
 
-管道、`TERM=dumb`、Windows 控制台会回落到纯文本前端，命令行为完全一致。
+管道、`TERM=dumb`、Windows 控制台会回落到纯文本前端，命令行为完全一致。Windows 的重定向 pipe / console 输入走独立等待路径，不依赖仅支持 socket 的 `select()`；工作区文件列表统一使用 `/`，因此模型上下文和输出在各平台一致。
 
 ## Alpha 已具备的能力
 
@@ -229,7 +231,7 @@ model.requested → response.parsed → tools.executing
 - `shell=False`、`shlex.split`
 - **命令先解析，后判定**：逐层剥掉 `env` / `command` / `nohup` / `nice` 这类透明包装器，每剥一层检查一层；拒绝的是**整个程序**而不是参数形状——任何写法的 shell（`bash -c`、`bash -lc`、`env bash -c` 一视同仁）、以及 `xargs` / `timeout` 这类需要猜测语法才能定位真实命令的程序。遇到本代码没有建模的包装器，选择拒绝而不是猜
 - **只判定两件能判定的事，其余承认不知道**：
-  - 只读取和汇报的命令（`ls` / `cat` / `grep` / `wc`…）——一份短的、每条都能手工核对的清单，路径参数仍然走越界检查
+  - 只读取和汇报的命令（`ls` / `cat` / `grep` / `wc`…）——一份短的、每条都能手工核对的清单，路径参数仍然走越界检查；清单匹配的是解析到工作区外的真实 executable，不是 basename，因此 `./cat`、`env ./cat`、`/tmp/echo` 或 PATH 前置的同名程序都不会冒充免审批命令
   - 可枚举的不可逆操作（递归删除、`git reset --hard` / `clean` / `push -f`、提权、联网取回执行、`find -exec`、参数越界）
   - **其余一律算"陌生程序"**：在**任何**审批模式下都会问一次，批准后可以按程序名记住本会话；不可逆的那类每次都问，永远不记忆
   - `git` 故意不在免审批清单里——别名和 hook 让它本质上是个启动器。宣布它安全就是在重犯"清单没有判据"的错
@@ -237,7 +239,7 @@ model.requested → response.parsed → tools.executing
 - 参数解析后落在工作区之外，会抬升到 approval 门槛
 - 子进程组超时终止
 - 输出上限和截断标记
-- Approval boundary，`a`（本会话始终允许）真正被记住
+- Approval boundary，`a`（本会话始终允许）真正被记住；public `Tools.exec()` 没有可伪造的 `approved=True` 开关，Runtime 审批绑定同一个已分类 `CommandPlan`
 - 不把 Prompt、代码、命令、Tool 参数或 API Key 上传到 Telemetry
 
 > `exec` 是**受监督的能力，不是沙箱**。它只能对 argv 做判断；程序内部自己拼出来的路径它看不见。
@@ -397,7 +399,7 @@ python3 -m compileall -q fun tests
 python3 -m pip install -e .
 ```
 
-当前测试套件 590 个用例。UI 相关用例会在开关颜色两种条件下验证布局宽度，因此建议至少跑一次：
+当前测试套件 608 个用例。覆盖 Runtime/Event Replay、审批与命令解析、Keychain 配置语义、SQLite 并发、Terminal UI、Windows pipe/console 与跨平台路径行为。UI 相关用例会在开关颜色两种条件下验证布局宽度，因此建议至少跑一次：
 
 ```bash
 NO_COLOR=1 python3 -m unittest discover -s tests -q

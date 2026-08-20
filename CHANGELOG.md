@@ -122,6 +122,10 @@
 - The local dashboard no longer interpolates model-controlled strings into `innerHTML`. A goal or tool result carrying markup — reachable through prompt injection — executed as script in the dashboard's origin on the next page load. Cells are built as nodes and filled with `textContent`, with a CSP and a `Host` check to close DNS rebinding.
 - `protected_names` matches case-insensitively. `fnmatch` is case-sensitive on POSIX but macOS volumes are not, so `read(".ENV")` matched no pattern and then opened the real `.env`. The default list also now covers SSH keys, `.aws`, `.npmrc`, `.netrc` and keystores.
 - The API key is passed to `security` on stdin rather than in `argv`, where any process reading `ps` could see it.
+- A benign command name is no longer trusted by basename alone. Workspace-local, absolute, wrapped or PATH-injected lookalikes such as `./cat`, `env ./cat` and `/tmp/echo` are HIGH risk rather than silently inheriting the system executable's LOW classification.
+- `Tools.exec()` no longer exposes a forgeable `approved=True` boolean. Runtime approval executes the exact `CommandPlan` classified before the prompt through a separate internal path.
+- Workspace locks publish complete metadata atomically, serialize stale takeover, and bind release/adoption to an owner token rather than a PID. A second Runtime in the same process cannot adopt the first one's lock, and an old owner cannot unlink its replacement.
+- Environment credentials remain transient even through `--configure`. A readable Keychain credential keeps its provenance across unrelated theme/model/permission/locale/prompt saves without rewriting the secret; an unreadable Keychain is reported as unavailable by both CLI and Dashboard rather than ready.
 
 ### Fixed
 
@@ -219,7 +223,7 @@
   but healthy completion is no longer killed mid-flight with everything it had
   produced discarded. An error object framed as a normal SSE event is reported
   instead of being fed to the tool-call parser as model output.
-- `fun` starts at all without a TTY. `_run_plain` — the fallback for pipes, dumb terminals and Windows consoles — called `banner()` without importing it, so its first line raised `NameError`.
+- `fun` starts at all without a TTY. `_run_plain` — the fallback for pipes, dumb terminals and Windows consoles — called `banner()` without importing it, so its first line raised `NameError`. Windows redirected pipes and console descriptors no longer enter socket-only `select()`, and `explore` renders relative paths with `/` consistently across platforms.
 - `/permissions` no longer kills the session. It stored a bare string where three call sites read `policy.mode.value`; the `AttributeError` surfaced on the UI thread and unwound the loop. `Policy` now normalises a mode wherever one is accepted.
 - A command can open a dialog from a dialog's own callback. The key loop cleared the modal slot unconditionally after `handle()` returned, throwing away the form that `/config` had just installed — so `/config` was unreachable from the command palette.
 - `/cle` clears. Dispatch resolved the prefix and reported "cleared" while the caller string-matched the raw input; the side effect now belongs to the handler rather than to `cli.py`.
@@ -232,7 +236,7 @@
 - "Allow for this session" works in the interactive UI. Only the plain `input()` fallback ever recorded it, so `a` allowed one call and then asked again.
 - A stopped task is recorded as stopped, not as a malformed provider response.
 - Provider streaming: events after `[DONE]` in the same read are no longer yielded into the tool-call parser; a multi-byte character split across reads is decoded incrementally instead of being replaced with `?`; a 200 with a JSON error body and no event-stream content type is reported instead of returning an empty reply; the stream has a wall-clock deadline and a buffer ceiling.
-- Credentials: a Keychain that cannot be read is treated as "cannot read now", not "never configured" — it no longer blanks `base_url` and `model` and then persists the blanks on the next unrelated save. A key from `FUN_API_KEY` is never promoted into the Keychain behind the user's back. `/config` and `/logout` report what actually happened instead of always claiming durable storage and successful deletion.
+- Credentials: a Keychain that cannot be read is treated as "cannot read now", not "never configured" — it no longer blanks `base_url` and `model` and then persists the blanks on the next unrelated save. A key from `FUN_API_KEY` is never promoted into the Keychain behind the user's back, including through `--configure`; ordinary setting saves preserve a readable Keychain marker without rewriting the secret. Dashboard readiness now uses the same live `FunConfig.load().ready()` result as Runtime instead of treating a marker as proof the key is readable. `/config` and `/logout` report what actually happened instead of always claiming durable storage and successful deletion.
 - The dock writer tracks which row the cursor is on. It assumed the last dock row while `place_cursor` had deliberately parked it on the composer, so every repaint walked up too far and erased that many rows of scrollback.
 - `truncate` closes a style it cuts through. A cut inside a `reverse` span left inverse video running to the right edge of the screen.
 - The mode tab strip is clipped like every other dock row; the composer's width accounts for all five columns of panel chrome, so the character just typed is visible and the caret stays on screen; a frame is exactly as tall as the terminal, with the dock served first, so the input survives an 8-row pane; the canvas border clips both ends rather than only the right.
@@ -257,6 +261,8 @@
 - `WorkspaceGuard.check_name` honours `Policy.protected_names` instead of ignoring its policy argument.
 - The initial plan heuristic matches Latin verbs on word boundaries and measures goal size by display width, so "fix login" is no longer treated as small talk.
 - `Usage.summary` reports nothing rather than `in ? out ? ttft ?` before anything has been measured.
+- Tool pagination rejects non-positive `limit` / `start` / `end` values and an `end` before `start` at both the model schema and public Tools boundary, rather than leaking Python's negative slicing as truncated listings or negative line numbers.
+- Idle and terminal lifecycle commands report `NO_ACTIVE_TASK` / `INVALID_TASK_TRANSITION` without claiming a state change; Runtime transition errors stay inside the shared command boundary instead of unwinding a frontend.
 
 ### Changed
 
@@ -274,7 +280,7 @@
 - Removed the block components superseded by the spine layout — they were reachable only from tests, which made unused code look covered.
 - `fun.tui` and `fun.terminal_ui` are kept as thin compatibility shims. `fun.renderer` is removed: it was reachable only from tests and still rendered a first-run menu and a command list that no longer exist.
 - Dead code removed rather than left looking live: `App._dirty` was assigned in thirteen places and read in none (it now actually gates repaints), an unreachable slash-command branch, `kill_line` handlers no key emits, and a background set written but never read.
-- Test suite grown from 209 to 590 cases, including layout checks that run with colour on and off.
+- Test suite grown from 209 to 608 cases, including layout checks that run with colour on and off, Windows pipe/console input, credential provenance, exec approval bypasses, lock ownership, concurrent SQLite initialization, and cross-platform path rendering.
 
 ## 1.0.0a6 - Alpha
 
