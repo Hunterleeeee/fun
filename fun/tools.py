@@ -238,7 +238,10 @@ def _trusted_benign(program: str, argv: list[str], root: Path) -> bool:
         return False
     candidates = [token]
     if os.name == "nt" and not Path(token).suffix:
-        candidates = [token + suffix.lower() for suffix in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if suffix]
+        # Include the exact token as well as PATHEXT forms.  CreateProcess may
+        # resolve extensionless executables/scripts through wrappers, and a
+        # workspace-local `cat` must never inherit the system cat's LOW risk.
+        candidates += [token + suffix.lower() for suffix in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if suffix]
     found = None
     for directory in os.environ.get("PATH", "").split(os.pathsep):
         base = Path(directory or os.curdir)
@@ -397,7 +400,7 @@ class Tools:
                 if len(rows) >= limit:
                     truncated = True
                     break
-                rows.append(str(item.relative_to(self.guard.root)))
+                rows.append(item.relative_to(self.guard.root).as_posix())
                 if item.is_dir() and not item.is_symlink():
                     children.append(item)
             if truncated:

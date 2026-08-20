@@ -143,10 +143,40 @@ def _utf8_length(head: int) -> int:
     return 0
 
 
+def _wait_readable(fd: int, timeout: float) -> bool:
+    """Wait for terminal/pipe input on POSIX and Windows.
+
+    Windows ``select`` accepts sockets only, while our terminal tests and some
+    redirected frontends use CRT pipe descriptors.  PeekNamedPipe observes those
+    without consuming bytes; console handles fall back to ``kbhit``.
+    """
+    if os.name != "nt":
+        ready, _, _ = select.select([fd], [], [], timeout)
+        return bool(ready)
+    import ctypes
+    import msvcrt
+
+    handle = msvcrt.get_osfhandle(fd)
+    deadline = time.monotonic() + timeout
+    available = ctypes.c_ulong()
+    while True:
+        if ctypes.windll.kernel32.PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), None):
+            if available.value:
+                return True
+        else:
+            try:
+                if msvcrt.kbhit():
+                    return True
+            except OSError:
+                pass
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(min(0.005, max(0.0, deadline - time.monotonic())))
+
+
 def read_key(fd: int, timeout: float = 0.08) -> str | None:
     """Read one decoded key, or ``None`` if nothing arrived within ``timeout``."""
-    ready, _, _ = select.select([fd], [], [], timeout)
-    if not ready:
+    if not _wait_readable(fd, timeout):
         return None
     first = os.read(fd, 1)
     if not first:
@@ -155,8 +185,7 @@ def read_key(fd: int, timeout: float = 0.08) -> str | None:
         raw = first + (os.read(fd, _utf8_length(first[0])) if _utf8_length(first[0]) else b"")
         key = raw.decode("utf-8", "replace")
         return CONTROL_KEYS.get(key, key)
-    ready, _, _ = select.select([fd], [], [], 0.02)
-    if not ready:
+    if not _wait_readable(fd, 0.02):
         return "escape"
     lead = _read_byte(fd)
     if not lead:
@@ -181,8 +210,7 @@ def _read_byte(fd: int, timeout: float = 0.12) -> str:
     drops bytes — used to block ``os.read`` forever with the UI thread inside
     it, so the whole interface froze until another key was pressed.
     """
-    ready, _, _ = select.select([fd], [], [], timeout)
-    if not ready:
+    if not _wait_readable(fd, timeout):
         return ""
     return os.read(fd, 1).decode("utf-8", "replace")
 
@@ -215,8 +243,7 @@ def _read_paste(fd: int, limit: int = 64000, timeout: float = 0.5, total: float 
     buffer = b""
     deadline = time.monotonic() + total
     while len(buffer) < limit and time.monotonic() < deadline:
-        ready, _, _ = select.select([fd], [], [], timeout)
-        if not ready:
+        if not _wait_readable(fd, timeout):
             break
         chunk = os.read(fd, 4096)
         if not chunk:
