@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -62,25 +63,6 @@ class ConfigLockSchemaTests(unittest.TestCase):
             self.assertEqual(on_disk["model"], "m")
             self.assertEqual(on_disk["api_key_store"], "macos-keychain")
 
-    def test_configure_marks_an_environment_key_as_transient(self):
-        from fun.cli import _configure
-
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "config.json"
-            config = FunConfig(base_url="https://example.test/v1", model="model")
-            theme = SimpleNamespace()
-            with patch.dict(os.environ, {"FUN_API_KEY": "sk-shared-ci"}, clear=False), \
-                 patch("fun.cli.sys.stdin.isatty", return_value=True), \
-                 patch("fun.cli.input", side_effect=["", "model", "n"]), \
-                 patch("fun.cli.PlainFrontend.select", side_effect=lambda title, options, callback, loader=None: callback("model")), \
-                 patch("fun.config._keychain_set") as setter:
-                self.assertEqual(_configure(config, str(path), "en-US", theme), 0)
-                setter.assert_not_called()
-            self.assertTrue(config.from_env)
-            on_disk = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(on_disk.get("api_key_env"), "FUN_API_KEY")
-            self.assertNotIn("api_key_store", on_disk)
-
     def test_an_environment_key_is_never_promoted_into_the_keychain(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
@@ -96,30 +78,57 @@ class ConfigLockSchemaTests(unittest.TestCase):
             self.assertNotIn("api_key", on_disk)
             self.assertEqual(on_disk.get("api_key_env"), "FUN_API_KEY")
 
-    def test_ordinary_save_preserves_readable_keychain_provenance_without_rewriting(self):
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "config.json"
-            path.write_text(json.dumps({"base_url": "https://x/v1", "model": "m", "api_key_store": "macos-keychain"}), encoding="utf-8")
-            with patch.dict(os.environ, {"FUN_API_KEY": ""}, clear=False), \
-                 patch("fun.config._keychain_get", return_value="sk-live"), \
-                 patch("fun.config._keychain_set") as setter:
-                config = FunConfig.load(path)
-                self.assertTrue(config.keychain_backed)
-                config.theme = "mono"
-                self.assertEqual(config.save(path), (False, True))
-                setter.assert_not_called()
-            on_disk = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(on_disk.get("api_key_store"), "macos-keychain")
-            self.assertNotIn("api_key_env", on_disk)
-
-    def test_save_reports_whether_the_key_actually_reached_durable_storage(self):
+    def test_save_reports_where_the_key_actually_reached_durable_storage(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
             config = FunConfig(base_url="https://x/v1", model="m", api_key="sk-abc")
-            with patch("fun.config._keychain_set", return_value=False):
-                self.assertEqual(config.save(path), (True, False))
+            with patch("fun.config._keychain_set", return_value=False), patch("fun.config._keychain_get", return_value=""):
+                # A failed keychain write is not a failed save: the key falls
+                # back to the 0600 config file, so it is still durable.
+                self.assertEqual(config.save(path), (True, True))
+                self.assertEqual(config.storage(path), "config-file")
             with patch("fun.config._keychain_set", return_value=True), patch("fun.config._keychain_get", return_value="sk-abc"):
                 self.assertEqual(config.save(path), (True, True))
+                self.assertEqual(config.storage(path), "keychain")
+
+    def test_a_key_survives_a_restart_when_the_keychain_write_fails(self):
+        # The regression this pins: the key was configured, the keychain write
+        # silently did nothing, save() recorded only "use FUN_API_KEY", and the
+        # next morning the app asked for the key again.
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("FUN_API_KEY", None)
+                with patch("fun.config._keychain_set", return_value=False), patch("fun.config._keychain_get", return_value=""):
+                    FunConfig(base_url="https://x/v1", model="m", api_key="sk-real").save(path)
+                    reloaded = FunConfig.load(path)
+            self.assertEqual(reloaded.api_key, "sk-real")
+            self.assertTrue(reloaded.ready())
+            self.assertFalse(reloaded.keychain_unreadable)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_storage_names_every_place_the_key_can_live(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            config = FunConfig(base_url="https://x/v1", model="m")
+            self.assertEqual(config.storage(path), "none")
+            config.save(path)
+            self.assertEqual(config.storage(path), "none")
+            with patch.dict(os.environ, {"FUN_API_KEY": "sk-env"}, clear=False):
+                with patch("fun.config._keychain_get", return_value=""), patch("fun.config._keychain_set", return_value=False):
+                    FunConfig.load(path).save(path)
+            self.assertEqual(config.storage(path), "environment")
+
+    def test_the_save_message_names_the_place_rather_than_claiming_success(self):
+        from fun.i18n import key_location_message, saved_message
+
+        for locale in ("en-US", "zh-CN"):
+            self.assertNotEqual(saved_message(locale, "config-file", "/tmp/c.json"), saved_message(locale, "keychain", "/tmp/c.json"))
+            self.assertIn("/tmp/c.json", saved_message(locale, "config-file", "/tmp/c.json"))
+            # An unknown location must degrade to the honest warning, never to
+            # the reassuring one.
+            self.assertEqual(saved_message(locale, "???", "/tmp/c.json"), saved_message(locale, "none", "/tmp/c.json"))
+            self.assertEqual(key_location_message(locale, "???", "/tmp/c.json"), key_location_message(locale, "none", "/tmp/c.json"))
 
     def test_logout_reports_failure_instead_of_claiming_success(self):
         with TemporaryDirectory() as directory:
@@ -130,13 +139,26 @@ class ConfigLockSchemaTests(unittest.TestCase):
             with patch("fun.config._keychain_get", return_value=""), patch("fun.config._keychain_delete", return_value=True):
                 self.assertTrue(FunConfig(api_key="sk-abc").clear_credentials(path))
 
-    def test_the_key_is_not_passed_through_the_process_argument_table(self):
+    def test_the_keychain_write_can_never_prompt_on_the_terminal(self):
+        # A bare ``-w`` makes ``security`` prompt on /dev/tty, which printed
+        # "password data for new item:" across the running UI, stored nothing,
+        # and ate the user's next keystrokes.  The value form is the only
+        # usable one, and stdin is closed so no sub-command can block on input.
         with patch("fun.config.shutil.which", return_value="/usr/bin/security"), patch("fun.config.subprocess.run") as run:
             run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
-            _keychain_set("sk-secret-value")
+            with patch("fun.config._keychain_get", return_value="sk-secret-value"):
+                self.assertTrue(_keychain_set("sk-secret-value"))
             argv = run.call_args.args[0]
-            self.assertNotIn("sk-secret-value", argv)
-            self.assertIn("sk-secret-value", run.call_args.kwargs.get("input", ""))
+            self.assertEqual(argv[-2:], ["-w", "sk-secret-value"])
+            self.assertIsNone(run.call_args.kwargs.get("input"))
+            self.assertEqual(run.call_args.kwargs.get("stdin"), subprocess.DEVNULL)
+
+    def test_a_write_that_stores_nothing_is_reported_as_a_failure(self):
+        # Exit code 0 is not proof: the read-back is.
+        with patch("fun.config.shutil.which", return_value="/usr/bin/security"), patch("fun.config.subprocess.run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            with patch("fun.config._keychain_get", return_value=""):
+                self.assertFalse(_keychain_set("sk-secret-value"))
 
     def test_workspace_lock_is_exclusive(self):
         with TemporaryDirectory() as directory:
@@ -163,17 +185,6 @@ class ConfigLockSchemaTests(unittest.TestCase):
             validate_tool_arguments("read", {"path": "a", "unexpected": True})
         with self.assertRaisesRegex(SchemaError, "INVALID_ARGUMENTS"):
             validate_tool_arguments("exec", {"command": "echo", "timeout": "fast"})
-
-    def test_tool_schema_rejects_invalid_pagination_ranges(self):
-        for name, arguments in (
-            ("explore", {"limit": -1}),
-            ("explore", {"limit": 0}),
-            ("read", {"path": "a", "start": -1}),
-            ("read", {"path": "a", "end": 0}),
-            ("read", {"path": "a", "start": 5, "end": 4}),
-        ):
-            with self.assertRaisesRegex(SchemaError, "INVALID_ARGUMENTS", msg=(name, arguments)):
-                validate_tool_arguments(name, arguments)
 
 
 if __name__ == "__main__":

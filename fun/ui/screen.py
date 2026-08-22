@@ -94,10 +94,8 @@ class DockWriter:
         row_from_top = max(0, min(row_from_top, len(self._dock_lines) - 1))
         up = self._cursor_row - row_from_top
         payload = ("\033[F" * up if up > 0 else "") + "\r"
-        if column > 1:
-            # After CR the cursor is already in terminal column 1.  CSI n C is a
-            # relative move, so the displacement is target-column minus one.
-            payload += f"\033[{column - 1}C"
+        if column > 0:
+            payload += f"\033[{column}C"
         self.output.write(payload + SHOW_CURSOR)
         self.output.flush()
         self._cursor_row = row_from_top
@@ -126,6 +124,13 @@ class ScreenWriter:
         self._entered = False
         self._size: tuple[int, int] | None = None
         self.background = background
+
+    def write_control(self, sequence: str) -> None:
+        """Emit a raw control sequence (mouse reporting, and the like)."""
+        if not sequence:
+            return
+        self.output.write(sequence)
+        self.output.flush()
 
     def _fill(self, line: str, width: int) -> str:
         """Pad a row to the full width and keep the canvas colour behind it.

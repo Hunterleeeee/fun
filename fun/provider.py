@@ -32,8 +32,13 @@ def _classify_empty_stream(body: str) -> str:
 class ProviderError(RuntimeError):
     """Provider failure with a stable, privacy-safe classification."""
 
-    def __init__(self, error_tag: str, *, cause: Exception | None = None, endpoint: str = "", key_hint: str = "") -> None:
+    def __init__(self, error_tag: str, *, cause: Exception | None = None, endpoint: str = "", key_hint: str = "", status: int = 0) -> None:
         self.error_tag = error_tag
+        # The HTTP status, when there was one.  Without it every non-auth HTTP
+        # failure — a 404 from a wrong path, a 429 from rate limiting, a 500
+        # from the provider — collapsed into one opaque tag and the user had no
+        # way to tell which of them had happened.
+        self.status = int(status or 0)
         self.cause_type = type(cause).__name__ if cause is not None else None
         # Which address, and which key by its first and last few characters.
         # An auth failure the user cannot attribute to a specific endpoint is a
@@ -83,7 +88,7 @@ class OpenAICompatible:
             models = [item.get("id") for item in data if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip()]
             return sorted(set(models))
         except urllib.error.HTTPError as exc:
-            raise ProviderError("PROVIDER_AUTH_FAILED" if exc.code in {401, 403} else "PROVIDER_HTTP_FAILED", cause=exc, **self._identity()) from exc
+            raise ProviderError("PROVIDER_AUTH_FAILED" if exc.code in {401, 403} else "PROVIDER_HTTP_FAILED", cause=exc, status=exc.code, **self._identity()) from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise ProviderError("PROVIDER_NETWORK_FAILED", cause=exc) from exc
         except (OSError, ValueError, TypeError) as exc:
@@ -98,21 +103,19 @@ class OpenAICompatible:
             raise ProviderError("PROVIDER_INVALID_MESSAGES")
         if tools is not None and (not isinstance(tools, list) or any(not isinstance(tool, dict) for tool in tools)):
             raise ProviderError("PROVIDER_INVALID_TOOLS")
+        try:
+            serialized_messages = json.dumps(messages, separators=(",", ":"))
+            serialized_tools = json.dumps(tools, separators=(",", ":")) if tools is not None else ""
+        except (TypeError, ValueError) as exc:
+            raise ProviderError("PROVIDER_INVALID_PAYLOAD", cause=exc) from exc
+        if len(serialized_messages.encode()) + len(serialized_tools.encode()) > self.config.max_payload_bytes:
+            raise ProviderError("PROVIDER_PAYLOAD_TOO_LARGE")
         payload: dict[str, Any] = {"model": self.config.model, "messages": messages, "stream": True}
         if tools:
             payload["tools"] = tools
-        try:
-            # Bound exactly what is sent, including model, stream and JSON
-            # escaping overhead.  Estimating only messages + tools let the real
-            # HTTP body exceed the configured ceiling.
-            body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        except (TypeError, ValueError, UnicodeError) as exc:
-            raise ProviderError("PROVIDER_INVALID_PAYLOAD", cause=exc) from exc
-        if len(body) > self.config.max_payload_bytes:
-            raise ProviderError("PROVIDER_PAYLOAD_TOO_LARGE")
         request = urllib.request.Request(
             self.config.base_url.rstrip("/") + "/chat/completions",
-            data=body,
+            data=json.dumps(payload).encode(),
             headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json", "Accept": "text/event-stream"},
             method="POST",
         )
@@ -139,7 +142,7 @@ class OpenAICompatible:
                     raise ProviderError("PROVIDER_INVALID_STATUS")
                 if status >= 400:
                     tag = "PROVIDER_AUTH_FAILED" if status in {401, 403} else "PROVIDER_HTTP_FAILED"
-                    raise ProviderError(tag, **self._identity())
+                    raise ProviderError(tag, status=status, **self._identity())
                 headers = getattr(response, "headers", None)
                 raw_content_type = headers.get("Content-Type", "") if headers is not None else ""
                 content_type = raw_content_type if isinstance(raw_content_type, str) else ""
@@ -154,7 +157,7 @@ class OpenAICompatible:
                 # An incremental decoder, not a per-chunk decode: a 3-byte CJK
                 # character split across two reads decoded to replacement
                 # characters, silently corrupting the text instead of failing.
-                decoder = codecs.getincrementaldecoder("utf-8")("strict")
+                decoder = codecs.getincrementaldecoder("utf-8")("replace")
                 # A silence deadline, not a total budget.  Bounding the whole
                 # stream would kill a healthy long completion mid-flight and
                 # throw away everything it had produced; what actually needs
@@ -258,16 +261,14 @@ class OpenAICompatible:
             raise ProviderError("PROVIDER_TIMEOUT", cause=exc) from exc
         except urllib.error.HTTPError as exc:
             tag = "PROVIDER_AUTH_FAILED" if exc.code in {401, 403} else "PROVIDER_HTTP_FAILED"
-            raise ProviderError(tag, cause=exc, **self._identity()) from exc
+            raise ProviderError(tag, cause=exc, status=exc.code, **self._identity()) from exc
         except urllib.error.URLError as exc:
             raise ProviderError("PROVIDER_NETWORK_FAILED", cause=exc) from exc
-        except UnicodeError as exc:
-            raise ProviderError("PROVIDER_MALFORMED_EVENT", cause=exc, **self._identity()) from exc
         except OSError as exc:
             status = getattr(exc, "code", getattr(exc, "status", None))
             if status is not None:
                 tag = "PROVIDER_AUTH_FAILED" if status in {401, 403} else "PROVIDER_HTTP_FAILED"
-                raise ProviderError(tag, cause=exc, **self._identity()) from exc
+                raise ProviderError(tag, cause=exc, status=int(status), **self._identity()) from exc
             raise ProviderError("PROVIDER_REQUEST_FAILED", cause=exc) from exc
         except Exception as exc:
             raise ProviderError("PROVIDER_REQUEST_FAILED", cause=exc) from exc

@@ -24,7 +24,7 @@ from .commands import REGISTRY, Session, command_names, dispatch, resolve_comman
 from .config import FunConfig
 from .dashboard import serve
 from .frontends import AppFrontend, PlainFrontend, friendly_error, run_goal
-from .i18n import t
+from .i18n import saved_message, t
 from .provider import ModelConfig, OpenAICompatible
 from .runtime import SMALL_TALK_PLAN, Runtime
 from .ui import input as keys
@@ -36,11 +36,6 @@ from .ui.stream import StreamSurface
 from .ui.theme import Theme
 
 __all__ = ["build_parser", "main", "resolve_command_prefix"]
-
-
-def _approval_allowed(answer: str) -> bool:
-    """Translate the TUI's semantic approval answer without truthiness bugs."""
-    return answer in {"yes", "always"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -114,10 +109,17 @@ def _configure(saved: FunConfig, config_path: str, locale: str, theme: Theme) ->
             saved.api_key = entered
             saved.from_env = False
             saved.keychain_backed = False
-    picked: list[str | None] = [None]
+    picked: list[list[str]] = [[]]
+
+    def remember(value: Any) -> None:
+        names = [str(item) for item in value] if isinstance(value, list) else ([str(value)] if value else [])
+        picked[0] = [name for name in names if name]
+
     provider = OpenAICompatible(ModelConfig(saved.base_url, saved.api_key, saved.model or "models-placeholder")) if saved.base_url and saved.api_key else None
-    frontend.select("Choose model", [saved.model] if saved.model else [], lambda value: picked.__setitem__(0, value), loader=provider.list_models if provider else None)
-    saved.model = picked[0] or saved.model
+    frontend.select(t(locale, "choose_model"), saved.models or ([saved.model] if saved.model else []), remember, loader=provider.list_models if provider else None, multi=True, chosen=list(saved.models))
+    if picked[0]:
+        saved.models = picked[0]
+        saved.model = picked[0][0]
     if not saved.model:
         print(t(locale, "model_required_cli"), file=sys.stderr)
         return 2
@@ -128,8 +130,58 @@ def _configure(saved: FunConfig, config_path: str, locale: str, theme: Theme) ->
     elif choice in {"n", "no"}:
         saved.telemetry, saved.telemetry_endpoint = False, ""
     saved.save(config_path)
-    print(t(locale, "saved_to").format(path=config_path))
+    # Not an unconditional "saved": if the keychain write failed the key is
+    # somewhere else (or nowhere), and the user has to know which.
+    print(saved_message(locale, saved.storage(config_path), config_path))
     return 0
+
+
+#: The only two answers that mean "run it".  Everything else — "no", an empty
+#: answer, a closed dialog — denies.
+ALLOWING_ANSWERS = frozenset({"yes", "always"})
+
+
+def approval_gate(session_approvals: set[str], app_holder: dict[str, Any], locale: str, interactive: bool = True) -> Any:
+    """Build the callback the Runtime asks before running a risky tool.
+
+    Extracted from ``main`` so the denial path is reachable from a test.  It was
+    not, and the wiring inverted itself: ``request_approval`` returns the
+    *strings* "yes" / "no" / "always" so that "allow once" and "allow for the
+    session" stay distinguishable, but the caller still did ``bool(answer)`` —
+    and ``bool("no")`` is True.  Pressing ``n`` on ``rm -rf`` ran it, and the
+    card then rendered with a green tick, so the transcript said the command
+    the user had just refused had succeeded.
+    """
+
+    def approve(name: str, risk: object) -> bool:
+        # "Always allow" never covers a critical operation.  Approving
+        # `rm -rf build` once used to remember `exec:rm` for the session, so the
+        # next `rm -rf` — of anything — ran with no prompt at all.
+        critical = str(getattr(risk, "value", risk)) == "critical"
+        if not critical and name in session_approvals:
+            return True
+        if not interactive or not sys.stdin.isatty():
+            return False
+        app = app_holder.get("app")
+        if app is not None:
+            answer = app.request_approval(name, risk)
+            if answer == "always" and not critical:
+                # The UI offers "always allow in this session"; only the plain
+                # input() fallback ever recorded it, so in the real frontend the
+                # choice allowed one call and then asked again immediately.
+                session_approvals.add(name)
+            return answer in ALLOWING_ANSWERS
+        try:
+            choice = input("? " + t(locale, "approval_prompt").format(name=name, risk=risk)).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        if choice in {"a", "always"}:
+            if not critical:
+                session_approvals.add(name)
+            return True
+        return choice in {"y", "yes"}
+
+    return approve
 
 
 def _telemetry_client(args: argparse.Namespace, saved: FunConfig, state_dir: str, config_path: str) -> Any:
@@ -170,6 +222,7 @@ def _run_interactive_app(session: Session, app: App, locale: str, theme: Theme) 
     app.mode_handler = set_mode
     app.state.model_name = runtime.model
     app.state.approval_mode = runtime.policy.mode.value
+    app.state.provider_ready = runtime.provider is not None
     app.state.workspace = str(runtime.tools.guard.root)
     app.state.version = f"v{__version__}"
     app.state.session_label = runtime.session_id
@@ -250,6 +303,7 @@ def _run_interactive_app(session: Session, app: App, locale: str, theme: Theme) 
             # the transcript in place; the side effect belongs to the handler.
             app.state.model_name = runtime.model
             app.state.approval_mode = runtime.policy.mode.value
+            app.state.provider_ready = runtime.provider is not None
             return
         app.state.goal = text
         threading.Thread(target=worker, args=(text,), daemon=True).start()
@@ -344,39 +398,7 @@ def main(argv: list[str] | None = None) -> int:
 
     session_approvals: set[str] = set()
     app_holder: dict[str, App] = {}
-
-    def approve(name: str, risk: object) -> bool:
-        # "Always allow" never covers a critical operation.  Approving
-        # `rm -rf build` once used to remember `exec:rm` for the session, so the
-        # next `rm -rf` — of anything — ran with no prompt at all.
-        critical = str(getattr(risk, "value", risk)) == "critical"
-        if not critical and name in session_approvals:
-            return True
-        if args.non_interactive or not sys.stdin.isatty():
-            return False
-        app = app_holder.get("app")
-        if app is not None:
-            answer = app.request_approval(name, risk)
-            if answer == "always":
-                # The UI offers "always allow in this session"; only the plain
-                # input() fallback ever recorded it, so in the real frontend the
-                # choice allowed one call and then asked again immediately.
-                if not critical:
-                    session_approvals.add(name)
-                return True
-            # request_approval returns semantic strings.  In particular,
-            # ``"no"`` is non-empty and therefore truthy, so bool(answer)
-            # silently turned an explicit rejection into permission.
-            return _approval_allowed(answer)
-        try:
-            choice = input("? " + t(locale, "approval_prompt").format(name=name, risk=risk)).strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            return False
-        if choice in {"a", "always"}:
-            if not critical:
-                session_approvals.add(name)
-            return True
-        return choice in {"y", "yes"}
+    approve = approval_gate(session_approvals, app_holder, locale, interactive=not args.non_interactive)
 
     if args.resume_session:
         try:
@@ -396,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         runtime = Runtime(args.workspace, approval, provider, state_dir=state_dir, approve=approve, telemetry=telemetry, model=model, system_prompt=saved.system_prompt)
 
-    session = Session(runtime, saved, config_path, base_url, api_key, model)
+    session = Session(runtime, saved, config_path, base_url, api_key, model, list(saved.models))
 
     if args.goal:
         if provider is None:

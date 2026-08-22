@@ -48,6 +48,12 @@ class Modal:
     groups: list[tuple[str, list[tuple[str, str, str]]]] = field(default_factory=list)
     rows: list[PaletteRow] = field(default_factory=list)
     max_rows: int = 14
+    # A pick list is also a search box.  Provider model lists run to dozens of
+    # ids; without a filter the only way to reach the one you want was to hold
+    # ↓, and without multi-select the only way to keep a second model was to
+    # retype it by hand later.
+    multi: bool = False
+    chosen: list[str] = field(default_factory=list)
     # Identifies this dialog to work that was started for it.  A background
     # loader outlives the modal that started it, and its late result used to be
     # applied to whichever select happened to be open by then.
@@ -141,16 +147,58 @@ class Modal:
         self.rebuild()
         return False
 
+    def visible(self) -> list[str]:
+        """Options matching the typed filter, in list order.
+
+        An empty result is reported as empty rather than silently falling back
+        to everything: "no match" has to be visible, or a typo looks like the
+        provider simply does not have the model.
+        """
+        from .completion import score
+
+        query = self.value.strip()
+        if not query:
+            return list(self.options)
+        return [option for option in self.options if score(query, option) is not None]
+
     def _handle_select(self, key: str) -> bool:
-        if not self.options:
-            return False
+        options = self.visible()
         if key in {"up", "down"}:
-            self.index = (self.index + (1 if key == "down" else -1)) % len(self.options)
-        elif key == "enter":
+            if options:
+                self.index = (self.index + (1 if key == "down" else -1)) % len(options)
+            return False
+        if key == "enter":
             if self.loading:
                 return False
-            self._finish(self.options[self.index])
+            current = options[self.index] if 0 <= self.index < len(options) else ""
+            if self.multi:
+                # Enter on an untouched list means "just this one", so the
+                # common single-model case still takes one keypress.
+                self._finish(list(self.chosen) if self.chosen else ([current] if current else []))
+            else:
+                self._finish(current or None)
             return True
+        if key == "space" or key == " ":
+            if self.multi and options:
+                current = options[self.index]
+                if current in self.chosen:
+                    self.chosen.remove(current)
+                else:
+                    self.chosen.append(current)
+                return False
+            if key == " ":
+                self.value += " "
+                self.index = 0
+            return False
+        if key == "backspace":
+            self.value = self.value[:-1]
+        elif key in KILL_KEYS:
+            self.value = ""
+        elif len(key) == 1 and key.isprintable():
+            self.value += key
+        else:
+            return False
+        self.index = 0
         return False
 
     def _handle_prompt(self, key: str) -> bool:
@@ -196,6 +244,8 @@ class Modal:
         """
         clean = " ".join(text.split()) if self.kind in {"fields", "palette", "select"} else text
         if self.kind == "select":
+            self.value += clean
+            self.index = 0
             return
         if self.kind == "palette":
             self.value += clean
@@ -311,11 +361,26 @@ class Modal:
             caret = theme.glyph("❯", ">")
             if self.loading and not self.options:
                 return [theme.style(theme.text("ui_loading"), "muted")]
-            rows = []
-            for index, option in enumerate(self.options):
+            options = self.visible()
+            typed = self.value
+            caret_cell = typed[:1] or " "
+            trailing = typed[1:] if typed else theme.text("ui_select_search")
+            trailing = truncate(trailing, max(1, width - display_width(caret_cell) - 1))
+            rows = [theme.style(caret_cell, "text", reverse=True) + theme.style(trailing, "text" if typed else "faint"), ""]
+            if not options:
+                rows.append(theme.style(theme.text("ui_select_empty"), "faint"))
+                return rows
+            start = min(max(0, self.index - self.max_rows // 2), max(0, len(options) - self.max_rows))
+            for index, option in list(enumerate(options))[start:start + self.max_rows]:
                 selected = index == self.index
                 marker = theme.style(caret, "accent") if selected else " "
-                rows.append(f"{marker} {theme.style(truncate(option, width - 2), 'text' if selected else 'muted')}")
+                if self.multi:
+                    box = theme.glyph("◉", "[x]") if option in self.chosen else theme.glyph("○", "[ ]")
+                    marker += " " + theme.style(box, "accent" if option in self.chosen else "faint")
+                label = truncate(option, max(4, width - display_width(strip_style(marker)) - 2))
+                rows.append(f"{marker} {theme.style(label, 'text' if selected else 'muted')}")
+            if len(options) > self.max_rows:
+                rows.append(theme.style(theme.text("ui_palette_hint", position=self.index + 1, total=len(options)), "faint"))
             return rows
         if self.kind == "prompt":
             shown = wrap(self.value, width) if self.value else [theme.style("(empty)", "faint")]
@@ -327,7 +392,7 @@ class Modal:
 
     def _footer(self, theme: Theme) -> str:
         if self.kind == "select":
-            return theme.text("ui_select_footer")
+            return theme.text("ui_select_multi_footer" if self.multi else "ui_select_footer")
         if self.kind == "prompt":
             return theme.text("ui_prompt_footer", used=len(self.value), total=self.max_chars)
         return theme.text("ui_fields_footer", position=f"{self.index + 1}/{len(self.fields)}")
@@ -348,5 +413,5 @@ def field_modal(title: str, fields: Sequence[str | tuple[str, bool]], callback: 
     return Modal("fields", title, callback, fields=normalized)
 
 
-def select_modal(title: str, options: Sequence[str], callback: Callable[[str | None], None]) -> Modal:
-    return Modal("select", title, callback, options=[str(item) for item in options])
+def select_modal(title: str, options: Sequence[str], callback: Callable[[Any], None], multi: bool = False, chosen: Sequence[str] = ()) -> Modal:
+    return Modal("select", title, callback, options=[str(item) for item in options], multi=multi, chosen=[str(item) for item in chosen])

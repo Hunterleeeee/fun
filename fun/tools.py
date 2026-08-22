@@ -227,20 +227,11 @@ class CommandPlan:
 
 
 def _trusted_benign(program: str, argv: list[str], root: Path) -> bool:
-    """Whether a benign basename resolves to a system executable.
-
-    A basename is not an identity: ``./cat`` and a workspace-prepended PATH can
-    point at arbitrary project code.  Only a bare program name found outside the
-    workspace may inherit the closed BENIGN classification.
-    """
     token = argv[0]
     if token != program or any(separator in token for separator in ("/", "\\")):
         return False
     candidates = [token]
     if os.name == "nt" and not Path(token).suffix:
-        # Include the exact token as well as PATHEXT forms.  CreateProcess may
-        # resolve extensionless executables/scripts through wrappers, and a
-        # workspace-local `cat` must never inherit the system cat's LOW risk.
         candidates += [token + suffix.lower() for suffix in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if suffix]
     found = None
     for directory in os.environ.get("PATH", "").split(os.pathsep):
@@ -416,9 +407,6 @@ class Tools:
             return ToolResult(False, "INVALID_ARGUMENTS")
         if end is not None and (not isinstance(end, int) or isinstance(end, bool) or end < start):
             return ToolResult(False, "INVALID_ARGUMENTS")
-        # Check the lexical name before resolve() follows symlinks; otherwise a
-        # protected alias such as `.env -> public.txt` is checked only under the
-        # harmless target name.
         self.guard.check_name(path, self.policy)
         target = self.guard.resolve(path)
         self.guard.check_name(target, self.policy)

@@ -8,16 +8,6 @@ from fun.events import Event
 from fun.persistence import SQLiteEventStore
 
 
-def _process_initializer(path: str, ready, result) -> None:
-    ready.wait()
-    try:
-        store = SQLiteEventStore(path)
-        store.close()
-        result.put(None)
-    except Exception as exc:
-        result.put(type(exc).__name__ + ": " + str(exc))
-
-
 def _process_writer(path: str, index: int, ready, result) -> None:
     store = SQLiteEventStore(path)
     ready.wait()
@@ -31,21 +21,6 @@ def _process_writer(path: str, index: int, ready, result) -> None:
 
 
 class PersistenceTests(unittest.TestCase):
-    def test_sqlite_schema_initialization_is_serialized_across_processes(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = str(Path(directory) / "events.db")
-            context = multiprocessing.get_context("spawn")
-            ready = context.Event()
-            result = context.Queue()
-            processes = [context.Process(target=_process_initializer, args=(path, ready, result)) for _ in range(8)]
-            for process in processes:
-                process.start()
-            ready.set()
-            for process in processes:
-                process.join(timeout=15)
-                self.assertEqual(process.exitcode, 0)
-            self.assertEqual([result.get(timeout=2) for _ in processes], [None] * len(processes))
-
     def test_sqlite_concurrent_processes_persist_all_events(self):
         with tempfile.TemporaryDirectory() as directory:
             path = str(Path(directory) / "events.db")

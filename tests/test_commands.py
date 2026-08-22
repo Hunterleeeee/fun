@@ -1,3 +1,5 @@
+import re
+import time
 import unittest
 from unittest.mock import patch
 from tempfile import TemporaryDirectory
@@ -19,6 +21,7 @@ class RecordingFrontend:
         self.statuses: list[str] = []
         self.quit_called = False
         self.cleared = False
+        self.selects: list[dict[str, Any]] = []
         self.answers = answers or {}
 
     def say(self, text: str) -> None:
@@ -36,8 +39,12 @@ class RecordingFrontend:
     def form(self, title: str, fields: Sequence[Any], callback: Callable[[dict[str, str] | None], None]) -> None:
         callback(self.answers.get("form"))
 
-    def select(self, title: str, options: Sequence[str], callback: Callable[[str | None], None], loader: Callable[[], list[str]] | None = None) -> None:
-        callback(self.answers.get("select"))
+    def select(self, title: str, options: Sequence[str], callback: Callable[[Any], None], loader: Callable[[], list[str]] | None = None, multi: bool = False, chosen: Sequence[str] = ()) -> None:
+        self.selects.append({"title": title, "options": list(options), "multi": multi, "chosen": list(chosen), "loader": loader})
+        answer = self.answers.get("select")
+        if multi and not isinstance(answer, list):
+            answer = [answer] if answer else []
+        callback(answer)
 
     def edit(self, title: str, initial: str, callback: Callable[[str | None], None]) -> None:
         callback(self.answers.get("edit"))
@@ -167,37 +174,6 @@ class CommandDispatchTests(unittest.TestCase):
             self.assertEqual(runtime.task.status, "paused")
             dispatch("/resume", session, frontend)
             self.assertEqual(runtime.task.status, "running")
-            runtime.stop()
-
-    def test_lifecycle_commands_report_invalid_idle_state_without_status_lie(self):
-        with TemporaryDirectory() as directory:
-            for command in ("/pause", "/resume", "/stop"):
-                session, runtime = self._session(directory)
-                frontend = RecordingFrontend()
-                self.assertTrue(dispatch(command, session, frontend))
-                self.assertIn("NO_ACTIVE_TASK", frontend.text, command)
-                self.assertEqual(frontend.statuses, [], command)
-                runtime.close()
-
-    def test_resume_and_stop_report_completed_state_without_raising(self):
-        with TemporaryDirectory() as directory:
-            session, runtime = self._session(directory)
-            runtime.create_task("done")
-            runtime.complete("ok")
-            frontend = RecordingFrontend()
-            for command in ("/resume", "/stop"):
-                self.assertTrue(dispatch(command, session, frontend))
-            self.assertEqual(len([line for line in frontend.said if "INVALID_TASK_TRANSITION" in line]), 2)
-            self.assertEqual(frontend.statuses, [])
-
-    def test_lifecycle_runtime_errors_are_rendered_not_raised(self):
-        with TemporaryDirectory() as directory:
-            session, runtime = self._session(directory)
-            runtime.create_task("pause")
-            frontend = RecordingFrontend()
-            with patch.object(runtime, "pause", side_effect=RuntimeError("TRANSITION_FAILED")):
-                self.assertTrue(dispatch("/pause", session, frontend))
-            self.assertIn("TRANSITION_FAILED", frontend.text)
             runtime.stop()
 
     def test_cancel_requires_an_identifier(self):
@@ -382,14 +358,6 @@ class CrashPathTests(unittest.TestCase):
         self.assertTrue(once.allowed)
         self.assertFalse(once.remembered)
 
-    def test_an_explicit_no_is_not_truthy_permission(self):
-        from fun.cli import _approval_allowed
-
-        self.assertFalse(_approval_allowed("no"))
-        self.assertFalse(_approval_allowed(""))
-        self.assertTrue(_approval_allowed("yes"))
-        self.assertTrue(_approval_allowed("always"))
-
     def test_the_approval_callback_distinguishes_once_from_always(self):
         import io
         import threading
@@ -407,3 +375,249 @@ class CrashPathTests(unittest.TestCase):
         request.done.set()
         waiter.join(2)
         self.assertEqual(answers, ["always"])
+
+
+class ModelPickerTests(unittest.TestCase):
+    """The model is chosen from the provider's list, not typed from memory."""
+
+    def _session(self, directory: str):
+        runtime = Runtime(directory, "auto", state_dir=directory)
+        return Session(runtime, FunConfig(), f"{directory}/config.json"), runtime
+
+    def test_config_asks_for_the_model_in_a_picker_not_a_text_field(self):
+        with TemporaryDirectory() as directory:
+            session, runtime = self._session(directory)
+            frontend = RecordingFrontend({"form": {"base_url": "https://x/v1", "api_key": "sk-a"}, "select": ["m-large", "m-small"]})
+            with patch("fun.config._keychain_set", return_value=False), patch("fun.config._keychain_get", return_value=""):
+                dispatch("/config", session, frontend)
+            # The credentials form no longer carries a "model" field at all.
+            self.assertEqual(len(frontend.selects), 1)
+            self.assertTrue(frontend.selects[0]["multi"])
+            self.assertIsNotNone(frontend.selects[0]["loader"], "the list has to come from the provider")
+            self.assertEqual(session.model, "m-large")
+            self.assertEqual(session.models, ["m-large", "m-small"])
+            self.assertEqual(FunConfig.load(session.config_path).models, ["m-large", "m-small"])
+            runtime.stop()
+
+    def test_a_cancelled_picker_leaves_the_saved_model_alone(self):
+        with TemporaryDirectory() as directory:
+            session, runtime = self._session(directory)
+            session.base_url, session.api_key, session.model = "https://x/v1", "sk-a", "kept"
+            frontend = RecordingFrontend({"select": None})
+            with patch("fun.config._keychain_set", return_value=False), patch("fun.config._keychain_get", return_value=""):
+                dispatch("/model", session, frontend)
+            self.assertEqual(session.model, "kept")
+            runtime.stop()
+
+    def test_the_picker_offers_the_models_already_chosen(self):
+        with TemporaryDirectory() as directory:
+            session, runtime = self._session(directory)
+            session.base_url, session.api_key = "https://x/v1", "sk-a"
+            session.models = ["m-large", "m-small"]
+            dispatch("/model", session, RecordingFrontend({"select": None}))
+            runtime.stop()
+
+    def test_naming_a_model_directly_adds_it_to_the_shortlist(self):
+        with TemporaryDirectory() as directory:
+            session, runtime = self._session(directory)
+            session.base_url, session.api_key = "https://x/v1", "sk-a"
+            with patch("fun.config._keychain_set", return_value=False), patch("fun.config._keychain_get", return_value=""):
+                dispatch("/model m-tiny", session, RecordingFrontend())
+            self.assertEqual(session.model, "m-tiny")
+            self.assertIn("m-tiny", session.models)
+            runtime.stop()
+
+    def test_model_without_credentials_says_so_instead_of_opening_an_empty_list(self):
+        with TemporaryDirectory() as directory:
+            session, runtime = self._session(directory)
+            frontend = RecordingFrontend()
+            dispatch("/model", session, frontend)
+            self.assertEqual(frontend.selects, [])
+            self.assertIn("provider", frontend.text.lower())
+            runtime.stop()
+
+
+class ApprovalGateTests(unittest.TestCase):
+    """Denying has to deny.  This is the one answer that must never be guessed."""
+
+    def _gate(self, answer, remembered=None, interactive=True):
+        from fun.cli import approval_gate
+
+        class FakeApp:
+            asked = []
+
+            def request_approval(self, name, risk, arguments=None):
+                FakeApp.asked.append((name, str(getattr(risk, "value", risk))))
+                return answer
+
+        FakeApp.asked = []
+        holder = {"app": FakeApp()}
+        gate = approval_gate(remembered if remembered is not None else set(), holder, "en-US", interactive=interactive)
+        return gate, FakeApp
+
+    def test_no_means_no(self):
+        # `request_approval` returns the *strings* "yes"/"no"/"always"; the
+        # caller used to do bool(answer), and bool("no") is True — so pressing n
+        # on `rm -rf build` ran it, and the card showed a green tick afterwards.
+        with patch("fun.cli.sys.stdin.isatty", return_value=True):
+            for answer in ("no", "", None):
+                gate, _ = self._gate(answer)
+                self.assertFalse(gate("exec:rm", "critical"), repr(answer))
+
+    def test_yes_and_always_are_the_only_answers_that_run_it(self):
+        from fun.cli import ALLOWING_ANSWERS
+
+        with patch("fun.cli.sys.stdin.isatty", return_value=True):
+            for answer in ("yes", "always"):
+                gate, _ = self._gate(answer)
+                self.assertTrue(gate("exec:ls", "high"), answer)
+            for answer in ("no", "n", "y", "a", "maybe", "true"):
+                gate, _ = self._gate(answer)
+                self.assertEqual(gate("exec:ls", "high"), answer in ALLOWING_ANSWERS, answer)
+
+    def test_the_ui_only_ever_returns_answers_the_gate_understands(self):
+        import inspect
+
+        from fun.cli import ALLOWING_ANSWERS
+        from fun.ui.app import App
+
+        source = inspect.getsource(App.request_approval)
+        returned = set(re.findall(r'return "([a-z]+)"', source))
+        self.assertTrue(returned)
+        self.assertTrue(returned <= {"yes", "no", "always"}, returned)
+        self.assertTrue(ALLOWING_ANSWERS <= {"yes", "always"})
+
+    def test_always_is_remembered_but_never_for_a_critical_operation(self):
+        with patch("fun.cli.sys.stdin.isatty", return_value=True):
+            remembered = set()
+            gate, app = self._gate("always", remembered)
+            self.assertTrue(gate("exec:ls", "high"))
+            self.assertIn("exec:ls", remembered)
+            self.assertTrue(gate("exec:ls", "high"))
+            self.assertEqual(len(app.asked), 1, "a remembered subject is not asked twice")
+
+            remembered = set()
+            gate, app = self._gate("always", remembered)
+            self.assertTrue(gate("exec:rm", "critical"))
+            self.assertNotIn("exec:rm", remembered, "critical is never remembered")
+            gate("exec:rm", "critical")
+            self.assertEqual(len(app.asked), 2, "a critical subject is asked every time")
+
+    def test_a_non_interactive_run_denies_rather_than_hanging(self):
+        gate, app = self._gate("yes", interactive=False)
+        self.assertFalse(gate("exec:rm", "critical"))
+        self.assertEqual(app.asked, [])
+
+    def test_pressing_n_in_the_app_answers_no(self):
+        import io
+        import threading
+
+        from fun.ui.app import App
+        from fun.ui.stream import StreamSurface
+        from fun.ui.theme import Theme
+
+        app = App(StreamSurface(io.StringIO()), theme=Theme(mode="none"))
+        answers = []
+        worker = threading.Thread(target=lambda: answers.append(app.request_approval("exec:rm", "critical")), daemon=True)
+        worker.start()
+        for _ in range(200):
+            app._consume()
+            if app._approval is not None:
+                break
+            time.sleep(0.01)
+        app._handle_key("n", lambda *_: None)
+        app._consume()
+        worker.join(timeout=5)
+        self.assertEqual(answers, ["no"])
+
+
+class RefusalWordingTests(unittest.TestCase):
+    """A tag is for the model; the person watching gets a sentence."""
+
+    def test_every_refusal_tag_the_tools_can_return_has_wording(self):
+        import re as regex
+        from pathlib import Path
+
+        from fun.ui.components import REFUSAL_MESSAGES
+
+        root = Path(__file__).resolve().parent.parent
+        source = (root / "fun" / "tools.py").read_text(encoding="utf-8") + (root / "fun" / "runtime.py").read_text(encoding="utf-8")
+        # Only all-caps machine tags: "File does not exist: x" is already a
+        # sentence, and is meant to reach the screen as written.
+        tags = set(regex.findall(r'ToolResult\(False, f?"([A-Z][A-Z_]{3,})(?=[":\\ ])', source))
+        tags |= set(regex.findall(r'error_tag="([A-Z_]+)"', source))
+        missing = sorted(tag for tag in tags if tag not in REFUSAL_MESSAGES)
+        self.assertEqual(missing, [], f"these refusals would print as raw tags: {missing}")
+
+    def test_a_denied_command_reads_as_denied_not_as_a_tag(self):
+        from fun.ui import components
+        from fun.ui.theme import Theme
+
+        for locale in ("zh-CN", "en-US"):
+            theme = Theme(mode="none", locale=locale)
+            view = components.ToolView("exec", "failed", {"command": "rm -rf build"}, 1, 1, "APPROVAL_REQUIRED")
+            body = "\n".join(components.tool_body(theme, view, 60))
+            self.assertNotIn("APPROVAL_REQUIRED", body)
+            self.assertEqual(body.strip(), theme.text("refuse_approval_required"))
+
+    def test_ordinary_output_is_left_alone(self):
+        from fun.ui import components
+        from fun.ui.theme import Theme
+
+        theme = Theme(mode="none", locale="en-US")
+        view = components.ToolView("exec", "completed", {"command": "ls"}, 1, 0, "README.md\nsetup.py")
+        self.assertIn("README.md", "\n".join(components.tool_body(theme, view, 60)))
+
+
+class DiscoverabilityTests(unittest.TestCase):
+    """Everything reachable has to be findable, in the session's language."""
+
+    def test_every_command_is_translated_in_both_locales(self):
+        from fun.commands import REGISTRY
+
+        untranslated = []
+        for name, command in sorted(REGISTRY.items()):
+            for locale in ("zh-CN", "en-US"):
+                described = command.describe(locale)
+                # describe() falls back to the English literal it was registered
+                # with, which in a Chinese session is a missing translation, not
+                # a design choice — that is how /quit stayed English.
+                if locale == "zh-CN" and described == command.summary:
+                    untranslated.append((name, locale))
+        self.assertEqual(untranslated, [], f"missing cmd_* wording: {untranslated}")
+
+    def test_a_first_run_says_that_nothing_is_configured(self):
+        import io
+
+        from fun.ui.app import App
+        from fun.ui.stream import StreamSurface
+        from fun.ui.text import strip_ansi
+        from fun.ui.theme import Theme
+
+        for locale in ("zh-CN", "en-US"):
+            theme = Theme(mode="none", locale=locale)
+            app = App(StreamSurface(io.StringIO()), theme=theme)
+            app.state.provider_ready = False
+            frame = "\n".join(strip_ansi(line) for line in app.state.compose(76, 20))
+            self.assertIn(theme.text("ui_needs_setup"), frame, locale)
+            self.assertIn("/config", frame)
+            app.state.provider_ready = True
+            ready = "\n".join(strip_ansi(line) for line in app.state.compose(76, 20))
+            self.assertNotIn(theme.text("ui_needs_setup"), ready, "a configured session is not nagged")
+
+    def test_the_palette_key_is_advertised(self):
+        from fun.ui.state import UiState
+        from fun.ui.theme import Theme
+
+        theme = Theme(mode="none", locale="zh-CN")
+        keys = [key for key, _ in UiState(theme=theme).dock_hints(80)]
+        self.assertIn("Ctrl-P", keys)
+        # At a narrow width it is dropped rather than wrapping the hint bar.
+        self.assertNotIn("Ctrl-P", [key for key, _ in UiState(theme=theme).dock_hints(50)])
+
+    def test_the_offline_message_says_what_to_do(self):
+        from fun.i18n import t
+
+        for locale in ("zh-CN", "en-US"):
+            message = t(locale, "offline")
+            self.assertIn("/config", message, locale)

@@ -59,9 +59,19 @@ def banner(theme: Theme, width: int, version: str = "") -> list[str]:
     return lines
 
 
-def _format_arguments(arguments: dict[str, Any], width: int) -> str:
+# The one argument that identifies a call, per tool.  Printing all of them put
+# `expected_hash=ab12 patch=<the entire diff>` in an edit's header — noise in
+# the place a reader scans first.
+HEADLINE_ARGUMENT = {"read": "path", "edit": "path", "explore": "path", "exec": "command"}
+
+
+def _format_arguments(arguments: dict[str, Any], width: int, name: str = "") -> str:
+    """The header line's argument: the identifying one, without its key."""
     if not arguments:
         return ""
+    headline = HEADLINE_ARGUMENT.get(name)
+    if headline and headline in arguments:
+        return truncate(str(arguments[headline]), max(8, width))
     parts = []
     for key, value in arguments.items():
         rendered = value if isinstance(value, str) else repr(value)
@@ -143,27 +153,75 @@ def background_block(theme: Theme, tasks: Sequence[dict[str, str]], width: int =
 # The layout draws structure (nodes, the vertical spine, indentation); these
 # return only the *content* that hangs off it, so the two concerns stay apart.
 
-def tool_body(theme: Theme, view: ToolView, width: int = 80, collapsed: bool = False, output_limit: int = 12) -> list[str]:
+# A successful read or listing is not worth reprinting: the agent asked for it,
+# the agent got it, and pouring the file into the transcript pushes the actual
+# answer off the screen.  A failure is the opposite — it is the whole reason to
+# be looking.
+QUIET_WHEN_OK = frozenset({"read", "explore"})
+
+#: Machine tags the tools return, and the sentence each one means.  The tag is
+#: what the *model* is told, because it needs a stable token; showing the same
+#: token to the person watching means the screen says "APPROVAL_REQUIRED" right
+#: after they pressed n, instead of confirming that nothing ran.
+REFUSAL_MESSAGES = {
+    "APPROVAL_DENIED": "refuse_approval_denied",
+    "APPROVAL_REQUIRED": "refuse_approval_required",
+    "CRITICAL_OPERATION_BLOCKED": "refuse_critical_blocked",
+    "MODE_FORBIDS_TOOL": "refuse_mode_forbids",
+    "FILE_CHANGED_SINCE_READ": "refuse_file_changed",
+    "PATCH_FAILED": "refuse_patch_failed",
+    "INVALID_TIMEOUT": "refuse_invalid_timeout",
+    "INVALID_ARGUMENTS": "refuse_invalid_arguments",
+    "INVALID_TOOL_ARGUMENTS": "refuse_invalid_arguments",
+    "INVALID_COMMAND_PLAN": "refuse_invalid_arguments",
+    "UNSUPPORTED_TOOL": "refuse_unsupported_tool",
+    "REPAIR_BUDGET_EXCEEDED": "refuse_repair_budget",
+    "COMMAND_TIMEOUT": "refuse_command_timeout",
+    "EXEC_FAILED": "refuse_exec_failed",
+    "TOOL_EXECUTION_FAILED": "refuse_tool_execution_failed",
+}
+
+
+def explain_refusal(theme: Theme, text: str) -> str | None:
+    """The sentence a refusal tag stands for, or None if this is ordinary output."""
+    head = (text or "").strip().split("\n", 1)[0].split(":", 1)[0].strip()
+    key = REFUSAL_MESSAGES.get(head)
+    return theme.text(key) if key else None
+
+
+def tool_body(theme: Theme, view: ToolView, width: int = 80, collapsed: bool = False, output_limit: int = 12, expanded: bool = False) -> list[str]:
     """Output and error lines for a tool call, without any gutter of their own."""
     lines: list[str] = []
     if view.status == "approval":
         return approval_body(theme, view, width)
-    if view.output and collapsed:
-        return [theme.style(truncate(theme.text("ui_hidden_chars", chars=len(view.output)), width), "faint")]
+    explained = explain_refusal(theme, view.output)
+    if explained:
+        # The tag itself stays in the event log and in what the model was told.
+        return [theme.style(piece, "warning") for piece in wrap(explained, width)]
+    body = view.output.splitlines() if view.output else []
+    quiet = view.name in QUIET_WHEN_OK and view.status == "completed" and not expanded
+    if view.output and (collapsed or quiet):
+        return [theme.style(truncate(theme.text("ui_output_hidden", lines=len(body), chars=len(view.output)), width), "faint")]
     if view.output:
-        body = view.output.splitlines()
+        # Failures are truncated from the *front*.  The assertion, the traceback
+        # and the summary line are all at the end, so showing the first twelve
+        # lines of a failing test run hides precisely the part worth reading.
+        failed = view.status == "failed" or view.exit_code not in (None, 0)
         hidden = max(0, len(body) - output_limit)
+        shown = body[-output_limit:] if failed and hidden else body[:output_limit]
         language = _output_language(view)
+        if hidden and failed:
+            lines.append(theme.style(truncate(theme.text("ui_earlier_lines", hidden=hidden), width), "faint"))
         if language == "diff":
-            lines.extend(truncate(_diff_line(theme, raw, width), width) for raw in body[:output_limit])
+            lines.extend(truncate(_diff_line(theme, raw, width), width) for raw in shown)
         elif language:
             from .markdown import highlight_code
 
-            lines.extend(truncate(raw, width) for raw in highlight_code(theme, "\n".join(body[:output_limit]), language))
+            lines.extend(truncate(raw, width) for raw in highlight_code(theme, "\n".join(shown), language))
         else:
-            for raw in body[:output_limit]:
+            for raw in shown:
                 lines.extend(theme.style(piece, "muted") for piece in wrap(raw, width))
-        if hidden:
+        if hidden and not failed:
             lines.append(theme.style(truncate(theme.text("ui_more_lines", hidden=hidden), width), "faint"))
     if view.error:
         lines.extend(theme.style(piece, "danger") for piece in wrap(view.error, width))
@@ -203,20 +261,45 @@ def plan_body(theme: Theme, steps: Sequence[str], statuses: Sequence[str] = (), 
 
 
 def recovery_body(theme: Theme, pending: dict[str, str], width: int = 80) -> list[str]:
-    """The blocking recovery choice, also as a radio list."""
+    """The blocking recovery choice, as a radio list that says what each one does.
+
+    A person meeting this screen has just restarted after a crash.  Naming the
+    tool and its internal call id told them which row of the event log this was
+    and nothing else: not what had been asked, not what the risk of resuming is.
+    Resuming re-runs the command — which for anything that already half-ran is
+    the one consequence they most need spelled out.
+    """
     lines = [theme.style(theme.text("ui_recovery_needed"), "warning", bold=True)]
-    detail = f"{pending.get('name', 'tool')} · {pending.get('call_id', '?')}"
-    lines.append(theme.style(truncate(detail, width), "text"))
-    arguments = str(pending.get("arguments", ""))
-    if arguments:
-        lines.extend(theme.style(piece, "muted") for piece in wrap(arguments, width))
+    lines.extend(theme.style(piece, "text") for piece in wrap(theme.text("ui_recovery_explain"), width))
+    goal = str(pending.get("goal", "")).strip()
+    if goal:
+        lines.extend(theme.style(piece, "muted") for piece in wrap(theme.text("ui_recovery_goal", goal=goal), width))
     lines.append("")
-    for key, label, selected in (("r", theme.text("ui_recovery_resume"), True), ("d", theme.text("ui_recovery_discard"), False), ("f", theme.text("ui_recovery_mark_failed"), False), ("s", theme.text("ui_recovery_stop"), False)):
+    name = pending.get("name", "tool")
+    arguments = str(pending.get("arguments", "")).strip()
+    # The call id identifies the row in the event log, so it is kept — but as a
+    # trailing detail on the same line, not as a line of its own competing with
+    # the command the person actually has to judge.
+    call_id = str(pending.get("call_id", "")).strip()
+    head = theme.style(theme.text("ui_recovery_call") + ": ", "faint") + theme.style(truncate(name, max(8, width - 16)), "text", bold=True)
+    lines.append(head + (theme.style(f"  {truncate(call_id, 16)}", "faint") if call_id else ""))
+    if arguments:
+        lines.extend(theme.style(piece, "text") for piece in wrap(arguments, width))
+    lines.append("")
+    options = (
+        ("r", theme.text("ui_recovery_resume"), theme.text("ui_recovery_resume_why"), True),
+        ("d", theme.text("ui_recovery_discard"), theme.text("ui_recovery_discard_why"), False),
+        ("f", theme.text("ui_recovery_mark_failed"), theme.text("ui_recovery_mark_failed_why"), False),
+        ("s", theme.text("ui_recovery_stop"), theme.text("ui_recovery_stop_why"), False),
+    )
+    for key, label, why, selected in options:
         glyph = theme.glyph("●" if selected else "○", "*" if selected else "o")
         lines.append(
             f"{theme.style(glyph, 'success' if selected else 'faint')} "
             f"{theme.style(label, 'text' if selected else 'muted')}  {theme.style(key, 'faint')}"
         )
+        for piece in wrap(why, max(8, width - 2)):
+            lines.append("  " + theme.style(piece, "faint"))
     return lines
 
 

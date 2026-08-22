@@ -4,7 +4,6 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from fun.dashboard import DashboardData
 from fun.events import Event
@@ -114,33 +113,9 @@ class DashboardTests(unittest.TestCase):
             (Path(directory) / "config.json").write_text(
                 json.dumps({"base_url": "https://x/v1", "model": "m", "api_key_env": "FUN_API_KEY"}), encoding="utf-8"
             )
-            with patch.dict("os.environ", {"FUN_API_KEY": ""}, clear=False), patch("fun.config._keychain_get", return_value=""):
-                setup = DashboardData(path).snapshot()["setup"]
+            setup = DashboardData(path).snapshot()["setup"]
             self.assertFalse(setup["configured"])
             self.assertTrue(setup["needs_env"])
-
-    def test_an_unreadable_keychain_is_not_reported_as_ready(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "events.db"
-            (Path(directory) / "config.json").write_text(
-                json.dumps({"base_url": "https://x/v1", "model": "m", "api_key_store": "macos-keychain"}), encoding="utf-8"
-            )
-            with patch.dict("os.environ", {"FUN_API_KEY": ""}, clear=False), patch("fun.config._keychain_get", return_value=""):
-                setup = DashboardData(path).snapshot()["setup"]
-            self.assertFalse(setup["configured"])
-            self.assertTrue(setup["needs_env"])
-            self.assertTrue(setup["keychain_unreadable"])
-
-    def test_a_readable_keychain_is_reported_as_ready(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "events.db"
-            (Path(directory) / "config.json").write_text(
-                json.dumps({"base_url": "https://x/v1", "model": "m", "api_key_store": "macos-keychain"}), encoding="utf-8"
-            )
-            with patch.dict("os.environ", {"FUN_API_KEY": ""}, clear=False), patch("fun.config._keychain_get", return_value="sk-live"):
-                setup = DashboardData(path).snapshot()["setup"]
-            self.assertTrue(setup["configured"])
-            self.assertFalse(setup["keychain_unreadable"])
 
     def test_a_request_that_did_not_address_localhost_is_refused(self):
         """The DNS-rebinding guard had no test: deleting it broke nothing while

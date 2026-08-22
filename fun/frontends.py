@@ -13,31 +13,70 @@ from typing import Any, Callable, Sequence
 
 from .commands import Session
 from .i18n import t
+from pathlib import Path
+
 from .ui.app import App
+from .ui.completion import mentions
 from .ui.text import truncate
 from .ui.theme import Theme
 
 
 def friendly_error(exc: Exception, locale: str) -> str:
-    """Map a provider error tag onto a localised, non-leaking message."""
+    """Map a provider failure onto a localised message the user can act on.
+
+    Every ``ProviderError`` tag is covered.  Previously only six were, and an
+    uncovered one — ``PROVIDER_HTTP_FAILED`` above all, which is every non-auth
+    HTTP status there is — fell through to ``str(exc)`` and printed the raw tag
+    on screen.  "× PROVIDER_HTTP_FAILED" tells the user that something failed
+    and nothing else: not what failed, not whose fault it is, not what to do.
+    """
     tag = getattr(exc, "error_tag", "")
-    keys = {
-        "PROVIDER_AUTH_FAILED": "provider_auth",
-        "PROVIDER_NETWORK_FAILED": "provider_network",
-        "PROVIDER_TIMEOUT": "provider_timeout",
-        "PROVIDER_MALFORMED_EVENT": "provider_bad_response",
-        "PROVIDER_UNEXPECTED_CONTENT_TYPE": "provider_bad_response",
-        "PROVIDER_EMPTY_STREAM": "provider_empty_stream",
-    }
-    if tag not in keys:
+    if not tag:
         return str(exc)
-    message = t(locale, keys[tag])
+    status = int(getattr(exc, "status", 0) or 0)
+    if tag == "PROVIDER_HTTP_FAILED":
+        # The status is the whole diagnosis here: 404 is a wrong address, 429 is
+        # rate limiting, 5xx is not the user's fault at all.
+        if status == 404:
+            key = "provider_http_404"
+        elif status == 429:
+            key = "provider_http_429"
+        elif 500 <= status <= 599:
+            key = "provider_http_5xx"
+        elif 400 <= status <= 499:
+            key = "provider_http_400"
+        else:
+            key = "provider_http"
+        message = t(locale, key).format(status=status or "?")
+    else:
+        keys = {
+            "PROVIDER_AUTH_FAILED": "provider_auth",
+            "PROVIDER_NETWORK_FAILED": "provider_network",
+            "PROVIDER_REQUEST_FAILED": "provider_network",
+            "PROVIDER_TIMEOUT": "provider_timeout",
+            "PROVIDER_MALFORMED_EVENT": "provider_bad_response",
+            "PROVIDER_UNEXPECTED_CONTENT_TYPE": "provider_bad_response",
+            "PROVIDER_INVALID_STATUS": "provider_bad_response",
+            "PROVIDER_EMPTY_STREAM": "provider_empty_stream",
+            "PROVIDER_PAYLOAD_TOO_LARGE": "provider_payload_too_large",
+            "PROVIDER_INVALID_PAYLOAD": "provider_invalid_request",
+            "PROVIDER_INVALID_MESSAGES": "provider_invalid_request",
+            "PROVIDER_INVALID_TOOLS": "provider_invalid_request",
+        }
+        # An unknown tag still gets a sentence, with the tag as a parenthetical
+        # detail rather than as the entire message.
+        message = t(locale, keys[tag]) if tag in keys else f"{t(locale, 'provider_unavailable')} ({tag})"
     endpoint = getattr(exc, "endpoint", "")
     key_hint = getattr(exc, "key_hint", "")
     if tag == "PROVIDER_AUTH_FAILED" and (endpoint or key_hint):
         # Name the address and identify the key without printing it, so a
         # rejected key is a fact the user can check rather than a mystery.
         message += "\n" + " · ".join(part for part in (endpoint, key_hint) if part)
+    elif tag == "PROVIDER_HTTP_FAILED" and endpoint:
+        # The address, but not the key: a 404 or a 429 is not the key's fault,
+        # and pointing at the key sends the user off to reconfigure a
+        # credential that was working fine.
+        message += "\n" + endpoint
     return message
 
 
@@ -64,8 +103,8 @@ class AppFrontend:
     def form(self, title: str, fields: Sequence[Any], callback: Callable[[dict[str, str] | None], None]) -> None:
         self.app.open_form(title, list(fields), callback)
 
-    def select(self, title: str, options: Sequence[str], callback: Callable[[str | None], None], loader: Callable[[], list[str]] | None = None) -> None:
-        token = self.app.open_select(title, list(options), callback)
+    def select(self, title: str, options: Sequence[str], callback: Callable[[Any], None], loader: Callable[[], list[str]] | None = None, multi: bool = False, chosen: Sequence[str] = ()) -> None:
+        token = self.app.open_select(title, list(options), callback, multi=multi, chosen=chosen)
         if loader is None:
             return
         modal = self.app.modal
@@ -140,7 +179,7 @@ class PlainFrontend:
             values[name] = answer
         callback(values)
 
-    def select(self, title: str, options: Sequence[str], callback: Callable[[str | None], None], loader: Callable[[], list[str]] | None = None) -> None:
+    def select(self, title: str, options: Sequence[str], callback: Callable[[Any], None], loader: Callable[[], list[str]] | None = None, multi: bool = False, chosen: Sequence[str] = ()) -> None:
         choices = list(options)
         if loader is not None:
             try:
@@ -150,16 +189,26 @@ class PlainFrontend:
             except Exception as exc:
                 self.say("× " + friendly_error(exc, self.locale))
         if not choices:
-            callback(self._ask("  value: "))
+            typed = self._ask("  value: ")
+            callback([typed] if multi and typed else typed)
             return
         self.say(title)
         for index, option in enumerate(choices, 1):
             self.say(f"  [{index}] {option}")
-        answer = self._ask(f"  choose [1-{len(choices)}] ")
+        answer = self._ask(f"  choose [1-{len(choices)}]{' (comma-separated for several)' if multi else ''} ")
         if answer is None:
             callback(None)
             return
-        callback(choices[int(answer) - 1] if answer.isdigit() and 1 <= int(answer) <= len(choices) else None)
+        picked = []
+        for part in answer.replace(",", " ").split():
+            if part.isdigit() and 1 <= int(part) <= len(choices):
+                option = choices[int(part) - 1]
+                if option not in picked:
+                    picked.append(option)
+        if multi:
+            callback(picked)
+            return
+        callback(picked[0] if picked else None)
 
     def edit(self, title: str, initial: str, callback: Callable[[str | None], None]) -> None:
         self.say(f"{title} (current: {truncate(initial, 60) or 'empty'})")
@@ -169,12 +218,49 @@ class PlainFrontend:
         self.stopped = True
 
 
+def attach_mentions(text: str, root: str) -> tuple[str, list[str]]:
+    """Turn ``@path`` references into an instruction the model cannot miss.
+
+    The composer offers "@ files" and completes real workspace paths, but
+    nothing downstream ever read them back: the reference travelled as plain
+    prose and whether the file was opened came down to the model's mood.  Now
+    the referenced paths are listed explicitly, and ones that do not exist are
+    reported to the user instead of silently meaning nothing.
+    """
+    found = mentions(text)
+    if not found:
+        return text, []
+    base = Path(root)
+    resolved: list[str] = []
+    missing: list[str] = []
+    for path in found:
+        try:
+            target = (base / path).resolve()
+            inside = target.is_relative_to(base.resolve())
+        except (OSError, ValueError):
+            target, inside = None, False
+        if target is not None and inside and target.exists():
+            resolved.append(path)
+        else:
+            missing.append(path)
+    if not resolved:
+        return text, missing
+    listing = "\n".join(f"- {path}" for path in resolved)
+    return text + "\n\nFiles the user referenced with @ (open each with the read tool before answering):\n" + listing, missing
+
+
 def run_goal(session: Session, frontend: Any, text: str, on_text: Callable[[str], None] | None = None, on_status: Callable[[str, dict[str, Any]], None] | None = None) -> None:
     """Create a task for ``text`` and drive one model turn to completion."""
     runtime = session.runtime
     if runtime.provider is None:
         frontend.say(t(frontend.locale, "offline"))
         return
+    text, missing = attach_mentions(text, runtime.tools.guard.root)
+    for name in missing:
+        # Say it now.  A mention that resolves to nothing used to be sent as
+        # ordinary prose, and the model quietly answered without ever opening
+        # the file the user thought they had handed it.
+        frontend.say("× " + t(frontend.locale, "mention_missing").format(path=name))
     try:
         runtime.create_task(text)
     except RuntimeError as exc:
@@ -204,6 +290,10 @@ def run_goal(session: Session, frontend: Any, text: str, on_text: Callable[[str]
             # The user stopped it.  Reporting their own Ctrl-C as an internal
             # error, and then marking the turn failed, was the last step of a
             # clean cancellation being dressed up as a crash.
+            # Leave a mark in the transcript, not only in the status bar: the
+            # half-finished reply above otherwise reads, on the way back up the
+            # scrollback, exactly like a reply that finished.
+            frontend.say(t(frontend.locale, "turn_interrupted"))
             frontend.status("stopped")
             return
         frontend.say("× " + friendly_error(exc, frontend.locale))

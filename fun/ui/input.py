@@ -45,6 +45,18 @@ ESCAPE_KEYS = {
 TILDE_KEYS = {"1": "home", "3": "delete", "4": "end", "5": "pageup", "6": "pagedown", "7": "home", "8": "end"}
 
 PASTE_PREFIX = "paste:"
+
+# Wheel reporting.  ``?1007l`` turns *off* the terminal's own "alternate scroll",
+# which translates the wheel into arrow keys — that is why scrolling used to
+# replace the draft with a history entry.  ``?1000h`` + ``?1006h`` ask for real
+# button events in SGR encoding instead, so the wheel arrives as a wheel.  The
+# cost is that selecting text needs Shift held (every major terminal honours
+# that), which is why only the fullscreen frontend turns this on: --stream
+# exists precisely for people who want the terminal's own selection.
+MOUSE_ON = "\033[?1007l\033[?1000h\033[?1006h"
+MOUSE_OFF = "\033[?1006l\033[?1000l"
+
+WHEEL_UP, WHEEL_DOWN = 64, 65
 PASTE_BEGIN = "200~"
 PASTE_END = "\x1b[201~"
 BRACKETED_PASTE_ON = "\033[?2004h"
@@ -118,9 +130,6 @@ class RawMode:
         if self.output_fd is None:
             return
         try:
-            # Terminal mode controls are output, not input.  Writing them to the
-            # stdin fd usually failed with EBADF and silently left paste mode
-            # disabled, so pasted newlines were interpreted as submissions.
             os.write(self.output_fd, sequence.encode())
         except OSError:  # pragma: no cover - closed or non-writable tty
             pass
@@ -144,39 +153,31 @@ def _utf8_length(head: int) -> int:
 
 
 def _wait_readable(fd: int, timeout: float) -> bool:
-    """Wait for terminal/pipe input on POSIX and Windows.
-
-    Windows ``select`` accepts sockets only, while our terminal tests and some
-    redirected frontends use CRT pipe descriptors.  PeekNamedPipe observes those
-    without consuming bytes; console handles fall back to ``kbhit``.
-    """
     if os.name != "nt":
         ready, _, _ = select.select([fd], [], [], timeout)
         return bool(ready)
     import ctypes
     import msvcrt
-
     handle = msvcrt.get_osfhandle(fd)
     deadline = time.monotonic() + timeout
     available = ctypes.c_ulong()
     while True:
-        if ctypes.windll.kernel32.PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), None):
-            if available.value:
+        if ctypes.windll.kernel32.PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), None) and available.value:
+            return True
+        try:
+            if msvcrt.kbhit():
                 return True
-        else:
-            try:
-                if msvcrt.kbhit():
-                    return True
-            except OSError:
-                pass
+        except OSError:
+            pass
         if time.monotonic() >= deadline:
             return False
-        time.sleep(min(0.005, max(0.0, deadline - time.monotonic())))
+        time.sleep(0.005)
 
 
 def read_key(fd: int, timeout: float = 0.08) -> str | None:
     """Read one decoded key, or ``None`` if nothing arrived within ``timeout``."""
     if not _wait_readable(fd, timeout):
+        return None
         return None
     first = os.read(fd, 1)
     if not first:
@@ -198,6 +199,13 @@ def read_key(fd: int, timeout: float = 0.08) -> str | None:
     body = _read_csi(fd)
     if body == PASTE_BEGIN:
         return PASTE_PREFIX + _read_paste(fd)
+    if body.startswith("<"):
+        return _mouse_key(body)
+    if body == "M":
+        # The legacy encoding puts three raw bytes after the M.
+        raw = [_read_byte(fd) for _ in range(3)]
+        button = (ord(raw[0]) - 32) if raw[0] else -1
+        return {WHEEL_UP: "wheel_up", WHEEL_DOWN: "wheel_down"}.get(button, "mouse")
     if body.endswith("~"):
         return TILDE_KEYS.get(body[:-1].split(";")[0], "escape")
     return ESCAPE_KEYS.get("[" + body, "escape")
@@ -213,6 +221,19 @@ def _read_byte(fd: int, timeout: float = 0.12) -> str:
     if not _wait_readable(fd, timeout):
         return ""
     return os.read(fd, 1).decode("utf-8", "replace")
+
+
+def _mouse_key(body: str) -> str:
+    """Decode an SGR mouse report.  Everything but the wheel is ignored.
+
+    Ignored, not passed through: an unrecognised report used to come back as
+    "escape", so a click or a drag closed whatever dialog was open.
+    """
+    try:
+        button = int(body[1:].split(";")[0])
+    except (ValueError, IndexError):
+        return "mouse"
+    return {WHEEL_UP: "wheel_up", WHEEL_DOWN: "wheel_down"}.get(button, "mouse")
 
 
 def _read_csi(fd: int) -> str:

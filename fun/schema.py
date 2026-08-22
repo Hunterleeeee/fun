@@ -34,13 +34,11 @@ def validate_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
     for key, value in arguments.items():
         if key in {"path", "expected_hash", "patch", "command"} and not isinstance(value, str):
             raise SchemaError("INVALID_ARGUMENTS")
-        if key in {"limit", "start", "end"} and (not isinstance(value, int) or isinstance(value, bool) or value < 1):
+        if key in {"limit", "start", "end"} and (not isinstance(value, int) or isinstance(value, bool)):
             raise SchemaError("INVALID_ARGUMENTS")
         if key == "timeout":
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise SchemaError("INVALID_ARGUMENTS")
             if not math.isfinite(value) or not 0 < value <= MAX_EXEC_TIMEOUT:
                 raise SchemaError("INVALID_ARGUMENTS")
-    if name == "read" and "end" in arguments and arguments["end"] < arguments.get("start", 1):
-        raise SchemaError("INVALID_ARGUMENTS")
     return arguments

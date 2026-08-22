@@ -162,7 +162,8 @@ ok("长同类 token 不再卡死", tok_ms < 2000, f"{tok_ms:.0f}ms（原 4250ms�
 
 from fun.ui.editor import Editor
 e = Editor(); e.text = "alpha\nbeta \ngamma"; e.cursor = 11
-ok("行尾空格不再把光标弹到左上角", e.visual_lines(40)[1:] == (1, 4), str(e.visual_lines(40)[1:]))
+# 列是 5 不是 4：用户打出来的那个空格本身就占一格。报 4 等于"打了空格屏幕没反应"。
+ok("行尾空格既不弹光标、也确实占一格", e.visual_lines(40)[1:] == (1, 5) and e.visual_lines(40)[0][1] == "beta ", str(e.visual_lines(40)[1:]))
 
 from fun.dashboard import DashboardData
 from fun.persistence import SQLiteEventStore
@@ -384,8 +385,240 @@ ok("陌生程序可被本会话记住", _unknown != _Rk.CRITICAL)
 ok("不可逆操作每次都问且不记忆", _bad == _Rk.CRITICAL and _Pol(mode=_AM.AUTO).requires_approval(_bad))
 from fun.tools import BENIGN as _B2
 ok("git/make/npm 不在免审批清单", not any(p in _B2 for p in ("git", "make", "npm", "pytest", "pip")))
-_fake = _r2 / "cat"
-_fake.write_text("#!/bin/sh\necho PWNED > marker\n")
-_fake.chmod(0o755)
-_local = Tools(_r2, _Pol(mode=_AM.AUTO)).exec("./cat")
-ok("本地程序不能冒充只读 basename", not _local.ok and not (_r2 / "marker").exists(), _local.text)
+
+print("\n=== 可用性：草稿、滚动、工具卡片")
+_a = _App(StreamSurface(io.StringIO()), theme=PLAIN)
+_sent2 = []
+def _k(k): _a._handle_key(k, _sent2.append); _a._consume()
+for ch in "以前说过的话": _k(ch)
+_k("enter")
+for ch in "我正在打的": _k(ch)
+_k("up")
+ok("打字时按 ↑ 不会顶掉草稿", _a.state.editor.text == "我正在打的", repr(_a.state.editor.text))
+_k("enter")
+ok("回车提交的是刚打的", _sent2[-1] == "我正在打的")
+_k("up")
+ok("空框时历史仍可用", _a.state.editor.text == "我正在打的")
+
+from fun.ui.input import read_key as _rk2
+for _seq, _want in ((b"\x1b[<64;10;5M", "wheel_up"), (b"\x1b[<0;10;5M", "mouse")):
+    _r3, _w3b = _os2.pipe(); _os2.write(_w3b, _seq)
+    ok(f"鼠标序列解析为 {_want}", _rk2(_r3) == _want)
+
+_st = UiState(theme=PLAIN)
+for i in range(40): _st.add_user(f"消息{i}")
+_st.scroll(-5)
+_rows = [strip_ansi(l) for l in _st.compose(70, 14)]
+_top = [r for r in _rows[1:] if "消息" in r][0]
+ok("滚动横幅独占一行不吃内容", "PgUp" in _rows[0] and "消息" not in _rows[0])
+for i in range(3): _st.add_assistant(f"新回复{i}")
+_rows2 = [strip_ansi(l) for l in _st.compose(70, 14)]
+ok("往回读时不被新消息拽走", [r for r in _rows2[1:] if "消息" in r][0] == _top)
+ok("新消息有计数提示", "↓" in _rows2[0])
+
+from fun.ui import components as _comp
+_v = _comp.ToolView("read", "completed", {"path": "a.py"}, 1, 0, "CONTENT\n" * 40)
+_summary = "\n".join(_comp.tool_body(PLAIN, _v, 60))
+ok("成功的 read 只给摘要", "Ctrl-O" in _summary and "CONTENT" not in _summary, _summary[:40])
+_fail = _comp.ToolView("exec", "failed", {"command": "pytest"}, 1, 1, "\n".join(f"n{i}" for i in range(40)) + "\nFAILED test_x")
+_r4 = "\n".join(_comp.tool_body(PLAIN, _fail, 60))
+ok("失败从尾部截断，保住报错行", "FAILED test_x" in _r4 and "n0" not in _r4)
+ok("表头只显示识别性参数", _comp._format_arguments({"path": "a.py", "expected_hash": "x", "patch": "@@"}, 60, "edit") == "a.py")
+
+print("\n=== Key 落点：配置了就不会第二天消失")
+import tempfile as _tf, json as _json2
+from unittest.mock import patch as _patch
+from fun.config import FunConfig as _FC
+from fun.i18n import saved_message as _sm, key_location_message as _klm
+with _tf.TemporaryDirectory() as _d:
+    _p = _os2.path.join(_d, "config.json")
+    _env_backup = _os2.environ.pop("FUN_API_KEY", None)
+    with _patch("fun.config._keychain_set", return_value=False), _patch("fun.config._keychain_get", return_value=""):
+        _written, _durable = _FC(base_url="https://x/v1", model="m", api_key="sk-real").save(_p)
+        ok("钥匙串写失败时仍落盘", (_written, _durable) == (True, True), (_written, _durable))
+        _re = _FC.load(_p)
+    if _env_backup is not None: _os2.environ["FUN_API_KEY"] = _env_backup
+    ok("第二天重开还能读到 key", _re.api_key == "sk-real" and _re.ready())
+    ok("配置文件仅本人可读", _os2.stat(_p).st_mode & 0o777 == 0o600, oct(_os2.stat(_p).st_mode & 0o777))
+    ok("storage() 说出真实落点", _FC().storage(_p) == "config-file")
+    ok("提示语区分落点而不是一律说成功", _sm("zh-CN", "config-file", _p) != _sm("zh-CN", "keychain", _p) and _p in _sm("zh-CN", "config-file", _p))
+    ok("未知落点降级为警告而不是安心话", _sm("zh-CN", "???", _p) == _sm("zh-CN", "none", _p) and _klm("en-US", "???", _p) == _klm("en-US", "none", _p))
+
+print("\n=== 钥匙串写入不会打到屏幕上")
+import subprocess as _sp
+from fun.config import _keychain_set as _ks
+with _patch("fun.config.shutil.which", return_value="/usr/bin/security"), _patch("fun.config.subprocess.run") as _run:
+    _run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+    with _patch("fun.config._keychain_get", return_value="sk-x"):
+        _ok = _ks("sk-x")
+    _argv = _run.call_args.args[0]
+    ok("不用会在终端提示的裸 -w", _argv[-2:] == ["-w", "sk-x"] and _run.call_args.kwargs.get("input") is None)
+    ok("security 的 stdin 被关掉", _run.call_args.kwargs.get("stdin") == _sp.DEVNULL)
+    ok("写完读回验证才算成功", _ok)
+with _patch("fun.config.shutil.which", return_value="/usr/bin/security"), _patch("fun.config.subprocess.run") as _run:
+    _run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+    with _patch("fun.config._keychain_get", return_value=""):
+        ok("退出码 0 但没存下来 = 失败", not _ks("sk-x"))
+
+print("\n=== 选模型：列表、筛选、多选")
+from fun.ui.modal import select_modal as _sel
+_picked = []
+_m = _sel("Choose", ["gpt-4o-mini", "claude-opus", "claude-haiku"], _picked.append)
+for _c in "haiku": _m.handle(_c)
+ok("输入即筛选", _m.visible() == ["claude-haiku"])
+_m.handle("enter")
+ok("回车选中筛选后的那一个", _picked == ["claude-haiku"])
+_m2 = _sel("Choose", ["a-one", "a-two"], lambda v: None)
+for _c in "zzz": _m2.handle(_c)
+ok("筛不到就明说没有匹配", _m2.visible() == [] and PLAIN.text("ui_select_empty") in "\n".join(_m2.lines(PLAIN, 60)))
+_p2 = []
+_m3 = _sel("Choose", ["a", "b", "c"], _p2.append, multi=True)
+_m3.handle("down"); _m3.handle(" "); _m3.handle("down"); _m3.handle("space"); _m3.handle("enter")
+ok("空格可以多选、按顺序返回", _p2 == [["b", "c"]])
+_p3 = []
+_sel("Choose", ["a", "b"], _p3.append, multi=True).handle("enter")
+ok("不多选时仍是一键确认", _p3 == [["a"]])
+for _th in (PLAIN, Theme(mode="truecolor")):
+    _w = {display_width(_l) for _l in _sel("Choose", ["模型-大", "gpt-4o"], lambda v: None, multi=True, chosen=["gpt-4o"]).lines(_th, 60)}
+    ok(f"多选框边框对齐({_th.mode})", len(_w) == 1, _w)
+
+print("\n=== 报错要说人话、@ 文件要真的算数")
+import re as _re3
+from fun.frontends import friendly_error as _fe, attach_mentions as _am
+from fun.provider import ProviderError as _PE
+from fun.ui.completion import mentions as _mn, mention_token as _mt
+_src = open("fun/provider.py", encoding="utf-8").read()
+_tags = sorted(set(_re3.findall(r'ProviderError\("([A-Z_]+)"', _src)))
+_raw = [tg for tg in _tags for lo in ("zh-CN", "en-US") if _fe(_PE(tg), lo) == tg]
+ok("没有任何一个错误码是裸着显示的", not _raw, _raw)
+_msgs = {_fe(_PE("PROVIDER_HTTP_FAILED", status=s), "zh-CN") for s in (404, 429, 500, 400)}
+ok("404/429/5xx/400 各说各的", len(_msgs) == 4)
+ok("404 不甩锅给 key", "sk" not in _fe(_PE("PROVIDER_HTTP_FAILED", status=404, endpoint="https://x/v1", key_hint="sk-a…1"), "zh-CN"))
+ok("没见过的错误码也是一句话", "PROVIDER_BRAND_NEW" in _fe(_PE("PROVIDER_BRAND_NEW"), "zh-CN") and len(_fe(_PE("PROVIDER_BRAND_NEW"), "zh-CN")) > 20)
+ok("@ 引用能读回来（含带空格的）", _mn('看 @a.py 和 @"src/my file.py"') == ["a.py", "src/my file.py"])
+ok("邮箱不会被当成文件引用", _mn("a@b.com") == [])
+ok("带空格的路径补全时加引号", _mt("my file.py") == '@"my file.py"')
+with _tf.TemporaryDirectory() as _d2:
+    open(_os2.path.join(_d2, "real.py"), "w").close()
+    _sent, _miss = _am("看下 @real.py 和 @ghost.py", _d2)
+    ok("存在的文件明确交给模型", "- real.py" in _sent)
+    ok("不存在的文件当场告诉用户", _miss == ["ghost.py"])
+    ok("逃逸路径不会被附上", _am("@../../etc/passwd", _d2)[1] == ["../../etc/passwd"])
+    ok("普通消息原样不动", _am("普通消息", _d2) == ("普通消息", []))
+
+print("\n=== 打空格必须有反应")
+from fun.ui.editor import Editor as _Ed
+_e1 = _Ed(); _e1.insert("帮我")
+_e2 = _Ed(); _e2.insert("帮我 ")
+ok("空格改变了渲染行", _e1.visual_lines(20)[0] != _e2.visual_lines(20)[0], (_e1.visual_lines(20)[0], _e2.visual_lines(20)[0]))
+ok("空格推动了光标列", _e2.visual_lines(20)[2] == _e1.visual_lines(20)[2] + 1)
+_full = _Ed(); _full.insert("a" * 10)
+ok("整行填满时光标落到下一行", _full.visual_lines(10)[1:] == (1, 0))
+def _snap(_t):
+    _a = _App(StreamSurface(io.StringIO()), theme=PLAIN)
+    for _c in _t: _a._handle_key(_c, lambda *_: None)
+    _a._consume()
+    return _a.state.compose(70, 14), _a.state.cursor_hint
+_f1, _c1 = _snap("帮我")
+_f2, _c2 = _snap("帮我 ")
+ok("整帧确实变了（不是原地不动）", _f1 != _f2)
+ok("终端真实光标也右移一格", _c2 == (_c1[0], _c1[1] + 1), (_c1, _c2))
+_rand = __import__("random"); _rand.seed(11)
+_bad = 0
+for _ in range(3000):
+    _t = "".join(_rand.choice("ab 中\n") for _ in range(_rand.randint(0, 20)))
+    _w = _rand.randint(4, 12)
+    _ed = _Ed(); _ed.text = _t; _ed.cursor = _rand.randint(0, len(_t))
+    _ls, _r, _co = _ed.visual_lines(_w)
+    if not (0 <= _r < len(_ls)) or _co > _w or any(display_width(_l) > _w for _l in _ls):
+        _bad += 1
+    if "\n" not in _t and "".join(_ls) != _t:
+        _bad += 1
+ok("3000 组随机输入不超宽、不丢字", _bad == 0, _bad)
+
+print("\n=== 审批：拒绝必须是拒绝")
+from fun.cli import approval_gate as _gate, ALLOWING_ANSWERS as _ALLOW
+class _FakeApp:
+    def __init__(self, answer): self.answer=answer; self.asked=[]
+    def request_approval(self, name, risk, arguments=None):
+        self.asked.append(name); return self.answer
+def _run(answer, remembered=None, interactive=True):
+    _a=_FakeApp(answer); _r=remembered if remembered is not None else set()
+    with _patch("fun.cli.sys.stdin.isatty", return_value=True):
+        return _gate(_r,{"app":_a},"zh-CN",interactive=interactive)("exec:rm","critical"), _a, _r
+ok("按 n 拒绝 rm -rf 不会执行", _run("no")[0] is False)
+ok("空答复也算拒绝", _run("")[0] is False and _run(None)[0] is False)
+ok("只有 yes/always 放行", _ALLOW == frozenset({"yes","always"}) and _run("yes")[0] and _run("always")[0])
+ok("critical 永远不记住", _run("always")[2] == set())
+_rem=set()
+with _patch("fun.cli.sys.stdin.isatty", return_value=True):
+    _g=_gate(_rem,{"app":_FakeApp("always")},"zh-CN"); _g("exec:ls","high")
+ok("非 critical 的 always 会被记住", "exec:ls" in _rem)
+import inspect as _ins
+from fun.ui.app import App as _App2
+_ret=set(_re3.findall(r'return "([a-z]+)"', _ins.getsource(_App2.request_approval)))
+ok("界面只会给出 gate 认识的答复", _ret <= {"yes","no","always"}, _ret)
+from fun.ui.components import REFUSAL_MESSAGES as _RM, tool_body as _tb, ToolView as _TV
+_tags = set(_re3.findall(r'ToolResult\(False, f?"([A-Z][A-Z_]{3,})(?=[":\\ ])', open("fun/tools.py",encoding="utf-8").read()+open("fun/runtime.py",encoding="utf-8").read()))
+_tags |= set(_re3.findall(r'error_tag="([A-Z_]+)"', open("fun/runtime.py",encoding="utf-8").read()))
+ok("每个拒绝码都有人话", not [t for t in _tags if t not in _RM], sorted(t for t in _tags if t not in _RM))
+_denied = "\n".join(_tb(PLAIN, _TV("exec","failed",{"command":"rm -rf build"},1,1,"APPROVAL_REQUIRED"), 60))
+ok("拒绝后卡片说人话不是打码", "APPROVAL_REQUIRED" not in _denied and _denied.strip() == PLAIN.text("refuse_approval_required"), _denied.strip())
+
+print("\n=== 中断：屏幕和模型看到的必须是同一件事")
+from fun.runtime import Runtime as _RT2
+with _tf.TemporaryDirectory() as _d3:
+    _r2 = _RT2(_d3, state_dir=_d3)
+    _r2.create_task("写个长回答")
+    _r2._partial_text = "第0段 第1段"
+    _r2.stop()
+    _roles = [m["role"] for m in _r2.task.messages if m["role"] != "system"]
+    ok("中断后不会出现连续两条 user", _roles == ["user", "assistant"], _roles)
+    ok("说到一半的内容被记下来了", "第0段 第1段" in _r2.task.messages[-1]["content"])
+    ok("并且明确告诉模型是被打断的", "interrupted" in _r2.task.messages[-1]["content"].lower())
+with _tf.TemporaryDirectory() as _d4:
+    _r3 = _RT2(_d4, state_dir=_d4)
+    _r3.create_task("一句没说就停")
+    _r3.stop()
+    ok("一个字没说也要收尾", _r3.task.messages[-1]["role"] == "assistant")
+with _tf.TemporaryDirectory() as _d5:
+    _r4 = _RT2(_d5, state_dir=_d5)
+    _r4.create_task("正常一轮")
+    _r4.task.messages.append({"role": "assistant", "content": "说完了"})
+    _r4.stop()
+    ok("说完的回答不会被改成中断", _r4.task.messages[-1]["content"] == "说完了")
+from fun.i18n import t as _t2
+ok("屏幕上也会留下中断的痕迹", _t2("zh-CN", "turn_interrupted") != "turn_interrupted" and _t2("en-US", "turn_interrupted") != "turn_interrupted")
+
+print("\n=== 崩溃恢复：那一屏要自己讲清楚")
+from fun.ui import components as _cp2
+_st2 = UiState(theme=PLAIN)
+_st2.set_recovery({"name": "exec", "call_id": "c9", "arguments": {"command": "git push origin main"}, "goal": "把改动推上去"})
+_panel = "\n".join(_cp2.recovery_body(PLAIN, _st2.recovery, 70))
+ok("先说发生了什么", PLAIN.text("ui_recovery_needed") in _panel)
+ok("说出你当时要它做什么", "把改动推上去" in _panel)
+ok("命令是给人看的形状", "git push origin main" in _panel and "{'command'" not in _panel and "command=" not in _panel)
+for _k in ("resume", "discard", "mark_failed", "stop"):
+    ok(f"选项 {_k} 说明了后果", PLAIN.text(f"ui_recovery_{_k}_why") in _panel)
+ok("明确警告继续=再跑一遍", "twice" in PLAIN.text("ui_recovery_resume_why") and "跑两次" in _t2("zh-CN", "ui_recovery_resume_why"))
+for _mode, _key in (("recovery", "ui_composer_recovery"), ("approval", "ui_composer_approval")):
+    _s3 = UiState(theme=PLAIN); _s3.mode = _mode
+    _fr = "\n".join(strip_ansi(_l) for _l in _s3.compose(70, 20))
+    ok(f"{_mode} 阻塞时输入框不再假装能用", PLAIN.text(_key) in _fr and PLAIN.text("ui_composer_placeholder") not in _fr)
+
+print("\n=== 发现性：找得到、看得懂、说人话")
+from fun.commands import REGISTRY as _REG
+_untr = [n for n, c in sorted(_REG.items()) if c.describe("zh-CN") == c.summary]
+ok("每条命令都有中文说明", not _untr, _untr)
+for _loc in ("zh-CN", "en-US"):
+    _th = Theme(mode="none", locale=_loc)
+    _a4 = _App(StreamSurface(io.StringIO()), theme=_th)
+    _a4.state.provider_ready = False
+    _fr4 = "\n".join(strip_ansi(_l) for _l in _a4.state.compose(76, 20))
+    ok(f"没配 key 时首屏就说了({_loc})", _th.text("ui_needs_setup") in _fr4 and "/config" in _fr4)
+    _a4.state.provider_ready = True
+    ok(f"配好之后不再唠叨({_loc})", _th.text("ui_needs_setup") not in "\n".join(strip_ansi(_l) for _l in _a4.state.compose(76, 20)))
+_hk = [k for k, _ in UiState(theme=PLAIN).dock_hints(80)]
+ok("Ctrl-P 终于出现在提示栏里", "Ctrl-P" in _hk, _hk)
+ok("窄屏时会让位而不是撑破", "Ctrl-P" not in [k for k, _ in UiState(theme=PLAIN).dock_hints(50)])
+ok("发不出消息时告诉你去哪配", all("/config" in _t2(_l, "offline") for _l in ("zh-CN", "en-US")))

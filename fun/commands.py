@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol, Sequence
 
 from .config import FunConfig
-from .i18n import t
+from .i18n import key_location_message, saved_message, t
 from .provider import ModelConfig, OpenAICompatible
 from .runtime import Runtime, build_system_prompt
 
@@ -40,8 +40,8 @@ class Frontend(Protocol):
     def form(self, title: str, fields: Sequence[Any], callback: Callable[[dict[str, str] | None], None]) -> None:
         """Collect several values, masking any field marked secret."""
 
-    def select(self, title: str, options: Sequence[str], callback: Callable[[str | None], None], loader: Callable[[], list[str]] | None = None) -> None:
-        """Let the user pick one option, optionally loaded in the background."""
+    def select(self, title: str, options: Sequence[str], callback: Callable[[Any], None], loader: Callable[[], list[str]] | None = None, multi: bool = False, chosen: Sequence[str] = ()) -> None:
+        """Let the user pick, optionally several, from a list loaded in the background."""
 
     def edit(self, title: str, initial: str, callback: Callable[[str | None], None]) -> None:
         """Edit a multi-line value."""
@@ -60,6 +60,7 @@ class Session:
     base_url: str = ""
     api_key: str = ""
     model: str = ""
+    models: list[str] = field(default_factory=list)
 
     @property
     def provider(self) -> OpenAICompatible | None:
@@ -72,6 +73,7 @@ class Session:
         the user the truth rather than a fixed reassurance.
         """
         self.config.base_url, self.config.model = self.base_url, self.model
+        self.config.models = list(self.models)
         if self.api_key:
             self.config.api_key = self.api_key
             self.config.keychain_unreadable = False
@@ -80,6 +82,10 @@ class Session:
             self.runtime.provider = OpenAICompatible(ModelConfig(self.base_url, self.api_key, self.model))
             self.runtime.model = self.model
         return durable or not written
+
+    def key_location(self) -> str:
+        """Where the key ended up on disk: keychain, config-file, environment, none."""
+        return self.config.storage(self.config_path)
 
 
 @dataclass
@@ -202,7 +208,7 @@ def _exit(ctx: CommandContext) -> None:
     ctx.frontend.quit()
 
 
-REGISTRY["/quit"] = Command("/quit", "leave the session", _exit, group=ALIAS)
+REGISTRY["/quit"] = Command("/quit", "leave the session", _exit, group=ALIAS)  # summary comes from cmd_quit
 
 
 @register("/clear", "clear the transcript", group="session")
@@ -212,6 +218,44 @@ def _clear(ctx: CommandContext) -> None:
 
 
 # -------------------------------------------------------------------- provider
+
+
+def choose_models(ctx: CommandContext, then: Callable[[], None] | None = None) -> None:
+    """Open the model picker against the live provider.
+
+    The model used to be a third text field in the credentials form: you had to
+    know the exact id, type it by hand, and could name only one.  The provider
+    can list them, so it lists them — filterable, and multi-select so a second
+    model stays one ``/model`` away instead of another round of typing.
+    """
+    session = ctx.session
+    provider = session.provider or _probe_provider(session)
+
+    def picked(value: Any) -> None:
+        names = [str(item) for item in value] if isinstance(value, list) else ([str(value)] if value else [])
+        if names:
+            session.models = names
+            session.model = names[0]
+            session.apply_provider()
+            ctx.frontend.status(f"model={session.model}" + (f" (+{len(names) - 1})" if len(names) > 1 else ""))
+        if then is not None:
+            then()
+
+    ctx.frontend.select(
+        t(ctx.locale, "choose_model"),
+        session.models or ([session.model] if session.model else []),
+        picked,
+        loader=provider.list_models if provider else None,
+        multi=True,
+        chosen=list(session.models),
+    )
+
+
+def _probe_provider(session: Session) -> OpenAICompatible | None:
+    """A provider good enough to *list* models, before one has been chosen."""
+    if not (session.base_url and session.api_key):
+        return None
+    return OpenAICompatible(ModelConfig(session.base_url, session.api_key, session.model or "models-placeholder"))
 
 
 @register("/config", "configure the provider, key and model", group="provider")
@@ -224,14 +268,16 @@ def _config(ctx: CommandContext) -> None:
             return
         session.base_url = values.get("base_url", "").strip() or session.base_url
         session.api_key = values.get("api_key", "").strip() or session.api_key
-        session.model = values.get("model", "").strip() or session.model
-        durable = session.apply_provider()
+        session.apply_provider()
         # Say what actually happened.  "Stored securely" was printed on every
         # machine without a keychain too, where the key lived only in this
         # process and the next launch started with no credentials at all.
-        ctx.notify(t(ctx.locale, "saved" if durable else "saved_not_durable"))
+        ctx.notify(saved_message(ctx.locale, session.key_location(), session.config_path))
+        # The endpoint and key are what the model list needs, so ask for the
+        # model straight after them rather than making the user run /model.
+        choose_models(ctx)
 
-    ctx.frontend.form("Provider configuration", ["base_url", ("api_key", True), "model"], apply)
+    ctx.frontend.form("Provider configuration", ["base_url", ("api_key", True)], apply)
 
 
 REGISTRY["/setup"] = Command("/setup", "configure the provider, key and model", _config, group=ALIAS)
@@ -242,21 +288,15 @@ def _model(ctx: CommandContext) -> None:
     session = ctx.session
     if ctx.argument:
         session.model = ctx.argument
+        if ctx.argument not in session.models:
+            session.models = [ctx.argument] + session.models
         session.apply_provider()
         ctx.frontend.status(f"model={session.model}")
         return
-    provider = session.provider
-    if provider is None:
+    if session.provider is None and _probe_provider(session) is None:
         ctx.say(t(ctx.locale, "no_provider"))
         return
-
-    def chosen(value: str | None) -> None:
-        if value:
-            session.model = value
-            session.apply_provider()
-            ctx.frontend.status(f"model={value}")
-
-    ctx.frontend.select("Choose model", [session.model or "(current)"], chosen, loader=provider.list_models)
+    choose_models(ctx)
 
 
 @register("/permissions", "change the approval mode", takes_argument=True, group="provider")
@@ -426,6 +466,7 @@ def _status(ctx: CommandContext) -> None:
     for item in runtime.background.list():
         detail = (str(item.result)[:120] if item.result is not None else "") or (item.error or "")
         lines.append(f"  {item.id} {item.status} · {item.goal[:80]}" + (f" · {detail}" if detail else ""))
+    lines.append(key_location_message(ctx.locale, ctx.session.key_location(), ctx.session.config_path))
     lines.append(runtime.usage.summary())
     ctx.say("\n".join(lines))
 

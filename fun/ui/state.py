@@ -106,6 +106,10 @@ class UiState:
     model_name: str = ""
     task_state: str = "idle"
     approval_mode: str = "smart"
+    #: Whether a provider is actually configured.  The empty screen used to
+    #: look identical with and without credentials, so a first run was a logo,
+    #: an input box, and no hint that nothing could possibly happen yet.
+    provider_ready: bool = True
     agent_mode: str = "Build"
     workspace: str = ""
     version: str = ""
@@ -129,6 +133,11 @@ class UiState:
     flushed: int = 0
     completion: Any = None
     hidden_items: int = 0
+    # How much of the transcript existed when the reader scrolled away from the
+    # bottom.  While set, the view is frozen at that point: new messages pile up
+    # below and are counted, rather than shoving the page forward line by line
+    # while someone is reading.
+    scroll_anchor: int | None = None
     cursor_hint: tuple[int, int] | None = None
     dock_caret: tuple[int, int] | None = None
     real_cursor: bool = True
@@ -203,7 +212,22 @@ class UiState:
         self.plan_status = list(statuses or [])
 
     def set_recovery(self, pending: dict[str, Any] | None) -> None:
-        self.recovery = {key: str((pending or {}).get(key, ""))[:300] for key in ("name", "call_id", "arguments")} if pending else None
+        if pending:
+            # ``arguments`` is rendered here rather than stringified: a raw dict
+            # repr put braces, quotes and a key name in front of the one thing
+            # the person needs to read, which is the command itself.
+            name = str(pending.get("name", ""))
+            raw = pending.get("arguments") or {}
+            rendered = components._format_arguments(raw, 300, name) if isinstance(raw, dict) else str(raw)
+            self.recovery = {
+                "name": name[:300],
+                "call_id": str(pending.get("call_id", ""))[:300],
+                "arguments": rendered[:300],
+                "goal": str(pending.get("goal", ""))[:300],
+                "reason": str(pending.get("reason", ""))[:300],
+            }
+        else:
+            self.recovery = None
         if pending:
             self.mode = "recovery"
             self.task_state = "recovery"
@@ -241,12 +265,15 @@ class UiState:
             if not self.tools:
                 return
             call_id = next(reversed(self.tools))
-        if call_id in self.collapsed_tools:
-            self.collapsed_tools.discard(call_id)
-            self.expanded_tools.add(call_id)
-        else:
-            self.collapsed_tools.add(call_id)
+        # The first press always shows *more*.  Toggling into "collapsed" first
+        # meant Ctrl-O on a quiet card — the common case, a successful read —
+        # appeared to do nothing at all.
+        if call_id in self.expanded_tools:
             self.expanded_tools.discard(call_id)
+            self.collapsed_tools.add(call_id)
+        else:
+            self.expanded_tools.add(call_id)
+            self.collapsed_tools.discard(call_id)
 
     def history(self, direction: int) -> str:
         """Step through composer history; kept for callers predating the editor."""
@@ -269,6 +296,10 @@ class UiState:
         "further back", which is a *larger* distance from the bottom.
         """
         self.scroll_offset = max(0, self.scroll_offset - delta)
+        if self.scroll_offset and self.scroll_anchor is None:
+            self.scroll_anchor = len(self.transcript)
+        elif not self.scroll_offset:
+            self.scroll_anchor = None
         return self.scroll_offset
 
     def animating(self) -> bool:
@@ -319,8 +350,9 @@ class UiState:
             card = item.tool
             view = card.view()
             collapsed = card.call_id in self.collapsed_tools
-            limit = 400 if card.call_id in self.expanded_tools else 12
-            arguments = components._format_arguments(view.arguments or {}, max(10, body_width - 20))
+            expanded = card.call_id in self.expanded_tools
+            limit = 400 if expanded else 12
+            arguments = components._format_arguments(view.arguments or {}, max(10, body_width - 20), view.name)
             title = theme.style(view.name, "text", bold=True)
             if arguments:
                 title += "  " + theme.style(arguments, "muted")
@@ -328,7 +360,7 @@ class UiState:
             if view.exit_code not in (None, 0):
                 meta = f"{meta} exit {view.exit_code}".strip()
             spine.node(view.status, title, meta)
-            spine.body(components.tool_body(theme, view, body_width, collapsed, limit))
+            spine.body(components.tool_body(theme, view, body_width, collapsed, limit, expanded))
 
     def flushable(self) -> list[TranscriptItem]:
         """Transcript items that are final and have not reached scrollback yet.
@@ -448,7 +480,16 @@ class UiState:
         # Budgeting four put the character just typed under the ellipsis and the
         # caret one column past the terminal's last column.
         body_width = max(8, width - 5)
-        placeholder = "" if self.editor.text else theme.text("ui_composer_placeholder")
+        # While a recovery or an approval is blocking, every key except the
+        # answer keys is swallowed — so the composer must not keep inviting the
+        # user to type into it.
+        if self.mode == "recovery":
+            prompt_key = "ui_composer_recovery"
+        elif self.mode == "approval":
+            prompt_key = "ui_composer_approval"
+        else:
+            prompt_key = "ui_composer_placeholder"
+        placeholder = "" if self.editor.text else theme.text(prompt_key)
         editor_lines = [theme.style(placeholder, "faint")] if placeholder else self.editor.render(
             body_width,
             cursor_style="" if self.real_cursor else (REVERSE if theme.enabled else ""),
@@ -492,7 +533,13 @@ class UiState:
     def dock_hints(self, width: int) -> list[tuple[str, str]]:
         """Hints plus the ones that only exist at this width."""
         hints = self.hints()
-        if self.mode == "ready" and sidebar.fits(width) and (self.transcript or self.plan):
+        if self.mode != "ready":
+            return hints
+        # The palette is where every command is discoverable, and it was the one
+        # key never mentioned anywhere on screen.
+        if width >= 64:
+            hints.insert(-1, ("Ctrl-P", self.theme.text("ui_hint_palette")))
+        if sidebar.fits(width) and (self.transcript or self.plan):
             hints.insert(-1, ("Ctrl-T", self.theme.text("ui_hint_sidebar")))
         return hints
 
@@ -508,11 +555,13 @@ class UiState:
         theme = self.theme
         if not self.transcript and not self.plan and height:
             self.hidden_items = 0
-            return hero_block(theme, width, height, self.version)
+            return hero_block(theme, width, height, self.version, needs_setup=not self.provider_ready)
         visible = self.transcript
-        if budget is not None and len(self.transcript) > 4:
-            visible = self._tail_for(width, budget, with_plan)
-        self.hidden_items = len(self.transcript) - len(visible)
+        if self.scroll_anchor is not None:
+            visible = self.transcript[: self.scroll_anchor]
+        if budget is not None and len(visible) > 4:
+            visible = self._tail_for(visible, width, budget, with_plan)
+        self.hidden_items = max(0, (self.scroll_anchor if self.scroll_anchor is not None else len(self.transcript)) - len(visible))
         spine = Spine(theme, width)
         for index, item in enumerate(visible):
             if index:
@@ -538,14 +587,14 @@ class UiState:
         self.show_sidebar = not self.show_sidebar
         return self.show_sidebar
 
-    def _tail_for(self, width: int, budget: int, with_plan: bool) -> list[TranscriptItem]:
-        """The shortest suffix of the transcript that can fill ``budget`` rows."""
+    def _tail_for(self, items: list[TranscriptItem], width: int, budget: int, with_plan: bool) -> list[TranscriptItem]:
+        """The shortest suffix of ``items`` that can fill ``budget`` rows."""
         count = max(4, budget // 4)
-        while count < len(self.transcript):
-            if self._rows_for(self.transcript[-count:], width, with_plan) >= budget:
-                return self.transcript[-count:]
+        while count < len(items):
+            if self._rows_for(items[-count:], width, with_plan) >= budget:
+                return items[-count:]
             count *= 2
-        return self.transcript
+        return items
 
     def _rows_for(self, items: list[TranscriptItem], width: int, with_plan: bool) -> int:
         spine = Spine(self.theme, width)
@@ -577,11 +626,17 @@ class UiState:
         ceiling = max(0, len(body) - room)
         self.scroll_offset = min(self.scroll_offset, ceiling)
         end = len(body) - self.scroll_offset
-        window = body[max(0, end - room):end]
         hidden = max(0, end - room) + self.hidden_items
-        if hidden and window:
-            window = [f"  {theme.style(theme.text('ui_scrolled', count=hidden), 'faint')}"] + window[1:]
-        return window
+        arrived = len(self.transcript) - self.scroll_anchor if self.scroll_anchor is not None else 0
+        if not hidden and not arrived:
+            return body[max(0, end - room):end]
+        # The banner takes a row of its own.  Overwriting the first visible line
+        # with it silently ate a line of the conversation on every scroll.
+        label = theme.text("ui_scrolled", count=hidden)
+        if arrived:
+            label += theme.text("ui_arrived", count=arrived)
+        window = body[max(0, end - room + 1):end]
+        return [f"  {theme.style(label, 'faint')}"] + window
 
     def _fit_frame(self, dock: list[str], overlay: list[str], height: int, width: int) -> tuple[list[str], list[str], int]:
         """Divide ``height`` rows between dock, overlay and body.

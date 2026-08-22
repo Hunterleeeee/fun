@@ -27,6 +27,53 @@ def _is_word_char(char: str) -> bool:
     return char not in WORD_SEPARATORS
 
 
+def _wrap_rows(line: str, width: int) -> list[tuple[int, str]]:
+    """Split ``line`` into display rows, preserving every character typed.
+
+    Returns ``(start_index, piece)`` pairs whose pieces concatenate back to
+    ``line`` exactly.  This is the difference between a paragraph wrapper and a
+    text cursor: :func:`~fun.ui.text.wrap` strips the whitespace at a break and
+    at the end of a row, so a trailing space occupied no column — pressing space
+    left the rendered line *and* the caret position completely unchanged, and
+    the composer looked frozen until the next visible character arrived.  A
+    space the user typed is a column they expect the caret to be sitting in.
+
+    Breaks prefer the last space that fits, and that space stays at the end of
+    the row it broke, the way a terminal editor puts it.  Rows are measured in
+    display columns, so a row of CJK never overflows the panel it sits in.
+    """
+    if not line:
+        return [(0, "")]
+    rows: list[tuple[int, str]] = []
+    start = index = 0
+    used = 0
+    last_space = -1
+    while index < len(line):
+        char_width = display_width(line[index])
+        if used + char_width > width and index > start:
+            # Break after the last space that fits, else hard-break here.  The
+            # scan then restarts from the cut: measuring the new row from the
+            # old running total is what let a row of wide characters overflow.
+            cut = last_space + 1 if start <= last_space < index else index
+            if cut <= start:
+                cut = index
+            rows.append((start, line[start:cut]))
+            start = index = cut
+            used = 0
+            last_space = -1
+            continue
+        if line[index] == " ":
+            last_space = index
+        used += char_width
+        index += 1
+    rows.append((start, line[start:]))
+    # A row filled to the last column leaves the caret nowhere to stand, so it
+    # gets an empty row after it — the same place the next character will go.
+    if display_width(rows[-1][1]) >= width:
+        rows.append((len(line), ""))
+    return rows
+
+
 @dataclass
 class Editor:
     """An editable multi-line buffer with a cursor and kill ring."""
@@ -263,32 +310,20 @@ class Editor:
         found = False
         offset = 0
         for logical in self.text.split("\n"):
-            wrapped = wrap(logical, width) or [""]
-            consumed = 0
-            for piece in wrapped:
-                # Locate the piece in the logical line rather than reconstructing
-                # what wrap() dropped.  The old version assumed wrap only ever
-                # removed the space *at* the break, but it also strips trailing
-                # whitespace — so a line ending in a space had no piece covering
-                # the cursor, and cursor_row silently stayed 0: typing a space at
-                # the end of a middle line teleported the caret to the top-left.
-                start_in_line = logical.find(piece, consumed) if piece else consumed
-                if start_in_line < 0:
-                    start_in_line = consumed
+            rows = _wrap_rows(logical, width)
+            for position, (start_in_line, piece) in enumerate(rows):
                 start = offset + start_in_line
                 end = start + len(piece)
-                if not found and start <= self.cursor <= end:
+                # The cursor at a *soft* wrap belongs to the next row, so a caret
+                # pushed off the right edge lands at the start of the row below
+                # rather than one column past the last column.  At the end of a
+                # logical line there is no next row to move to, so it stays.
+                last = position == len(rows) - 1
+                if not found and (start <= self.cursor < end or (last and self.cursor == end)):
                     cursor_row = len(lines)
                     cursor_column = display_width(self.text[start : self.cursor])
                     found = True
                 lines.append(piece)
-                consumed = start_in_line + len(piece)
-            if not found and offset <= self.cursor <= offset + len(logical):
-                # The cursor sits in whitespace that wrapping removed; put it at
-                # the end of that logical line's last row rather than nowhere.
-                cursor_row = len(lines) - 1
-                cursor_column = display_width(lines[-1])
-                found = True
             offset += len(logical) + 1
         if not found and lines:
             cursor_row = len(lines) - 1

@@ -20,9 +20,6 @@ class SQLiteEventStore:
         self.connection = sqlite3.connect(self.path, timeout=30.0, check_same_thread=False)
         self.connection.execute("PRAGMA busy_timeout = 30000")
         self._lock = Lock()
-        # Schema discovery and ALTER must be one cross-process write
-        # transaction.  Two first openers previously both saw a missing column
-        # and one failed with "duplicate column name".
         self.connection.execute("BEGIN IMMEDIATE")
         try:
             self.connection.execute(

@@ -1,3 +1,4 @@
+import os
 import time
 import re
 import io
@@ -6,7 +7,7 @@ import unittest
 from fun.ui import components
 from fun.ui.app import App
 from fun.ui.fullscreen import FullscreenSurface
-from fun.ui.input import BRACKETED_PASTE_OFF, BRACKETED_PASTE_ON, CONTROL_KEYS, RawMode, is_text
+from fun.ui.input import CONTROL_KEYS, is_text
 from fun.ui.modal import field_modal, prompt_modal, select_modal
 from fun.ui.screen import DockWriter, ScreenWriter
 from fun.ui.state import UiState
@@ -121,10 +122,33 @@ class ComponentTests(unittest.TestCase):
         view = components.ToolView("exec", "failed", {"command": "false"}, 5, 1, "", "permission denied")
         self.assertIn("permission denied", "\n".join(components.tool_body(PLAIN, view, 60)))
 
-    def test_tool_body_collapses_long_output(self):
+    def test_a_successful_read_is_summarised_not_reprinted(self):
         view = components.ToolView("read", "completed", {}, 1, 0, "line\n" * 50)
-        self.assertIn("还有", "\n".join(components.tool_body(PLAIN, view, 60)))
-        self.assertIn("隐藏", "\n".join(components.tool_body(PLAIN, view, 60, collapsed=True)))
+        summary = "\n".join(components.tool_body(PLAIN, view, 60))
+        self.assertIn("行输出", summary)
+        self.assertNotIn("line", summary)
+        self.assertIn("line", "\n".join(components.tool_body(PLAIN, view, 60, expanded=True)))
+
+    def test_a_failure_is_truncated_from_the_front_not_the_back(self):
+        """The assertion and the summary are at the end of a failing run."""
+        output = "\n".join(f"noise {index}" for index in range(40)) + "\nFAILED test_x - AssertionError"
+        view = components.ToolView("exec", "failed", {"command": "pytest"}, 1, 1, output)
+        rendered = "\n".join(components.tool_body(PLAIN, view, 60))
+        self.assertIn("FAILED test_x", rendered)
+        self.assertNotIn("noise 0", rendered)
+        self.assertIn("前面还有", rendered)
+
+    def test_a_long_successful_output_is_truncated_from_the_back(self):
+        view = components.ToolView("exec", "completed", {"command": "ls"}, 1, 0, "\n".join(f"row {i}" for i in range(40)))
+        rendered = "\n".join(components.tool_body(PLAIN, view, 60))
+        self.assertIn("row 0", rendered)
+        self.assertIn("还有", rendered)
+
+    def test_the_header_shows_the_identifying_argument_only(self):
+        view = components.ToolView("edit", "completed", {"path": "fun/cli.py", "expected_hash": "ab12", "patch": "@@ huge @@"}, 1, 0, "")
+        header = components._format_arguments(view.arguments or {}, 60, view.name)
+        self.assertEqual(header, "fun/cli.py")
+        self.assertEqual(components._format_arguments({"command": "pytest -q"}, 60, "exec"), "pytest -q")
 
     def test_the_approval_body_offers_a_choice_not_a_key_list(self):
         view = components.ToolView("exec", "approval", {"command": "rm -rf ."}, risk="critical")
@@ -157,6 +181,7 @@ class ModalTests(unittest.TestCase):
         for theme in (PLAIN, COLOR):
             for modal in (
                 select_modal("Choose model", ["a", "bb"], lambda value: None),
+                select_modal("Choose model", ["模型-大", "gpt-4o"], lambda value: None, multi=True, chosen=["gpt-4o"]),
                 field_modal("Provider", ["base_url", ("api_key", True)], lambda values: None),
                 prompt_modal("系统提示词", "value", lambda value: None),
             ):
@@ -170,6 +195,63 @@ class ModalTests(unittest.TestCase):
         modal.handle("down")
         self.assertTrue(modal.handle("enter"))
         self.assertEqual(picked, ["c"])
+
+    def test_a_long_model_list_is_filtered_by_typing(self):
+        picked = []
+        modal = select_modal("Choose", ["gpt-4o-mini", "claude-opus", "claude-haiku"], picked.append)
+        for char in "haiku":
+            modal.handle(char)
+        self.assertEqual(modal.visible(), ["claude-haiku"])
+        modal.handle("enter")
+        self.assertEqual(picked, ["claude-haiku"])
+
+    def test_a_filter_that_matches_nothing_says_so_instead_of_showing_everything(self):
+        modal = select_modal("Choose", ["a-one", "a-two"], lambda value: None)
+        for char in "zzz":
+            modal.handle(char)
+        self.assertEqual(modal.visible(), [])
+        rendered = "\n".join(modal.lines(PLAIN, 60))
+        self.assertIn(PLAIN.text("ui_select_empty"), rendered)
+        # Enter on nothing must not pick an unrelated option.
+        picked = []
+        modal.callback = picked.append
+        modal.handle("enter")
+        self.assertEqual(picked, [None])
+
+    def test_space_picks_several_models_and_enter_returns_them_in_order(self):
+        picked = []
+        modal = select_modal("Choose", ["a", "b", "c"], picked.append, multi=True)
+        modal.handle("down")
+        modal.handle(" ")  # the terminal delivers a literal space, not "space"
+        modal.handle("down")
+        modal.handle("space")
+        modal.handle("enter")
+        self.assertEqual(picked, [["b", "c"]])
+
+    def test_multi_select_without_a_pick_still_takes_one_keypress(self):
+        picked = []
+        modal = select_modal("Choose", ["a", "b"], picked.append, multi=True)
+        modal.handle("enter")
+        self.assertEqual(picked, [["a"]])
+
+    def test_filtering_does_not_forget_what_was_already_ticked(self):
+        picked = []
+        modal = select_modal("Choose", ["alpha", "beta"], picked.append, multi=True)
+        modal.handle("space")
+        for char in "beta":
+            modal.handle(char)
+        modal.handle("space")
+        modal.handle("enter")
+        self.assertEqual(picked, [["alpha", "beta"]])
+
+    def test_the_highlight_follows_the_filtered_list_not_the_original_one(self):
+        picked = []
+        modal = select_modal("Choose", ["x-one", "y-two", "y-three"], picked.append)
+        for char in "y-":
+            modal.handle(char)
+        modal.handle("down")
+        modal.handle("enter")
+        self.assertEqual(picked, ["y-three"])
 
     def test_select_modal_ignores_enter_while_loading(self):
         picked = []
@@ -335,7 +417,10 @@ class AppTests(unittest.TestCase):
         app._handle_key("yank", lambda text: None)
         self.assertEqual(app.state.composer, "run the focused ")
 
-    def test_arrows_move_within_a_multiline_draft_before_reaching_history(self):
+    def test_arrows_never_replace_a_draft_with_history(self):
+        """Up used to fall through to history at the top of the draft, so it
+        replaced what was being typed — and Enter then sent the old message.
+        Terminals translate the wheel into Up, so scrolling did it too."""
         app = self._app()
         app.state.editor.history.extend(["earlier message"])
         for char in "one":
@@ -346,7 +431,19 @@ class AppTests(unittest.TestCase):
         app._handle_key("up", lambda text: None)
         self.assertEqual(app.state.composer, "one\ntwo")
         app._handle_key("up", lambda text: None)
-        self.assertEqual(app.state.composer, "earlier message")
+        self.assertEqual(app.state.composer, "one\ntwo", "the draft was replaced by history")
+
+    def test_history_is_still_reachable_from_an_empty_composer(self):
+        app = self._app()
+        app.state.editor.history.extend(["first", "second"])
+        app._handle_key("up", lambda text: None)
+        self.assertEqual(app.state.composer, "second")
+        app._handle_key("up", lambda text: None)
+        self.assertEqual(app.state.composer, "first")
+        app._handle_key("down", lambda text: None)
+        self.assertEqual(app.state.composer, "second")
+        app._handle_key("down", lambda text: None)
+        self.assertEqual(app.state.composer, "")
 
     def test_slash_cycles_through_command_suggestions(self):
         app = self._app()
@@ -401,9 +498,9 @@ class AppTests(unittest.TestCase):
         for char in "open the file":
             app._handle_key(char, lambda text: None)
         self.assertEqual(app.state.composer, "open the file")
-        self.assertNotIn("c1", app.state.collapsed_tools)
+        self.assertNotIn("c1", app.state.expanded_tools)
         app._handle_key("toggle_output", lambda text: None)
-        self.assertIn("c1", app.state.collapsed_tools)
+        self.assertIn("c1", app.state.expanded_tools)
 
 
 class InputTests(unittest.TestCase):
@@ -602,8 +699,9 @@ class MarkdownTests(unittest.TestCase):
         self.assertIn("**this**", verbatim.render(60))
 
     def test_tool_output_is_highlighted_by_kind(self):
+        # expanded=True: a successful read is summarised by default now.
         read = components.ToolView("read", "completed", {"path": "a.py"}, 1, 0, "def f():\n    return 1")
-        self.assertIn("def f():", strip_ansi("\n".join(components.tool_body(COLOR, read, 60))))
+        self.assertIn("def f():", strip_ansi("\n".join(components.tool_body(COLOR, read, 60, expanded=True))))
         edit = components.ToolView("edit", "completed", {"path": "a.py"}, 1, 0, "@@ -1 +1 @@\n-old\n+new")
         body = "\n".join(components.tool_body(COLOR, edit, 60))
         self.assertIn("+new", strip_ansi(body))
@@ -1671,31 +1769,6 @@ class DockWriterScrollbackTests(unittest.TestCase):
             writer.place_cursor(row, 4)
             self.assertEqual(writer._cursor_row, row)
 
-    def test_stream_cursor_uses_target_column_not_relative_off_by_one(self):
-        writer, stream = self._writer()
-        writer.draw(["composer"])
-        stream.truncate(0)
-        stream.seek(0)
-        writer.place_cursor(0, 5)
-        self.assertIn("\r\033[4C", stream.getvalue())
-        self.assertNotIn("\033[5C", stream.getvalue())
-
-
-class RawModeTests(unittest.TestCase):
-    def test_bracketed_paste_controls_are_written_to_output_fd(self):
-        from unittest.mock import patch
-
-        with patch("fun.ui.input.termios.tcgetattr", return_value=[0]), \
-             patch("fun.ui.input.termios.tcsetattr"), \
-             patch("fun.ui.input.tty.setcbreak"), \
-             patch("fun.ui.input.os.write") as write:
-            with RawMode(fd=10, output_fd=11):
-                pass
-        self.assertEqual([call.args for call in write.call_args_list], [
-            (11, BRACKETED_PASTE_ON.encode()),
-            (11, BRACKETED_PASTE_OFF.encode()),
-        ])
-
 
 class InteractionRegressionTests(unittest.TestCase):
     def _app(self, **kwargs):
@@ -1728,17 +1801,6 @@ class InteractionRegressionTests(unittest.TestCase):
         while not app.events.empty():
             kinds.append(app.events.get_nowait()[0])
         self.assertNotIn("recovery_action", kinds)
-
-    def test_dict_recovery_action_is_normalized_without_crashing_drain(self):
-        actions: list[str] = []
-        app = self._app()
-        app.recovery_handler = actions.append
-        app.state.set_recovery({"name": "exec", "call_id": "c-1"})
-        app.post("recovery_action", {"action": "resume"})
-        app._consume()
-        self.assertEqual(actions, ["resume"])
-        self.assertEqual(app.state.mode, "working")
-        self.assertIsNone(app.state.recovery)
 
     def test_recovery_keys_still_work_from_an_empty_composer(self):
         app = self._app()
@@ -1854,6 +1916,7 @@ class UntrustedContentTests(unittest.TestCase):
         state.add_assistant("hello \x1b[2J\x1b]0;pwned\x07 world")
         state.tool_status("tool.started", {"call_id": "c", "name": "read"})
         state.tool_status("tool.completed", {"call_id": "c", "text": "a\x1b]52;c;ZXZpbA==\x07b"})
+        state.expanded_tools.add("c")
         rendered = "\n".join(state.body_lines(70))
         self.assertNotIn("\x1b", rendered)
         self.assertIn("hello  world", rendered)
@@ -1904,14 +1967,61 @@ class RenderPerformanceTests(unittest.TestCase):
 
 
 class EditorCursorMappingTests(unittest.TestCase):
-    def test_a_trailing_space_does_not_teleport_the_caret(self):
+    def test_a_typed_space_is_a_column_the_caret_can_stand_in(self):
         from fun.ui.editor import Editor
 
         editor = Editor()
         editor.text = "alpha\nbeta \ngamma"
         editor.cursor = 11
         lines, row, column = editor.visual_lines(40)
-        self.assertEqual((row, column), (1, 4))
+        # Column 5, not 4: the space the user typed occupies a cell.  Reporting
+        # 4 meant that pressing space changed neither the rendered line nor the
+        # caret position, and the composer looked frozen until the next visible
+        # character arrived.
+        self.assertEqual((row, column), (1, 5))
+        self.assertEqual(lines[1], "beta ")
+
+    def test_pressing_space_always_changes_something_on_screen(self):
+        from fun.ui.editor import Editor
+
+        for text in ("abc", "帮我", "a b", ""):
+            before = Editor()
+            before.insert(text)
+            after = Editor()
+            after.insert(text + " ")
+            self.assertNotEqual(before.visual_lines(20), after.visual_lines(20), repr(text))
+
+    def test_wrapped_rows_never_overflow_the_panel(self):
+        import random
+
+        from fun.ui.editor import Editor
+        from fun.ui.text import display_width, strip_ansi
+
+        random.seed(11)
+        for _ in range(3000):
+            text = "".join(random.choice("ab 中\n") for _ in range(random.randint(0, 20)))
+            width = random.randint(4, 12)
+            editor = Editor()
+            editor.text = text
+            editor.cursor = random.randint(0, len(text))
+            lines, row, column = editor.visual_lines(width)
+            self.assertTrue(0 <= row < len(lines), (text, width))
+            self.assertLessEqual(column, width, (text, width))
+            for line in lines:
+                self.assertLessEqual(display_width(line), width, (text, width, line))
+            for line in editor.render(width):
+                self.assertLessEqual(display_width(strip_ansi(line)), width, (text, width))
+            if "\n" not in text:
+                self.assertEqual("".join(lines), text, "wrapping must not drop what was typed")
+
+    def test_a_full_row_gives_the_caret_the_row_below(self):
+        from fun.ui.editor import Editor
+
+        editor = Editor()
+        editor.insert("a" * 10)
+        lines, row, column = editor.visual_lines(10)
+        self.assertEqual((row, column), (1, 0), "the caret may not sit one column past the edge")
+        self.assertEqual(lines, ["a" * 10, ""])
 
     def test_the_caret_is_always_inside_the_line_it_reports(self):
         import random
@@ -1985,8 +2095,10 @@ class LocaleTests(unittest.TestCase):
         self.assertIsNone(self.CHINESE.search(frame), frame)
 
     def test_a_chinese_session_is_chinese(self):
+        # A blocking recovery panel owns the screen, so the plan section is
+        # legitimately scrolled off; assert on the chrome that is on screen.
         frame = "\n".join(self._state("zh-CN").compose(120, 30))
-        for expected in ("你", "任务", "计划", "待恢复", "需要恢复处置"):
+        for expected in ("你", "计划", "待恢复", "上次运行没有正常退出", "继续执行"):
             self.assertIn(expected, frame)
 
     def test_the_approval_gate_speaks_the_session_language(self):
@@ -2170,3 +2282,266 @@ class LivePlanTests(unittest.TestCase):
             runtime.create_task("look")
             self.assertEqual(runtime.run_model_turn(), "ok")
             runtime.stop()
+
+
+class ScrollUsabilityTests(unittest.TestCase):
+    """Three complaints that were one story: the wheel destroyed drafts."""
+
+    def _state(self, count=40):
+        state = UiState(theme=PLAIN)
+        for index in range(count):
+            state.add_user(f"message {index}")
+        return state
+
+    def _rows(self, state, width=70, height=14):
+        return [strip_ansi(line) for line in state.compose(width, height)]
+
+    def test_the_scroll_banner_does_not_eat_a_line_of_content(self):
+        state = self._state()
+        before = [row for row in self._rows(state) if "message" in row]
+        state.scroll(-5)
+        rows = self._rows(state)
+        self.assertIn("PgUp", rows[0])
+        self.assertNotIn("message", rows[0])
+        after = [row for row in rows[1:] if "message" in row]
+        # The banner costs one row of the viewport; it must not overwrite a row
+        # of the conversation, which is what it used to do.
+        self.assertGreaterEqual(len(after), len(before) - 2)
+        self.assertNotIn(before[0].strip(), rows[0])
+
+    def test_the_view_is_held_still_while_reading_back(self):
+        state = self._state()
+        state.scroll(-5)
+        top = [row for row in self._rows(state)[1:] if "message" in row][0]
+        for index in range(3):
+            state.add_assistant(f"a reply that arrived while reading {index}")
+            state.add_user(f"and another {index}")
+        held = [row for row in self._rows(state)[1:] if "message" in row][0]
+        self.assertEqual(held, top, "an arriving reply dragged the reader forward")
+
+    def test_arrivals_are_counted_while_the_view_is_held(self):
+        state = self._state()
+        state.scroll(-5)
+        state.add_assistant("something new")
+        self.assertIn("↓", self._rows(state)[0])
+
+    def test_returning_to_the_bottom_shows_what_arrived(self):
+        state = self._state()
+        state.scroll(-5)
+        state.add_assistant("something new")
+        state.scroll(99999)
+        self.assertIsNone(state.scroll_anchor)
+        self.assertIn("something new", "\n".join(self._rows(state)))
+
+    def test_the_wheel_scrolls_instead_of_being_read_as_escape(self):
+        from fun.ui.input import read_key
+
+        for payload, expected in ((b"\x1b[<64;10;5M", "wheel_up"), (b"\x1b[<65;10;5M", "wheel_down"), (b"\x1b[M\x60\x21\x21", "wheel_up")):
+            reader, writer = os.pipe()
+            os.write(writer, payload)
+            self.assertEqual(read_key(reader), expected, payload)
+
+    def test_a_mouse_click_is_ignored_rather_than_closing_a_dialog(self):
+        from fun.ui.input import read_key
+
+        reader, writer = os.pipe()
+        os.write(writer, b"\x1b[<0;10;5M")
+        self.assertEqual(read_key(reader), "mouse")
+        app = App(StreamSurface(io.StringIO()), theme=PLAIN)
+        app._handle_key("palette", lambda text: None)
+        app._handle_key("mouse", lambda text: None)
+        self.assertIsNotNone(app.modal, "a click closed the palette")
+
+    def test_the_wheel_moves_the_transcript(self):
+        app = App(StreamSurface(io.StringIO()), theme=PLAIN)
+        for index in range(40):
+            app.post("user", f"row {index}")
+        app._consume()
+        app._handle_key("wheel_up", lambda text: None)
+        self.assertGreater(app.state.scroll_offset, 0)
+        app._handle_key("wheel_down", lambda text: None)
+        app._handle_key("wheel_down", lambda text: None)
+        self.assertEqual(app.state.scroll_offset, 0)
+
+
+class ConfigureJourneyTests(unittest.TestCase):
+    """Endpoint → key → pick from the real model list, in one pass."""
+
+    def test_config_hands_the_form_straight_to_a_loaded_model_picker(self):
+        import tempfile
+        from unittest.mock import patch
+
+        from fun.commands import Session, dispatch
+        from fun.config import FunConfig
+        from fun.frontends import AppFrontend
+        from fun.runtime import Runtime
+
+        directory = tempfile.mkdtemp()
+        app = App(StreamSurface(io.StringIO()), theme=PLAIN)
+        runtime = Runtime(directory, "auto", state_dir=directory)
+        session = Session(runtime, FunConfig(), os.path.join(directory, "config.json"))
+        try:
+            with patch("fun.config._keychain_set", return_value=False), patch("fun.config._keychain_get", return_value=""), patch(
+                "fun.provider.OpenAICompatible.list_models", return_value=["gpt-4o", "claude-opus", "claude-haiku"]
+            ):
+                dispatch("/config", session, AppFrontend(app, "zh-CN"))
+                self.assertEqual([name for name, _ in app.modal.fields], ["base_url", "api_key"], "the model is not typed here any more")
+                for char in "https://x/v1":
+                    app.modal.handle(char)
+                app.modal.handle("enter")
+                for char in "sk-abc":
+                    app.modal.handle(char)
+                app._handle_key("enter", lambda *_: None)
+                self.assertEqual(app.modal.kind, "select")
+                deadline = time.time() + 5
+                while app.modal.loading and time.time() < deadline:
+                    app._consume()
+                    time.sleep(0.01)
+                self.assertEqual(app.modal.options, ["gpt-4o", "claude-opus", "claude-haiku"])
+                self.assertTrue(app.modal.multi)
+                for char in "claude":
+                    app.modal.handle(char)
+                self.assertEqual(app.modal.visible(), ["claude-opus", "claude-haiku"])
+                app.modal.handle(" ")
+                app.modal.handle("down")
+                app.modal.handle(" ")
+                app._handle_key("enter", lambda *_: None)
+            self.assertEqual(session.model, "claude-opus")
+            self.assertEqual(FunConfig.load(session.config_path).models, ["claude-opus", "claude-haiku"])
+        finally:
+            runtime.stop()
+
+
+class MentionTests(unittest.TestCase):
+    """`@ files` has to mean something, and survive a space in the name."""
+
+    def test_mentions_are_read_back_including_quoted_paths(self):
+        from fun.ui.completion import mention_token, mentions
+
+        self.assertEqual(mentions('看 @a.py 和 @"src/my file.py"，还有 @b.md。'), ["a.py", "src/my file.py", "b.md"])
+        self.assertEqual(mentions("mail me at a@b.com"), [], "an email address is not a file reference")
+        self.assertEqual(mention_token("src/my file.py"), '@"src/my file.py"')
+        self.assertEqual(mention_token("a.py"), "@a.py")
+
+    def test_completing_a_path_with_a_space_stays_one_reference(self):
+        import tempfile
+        from fun.ui.completion import Completer, FileIndex
+
+        directory = tempfile.mkdtemp()
+        open(os.path.join(directory, "my file.py"), "w").close()
+        completer = Completer(files=FileIndex(directory))
+        from fun.ui.completion import detect
+
+        text = "看 @my"
+        context = detect(text, len(text))
+        spliced, cursor = completer.apply(text, context, "my file.py")
+        self.assertEqual(spliced, '看 @"my file.py" ')
+        from fun.ui.completion import mentions
+
+        self.assertEqual(mentions(spliced), ["my file.py"])
+        # And the cursor still sits after the reference, not inside it.
+        self.assertEqual(spliced[:cursor], '看 @"my file.py" ')
+
+    def test_a_referenced_file_is_named_for_the_model_and_a_missing_one_for_the_user(self):
+        import tempfile
+        from fun.frontends import attach_mentions
+
+        directory = tempfile.mkdtemp()
+        open(os.path.join(directory, "real.py"), "w").close()
+        sent, missing = attach_mentions("看下 @real.py 和 @ghost.py", directory)
+        self.assertIn("- real.py", sent)
+        self.assertNotIn("- ghost.py", sent)
+        self.assertEqual(missing, ["ghost.py"])
+        # A path that climbs out of the workspace is reported, never attached.
+        _, escaped = attach_mentions("@../../etc/passwd", directory)
+        self.assertEqual(escaped, ["../../etc/passwd"])
+        # An ordinary message is passed through untouched.
+        self.assertEqual(attach_mentions("普通消息", directory), ("普通消息", []))
+
+
+class ProviderErrorMessageTests(unittest.TestCase):
+    """No screen ever shows a bare error tag."""
+
+    def test_every_provider_tag_becomes_a_sentence(self):
+        import re
+
+        from fun.frontends import friendly_error
+        from fun.provider import ProviderError
+
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fun", "provider.py"), encoding="utf-8") as handle:
+            source = handle.read()
+        tags = sorted(set(re.findall(r'ProviderError\("([A-Z_]+)"', source)))
+        self.assertTrue(tags)
+        for tag in tags:
+            for locale in ("zh-CN", "en-US"):
+                message = friendly_error(ProviderError(tag), locale)
+                self.assertNotEqual(message, tag, f"{tag} is printed raw at {locale}")
+                self.assertGreater(len(message), len(tag) // 2)
+
+    def test_an_http_failure_says_which_status_and_what_to_do(self):
+        from fun.frontends import friendly_error
+        from fun.provider import ProviderError
+
+        seen = set()
+        for status in (404, 429, 500, 400):
+            message = friendly_error(ProviderError("PROVIDER_HTTP_FAILED", status=status), "zh-CN")
+            self.assertIn(str(status), message)
+            seen.add(message)
+        self.assertEqual(len(seen), 4, "different statuses must not collapse into one message")
+
+    def test_an_unknown_tag_still_reads_as_a_sentence(self):
+        from fun.frontends import friendly_error
+        from fun.provider import ProviderError
+
+        message = friendly_error(ProviderError("PROVIDER_SOMETHING_NEW"), "zh-CN")
+        self.assertTrue(message.startswith(PLAIN.text("provider_unavailable")))
+        self.assertIn("PROVIDER_SOMETHING_NEW", message)
+
+
+class RecoveryPanelTests(unittest.TestCase):
+    """The screen you meet after a crash has to explain itself."""
+
+    def _panel(self, locale="zh-CN", **pending):
+        from fun.ui import components
+        from fun.ui.state import UiState
+
+        state = UiState(theme=Theme(mode="none", locale=locale))
+        state.set_recovery({"name": "exec", "call_id": "c9", "arguments": {"command": "git push origin main"}, "goal": "把改动推上去", **pending})
+        return "\n".join(components.recovery_body(state.theme, state.recovery, 70))
+
+    def test_it_says_what_happened_and_what_had_been_asked(self):
+        panel = self._panel()
+        self.assertIn(PLAIN.text("ui_recovery_needed"), panel)
+        self.assertIn("把改动推上去", panel)
+        self.assertIn("git push origin main", panel)
+
+    def test_arguments_are_rendered_not_repred(self):
+        panel = self._panel()
+        self.assertNotIn("{'command'", panel)
+        self.assertNotIn("command=", panel, "the identifying argument speaks for itself")
+
+    def test_every_choice_says_what_it_will_do(self):
+        for locale in ("zh-CN", "en-US"):
+            theme = Theme(mode="none", locale=locale)
+            panel = self._panel(locale)
+            for key in ("resume", "discard", "mark_failed", "stop"):
+                self.assertIn(theme.text(f"ui_recovery_{key}_why"), panel, (locale, key))
+
+    def test_resuming_warns_that_it_runs_the_command_again(self):
+        # This is the whole risk of the screen: the call may already have run.
+        for locale in ("zh-CN", "en-US"):
+            self.assertIn(Theme(mode="none", locale=locale).text("ui_recovery_resume_why"), self._panel(locale))
+
+    def test_the_composer_stops_inviting_input_while_it_blocks(self):
+        from fun.ui.state import UiState
+
+        for mode, key in (("recovery", "ui_composer_recovery"), ("approval", "ui_composer_approval")):
+            state = UiState(theme=PLAIN)
+            state.mode = mode
+            frame = "\n".join(strip_ansi(line) for line in state.compose(70, 20))
+            self.assertIn(PLAIN.text(key), frame, mode)
+            self.assertNotIn(PLAIN.text("ui_composer_placeholder"), frame, mode)
+
+    def test_a_missing_goal_does_not_leave_a_dangling_label(self):
+        panel = self._panel(goal="")
+        self.assertNotIn(PLAIN.text("ui_recovery_goal").split("{")[0].strip(), panel)

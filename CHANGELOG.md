@@ -90,10 +90,8 @@
   "programs that can run another program" is an unbounded set and every one
   forgotten fails open. The default is now inverted: a command runs without
   asking only if its resolved program is on a short explicit list of things that
-  only read and report. Unknown programs are HIGH risk, ask once in every mode
-  and may be remembered for the session; provably irreversible operations are
-  CRITICAL, ask every time and are never remembered. Forgetting a program now
-  costs a prompt, not a shell.
+  do not launch other programs. Everything else is critical and goes to the
+  approval gate. Forgetting a program now costs a prompt, not a shell.
 - The risk a command is assessed at is the risk the user is asked about, and
   approving it makes it run. Previously the Runtime asked about a flat "medium"
   for every `exec` — so `rm -rf` was presented as medium-risk — and the tool
@@ -122,12 +120,111 @@
 - The local dashboard no longer interpolates model-controlled strings into `innerHTML`. A goal or tool result carrying markup — reachable through prompt injection — executed as script in the dashboard's origin on the next page load. Cells are built as nodes and filled with `textContent`, with a CSP and a `Host` check to close DNS rebinding.
 - `protected_names` matches case-insensitively. `fnmatch` is case-sensitive on POSIX but macOS volumes are not, so `read(".ENV")` matched no pattern and then opened the real `.env`. The default list also now covers SSH keys, `.aws`, `.npmrc`, `.netrc` and keystores.
 - The API key is passed to `security` on stdin rather than in `argv`, where any process reading `ps` could see it.
-- A benign command name is no longer trusted by basename alone. Workspace-local, absolute, wrapped or PATH-injected lookalikes such as `./cat`, `env ./cat` and `/tmp/echo` are HIGH risk rather than silently inheriting the system executable's LOW classification.
-- `Tools.exec()` no longer exposes a forgeable `approved=True` boolean. Runtime approval executes the exact `CommandPlan` classified before the prompt through a separate internal path.
-- Workspace locks publish complete metadata atomically, serialize stale takeover, and bind release/adoption to an owner token rather than a PID. A second Runtime in the same process cannot adopt the first one's lock, and an old owner cannot unlink its replacement.
-- Environment credentials remain transient even through `--configure`. A readable Keychain credential keeps its provenance across unrelated theme/model/permission/locale/prompt saves without rewriting the secret; an unreadable Keychain is reported as unavailable by both CLI and Dashboard rather than ready.
 
 ### Fixed
+
+- A first run says that nothing is configured. With no provider the empty
+  screen was identical to a configured one — a logo, a tagline and an input
+  box — so the way to find out that nothing could happen was to type a message
+  and wait. The empty screen now names the situation and the command, and the
+  message you get for sending anyway changed from "Offline mode · no model
+  calls will be made" (which reads like a mode you chose) to naming `/config`.
+- `Ctrl-P` is advertised. The command palette is where every command is
+  discoverable and it was the one key mentioned nowhere on screen; it now sits
+  in the hint bar, and steps aside below 64 columns rather than wrapping it.
+- `/quit` was the only command with no `cmd_*` wording, so it printed
+  "leave the session" in a Chinese session. A test now enumerates the registry
+  and fails on any command missing its translation.
+
+- The screen you meet after a crash explains itself. The recovery panel said
+  "Recovery decision required", named the tool and its internal call id, and
+  printed the arguments as a raw Python dict — which identifies the row in the
+  event log and tells the person nothing. It now leads with what happened (the
+  last run did not exit cleanly, a tool call was in flight and may or may not
+  have finished), repeats the goal that was being worked on, renders the
+  command as a command, and spells out what each of the four answers does. In
+  particular, resuming *re-runs* the call — for anything that already half-ran
+  that is the one consequence worth stating, and it was not stated at all.
+- The composer stops inviting input while a recovery or an approval is blocking
+  it. Every key except the answer keys was swallowed, but the placeholder went
+  on saying "Describe what you want to do".
+
+- An interrupted turn is recorded as one. Ctrl-C unwound the turn before the
+  assistant message was appended, so the reply the user could still see on
+  screen existed nowhere in the conversation: the next turn was handed two
+  `user` messages in a row with no assistant turn between them, and the model
+  was never told that anything had been said or stopped. The streamed text is
+  now remembered as it arrives, `stop()` writes it down together with an
+  explicit note that the user interrupted, and the transcript gets a line
+  saying so — scrolling back, a half-finished reply no longer reads exactly
+  like one that finished.
+
+- **Denying a tool now actually denies it.** `App.request_approval` returns the
+  strings `"yes"` / `"no"` / `"always"` — so that "allow once" stays
+  distinguishable from "allow for this session" — but the caller in `cli.main`
+  still did `bool(answer)`, and `bool("no")` is `True`. Pressing `n` on
+  `rm -rf build` ran it. Worse, the resulting card rendered with a green tick
+  and an elapsed time, so the transcript reported that the command the user had
+  just refused had succeeded. The gate is extracted as `approval_gate()` so the
+  denial path is reachable from a test, compares against an explicit
+  `ALLOWING_ANSWERS`, and is covered by tests that assert `n` denies, that only
+  `yes`/`always` run anything, and that the UI can only ever return answers the
+  gate understands.
+- A refused tool says what happened instead of printing its machine tag. The
+  card showed `APPROVAL_REQUIRED` immediately after the user pressed `n`, and
+  `MODE_FORBIDS_TOOL`, `FILE_CHANGED_SINCE_READ`, `PATCH_FAILED` and the rest
+  the same way. The tag still goes to the model, which needs a stable token; the
+  screen gets a sentence. A test enumerates the refusal tags in `tools.py` and
+  `runtime.py` and fails if any of them lacks wording.
+
+- Pressing space in the composer does something. The composer measured its
+  caret with the paragraph wrapper, which strips whitespace at a break and at
+  the end of a row — so a trailing space occupied no column, the rendered line
+  was byte-identical before and after, and the caret position did not move
+  either. On a real terminal that means the screen does not change at all: the
+  space appeared only once the next visible character arrived. Wrapping for the
+  composer now preserves every character typed, breaks are measured in display
+  columns so a row of CJK cannot overflow the panel, and a row filled to the
+  last column hands the caret the row below instead of a cell past the edge.
+
+- Provider failures say what happened and what to do. Only six of the fourteen
+  `ProviderError` tags had a message; the rest fell through and printed the raw
+  tag — `× PROVIDER_HTTP_FAILED` on screen, twice, with no way to tell a wrong
+  base URL from rate limiting from an outage. Every tag is covered now, the
+  HTTP status is carried through and named (404 points at the base URL and the
+  model, 429 says rate limited, 5xx says it is not your configuration), an
+  unknown tag still reads as a sentence with the tag in parentheses, and the
+  key fingerprint is shown only for an actual auth failure instead of on every
+  HTTP error — a 404 is not the key's fault.
+- `@ files` means something. The composer advertised it and the picker
+  completed real workspace paths, but nothing downstream ever read the
+  reference back: it travelled to the model as ordinary prose, and whether the
+  file was opened came down to the model's mood. References are now resolved
+  against the workspace and listed for the model explicitly; one that does not
+  exist, or that climbs out of the workspace, is reported to the user instead
+  of silently meaning nothing.
+- A file whose name contains a space can be referenced at all. Completing one
+  spliced `@src/my file.py` into the composer, which reads as the file
+  `src/my` followed by two loose words. Such paths are quoted as
+  `@"src/my file.py"`, and both the completion context and the reference
+  parser understand the quoted form.
+
+- The API key no longer disappears overnight, and the keychain prompt no longer
+  types itself into the running UI. `security add-generic-password` was invoked
+  with a bare `-w` and the key on stdin; `security` prompts on `/dev/tty`, not
+  stdin, so `password data for new item:` was written across the rendered
+  screen, the key was never stored, and the next launch asked for it again.
+  The write now uses the value form, closes stdin so nothing can prompt, and is
+  only reported as successful after reading the value back. If the keychain is
+  unavailable the key falls back to the 0600 config file rather than nowhere,
+  and `--configure`, `/config` and `/status` name where it actually landed
+  instead of printing an unconditional "saved".
+- The model is picked from the provider's list instead of typed from memory.
+  `/config` asked for the model as a third text field: you had to know the exact
+  id, spell it right, and could name only one. It now asks for the endpoint and
+  key, then opens the model list loaded from that endpoint — type to filter,
+  Space to keep several. The extra models are remembered, so `/model` offers
+  them without another round trip.
 
 - Two projects can be open at once. The workspace lock was one file per *state
   directory* — and the state directory defaults to `~/.fun` for everyone — so a
@@ -159,6 +256,30 @@
   traceback.
 - `--resume-session` with an unknown id says so instead of handing back a blank
   session, which looked exactly like the user's previous task having vanished.
+- **Up no longer replaces what you are typing.** It fell through to history
+  whenever the cursor was on the first line, so pressing Up mid-draft swapped
+  the draft for an old message — and Enter then sent the old one. Terminals
+  translate the mouse wheel into Up by default in the alternate screen, so
+  *scrolling* destroyed drafts too. History is now reached from an empty
+  composer, or while already browsing it; typing leaves history mode, so an
+  edited recall is never overwritten either.
+- The mouse wheel scrolls. Wheel reports were decoded as `escape`, which not
+  only did nothing but closed whatever dialog was open; the fullscreen frontend
+  now asks for real wheel events and turns the terminal's arrow-key translation
+  off. Clicks and drags are ignored rather than misread. (Selecting text needs
+  Shift held, as in any mouse-aware TUI; `--stream` does not enable this.)
+- Reading back through the transcript is no longer interrupted by new content:
+  the view is held where it was, arrivals are counted in the banner, and
+  returning to the bottom shows them. The banner also takes a row of its own
+  instead of overwriting the first visible line of the conversation.
+- Tool cards show the thing worth reading. A successful `read` or `explore` is
+  summarised rather than pouring the file back into the transcript; a *failing*
+  command is truncated from the front, because the assertion and the summary are
+  at the end and showing the first twelve lines of a failing test run hid
+  precisely the part worth reading; the header carries the one identifying
+  argument (`fun/cli.py`, `pytest -q`) instead of `expected_hash=… patch=…`; and
+  the first `Ctrl+O` always shows more, where before it collapsed a card that
+  was already summarised and appeared to do nothing.
 - **PgUp/PgDn scroll.** They did nothing at all: scrolling dropped transcript
   items from the *front* while overflow handling kept the *tail*, so the visible
   window never moved — and past a certain offset it started hiding the newest
@@ -223,7 +344,7 @@
   but healthy completion is no longer killed mid-flight with everything it had
   produced discarded. An error object framed as a normal SSE event is reported
   instead of being fed to the tool-call parser as model output.
-- `fun` starts at all without a TTY. `_run_plain` — the fallback for pipes, dumb terminals and Windows consoles — called `banner()` without importing it, so its first line raised `NameError`. Windows redirected pipes and console descriptors no longer enter socket-only `select()`, and `explore` renders relative paths with `/` consistently across platforms.
+- `fun` starts at all without a TTY. `_run_plain` — the fallback for pipes, dumb terminals and Windows consoles — called `banner()` without importing it, so its first line raised `NameError`.
 - `/permissions` no longer kills the session. It stored a bare string where three call sites read `policy.mode.value`; the `AttributeError` surfaced on the UI thread and unwound the loop. `Policy` now normalises a mode wherever one is accepted.
 - A command can open a dialog from a dialog's own callback. The key loop cleared the modal slot unconditionally after `handle()` returned, throwing away the form that `/config` had just installed — so `/config` was unreachable from the command palette.
 - `/cle` clears. Dispatch resolved the prefix and reported "cleared" while the caller string-matched the raw input; the side effect now belongs to the handler rather than to `cli.py`.
@@ -236,7 +357,7 @@
 - "Allow for this session" works in the interactive UI. Only the plain `input()` fallback ever recorded it, so `a` allowed one call and then asked again.
 - A stopped task is recorded as stopped, not as a malformed provider response.
 - Provider streaming: events after `[DONE]` in the same read are no longer yielded into the tool-call parser; a multi-byte character split across reads is decoded incrementally instead of being replaced with `?`; a 200 with a JSON error body and no event-stream content type is reported instead of returning an empty reply; the stream has a wall-clock deadline and a buffer ceiling.
-- Credentials: a Keychain that cannot be read is treated as "cannot read now", not "never configured" — it no longer blanks `base_url` and `model` and then persists the blanks on the next unrelated save. A key from `FUN_API_KEY` is never promoted into the Keychain behind the user's back, including through `--configure`; ordinary setting saves preserve a readable Keychain marker without rewriting the secret. Dashboard readiness now uses the same live `FunConfig.load().ready()` result as Runtime instead of treating a marker as proof the key is readable. `/config` and `/logout` report what actually happened instead of always claiming durable storage and successful deletion.
+- Credentials: a Keychain that cannot be read is treated as "cannot read now", not "never configured" — it no longer blanks `base_url` and `model` and then persists the blanks on the next unrelated save. A key from `FUN_API_KEY` is never promoted into the Keychain behind the user's back. `/config` and `/logout` report what actually happened instead of always claiming durable storage and successful deletion.
 - The dock writer tracks which row the cursor is on. It assumed the last dock row while `place_cursor` had deliberately parked it on the composer, so every repaint walked up too far and erased that many rows of scrollback.
 - `truncate` closes a style it cuts through. A cut inside a `reverse` span left inverse video running to the right edge of the screen.
 - The mode tab strip is clipped like every other dock row; the composer's width accounts for all five columns of panel chrome, so the character just typed is visible and the caret stays on screen; a frame is exactly as tall as the terminal, with the dock served first, so the input survives an 8-row pane; the canvas border clips both ends rather than only the right.
@@ -261,8 +382,6 @@
 - `WorkspaceGuard.check_name` honours `Policy.protected_names` instead of ignoring its policy argument.
 - The initial plan heuristic matches Latin verbs on word boundaries and measures goal size by display width, so "fix login" is no longer treated as small talk.
 - `Usage.summary` reports nothing rather than `in ? out ? ttft ?` before anything has been measured.
-- Tool pagination rejects non-positive `limit` / `start` / `end` values and an `end` before `start` at both the model schema and public Tools boundary, rather than leaking Python's negative slicing as truncated listings or negative line numbers.
-- Idle and terminal lifecycle commands report `NO_ACTIVE_TASK` / `INVALID_TASK_TRANSITION` without claiming a state change; Runtime transition errors stay inside the shared command boundary instead of unwinding a frontend.
 
 ### Changed
 
@@ -280,7 +399,7 @@
 - Removed the block components superseded by the spine layout — they were reachable only from tests, which made unused code look covered.
 - `fun.tui` and `fun.terminal_ui` are kept as thin compatibility shims. `fun.renderer` is removed: it was reachable only from tests and still rendered a first-run menu and a command list that no longer exist.
 - Dead code removed rather than left looking live: `App._dirty` was assigned in thirteen places and read in none (it now actually gates repaints), an unreachable slash-command branch, `kill_line` handlers no key emits, and a background set written but never read.
-- Test suite grown from 209 to 608 cases, including layout checks that run with colour on and off, Windows pipe/console input, credential provenance, exec approval bypasses, lock ownership, concurrent SQLite initialization, and cross-platform path rendering.
+- Test suite grown from 209 to 642 cases, including layout checks that run with colour on and off, Keychain provenance, exec approval boundaries, lock ownership, SQLite concurrency, Windows input and cross-platform path rendering.
 
 ## 1.0.0a6 - Alpha
 

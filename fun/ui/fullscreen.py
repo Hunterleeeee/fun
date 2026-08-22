@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any, TextIO
 
 from .layout import frame_canvas
+from . import input as keys
 from .screen import ScreenWriter
 from .text import display_width
 from .state import UiState
@@ -31,6 +32,7 @@ class FullscreenSurface:
 
     def start(self) -> None:
         self.writer.enter()
+        self.writer.write_control(keys.MOUSE_ON)
 
     def paint(self, state: UiState, width: int, height: int, overlay: list[str] | None = None) -> None:
         # Everything is repainted from state, so nothing is ever "flushed away".
@@ -60,4 +62,5 @@ class FullscreenSurface:
             self.writer.hide_cursor()
 
     def stop(self) -> None:
+        self.writer.write_control(keys.MOUSE_OFF)
         self.writer.close()

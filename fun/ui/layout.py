@@ -175,6 +175,7 @@ def hero_block(
     width: int,
     height: int,
     version: str = "",
+    needs_setup: bool = False,
 ) -> list[str]:
     """The empty-session body: ambient field, gradient wordmark, tagline.
 
@@ -201,6 +202,12 @@ def hero_block(
         canvas.center(top + wordmark.HEIGHT + 1, theme.style(tagline, "muted"), display_width(tagline))
         thesis = theme.text("ui_thesis")
         canvas.center(top + wordmark.HEIGHT + 2, theme.style(thesis, "faint"), display_width(thesis))
+        if needs_setup and height >= block + 2:
+            # Nothing can happen until a provider exists, so the empty screen
+            # says so and names the command rather than letting the first
+            # message be the way the user finds out.
+            call = theme.text("ui_needs_setup")
+            canvas.center(top + wordmark.HEIGHT + 4, theme.style(call, "warning", bold=True), display_width(call))
     else:
         title = f"FUN  {version}".strip()
         canvas.center(max(0, height // 2), theme.style(title, "accent", bold=True), display_width(title))

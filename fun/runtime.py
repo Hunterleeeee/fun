@@ -123,6 +123,12 @@ def _collect_response(chunks: Any, cancel: Any = None) -> tuple[str, list[dict[s
     return content, valid_tool_calls(calls.values())
 
 
+#: What the model is told when a turn is cut short.  It is prose, not a tag,
+#: because it goes into the conversation the model reads.
+INTERRUPTED_NOTE = "[The user interrupted this reply before it finished. Do not assume it was received in full.]"
+INTERRUPTED_EMPTY = "[The user interrupted this turn before any reply was produced.]"
+
+
 def build_system_prompt(preferences: str = "") -> str:
     custom = preferences.strip()[:12000]
     if not custom:
@@ -456,10 +462,6 @@ class Runtime:
         return self.background.list()
 
     def cancel_background_task(self, task_id: str) -> None:
-        # A foreground turn closes the durable store, but background research is
-        # deliberately allowed to outlive that turn.  Reopen before recording a
-        # later /cancel so the in-memory cancellation and append-only history do
-        # not diverge with EVENT_STORE_CLOSED.
         self._reopen_if_needed()
         self.background.cancel(task_id)
 
@@ -761,8 +763,6 @@ class Runtime:
                 timeout = call_kwargs.get("timeout", 120.0)
                 if exec_plan is None:
                     raise RuntimeError("INVALID_COMMAND_PLAN")
-                # Bind execution to the exact plan classified before approval;
-                # no public boolean can forge this path or swap the command.
                 result = self.tools._exec_authorized(exec_plan, timeout=timeout, on_progress=progress)
             else:
                 result = method(**call_kwargs)
@@ -799,7 +799,16 @@ class Runtime:
         if not self.task or self.task.status != "recovery_required":
             return None
         pending = self.task.pending_tool or {}
-        return {"reason": self.task.recovery_reason or "unknown", "call_id": pending.get("call_id"), "name": pending.get("name"), "arguments": pending.get("arguments", {})}
+        # The goal too.  Coming back to a recovery prompt after a crash, "exec ·
+        # c9" identifies the call for the log but tells the person nothing about
+        # what they had asked for in the first place.
+        return {
+            "reason": self.task.recovery_reason or "unknown",
+            "call_id": pending.get("call_id"),
+            "name": pending.get("name"),
+            "arguments": pending.get("arguments", {}),
+            "goal": self.task.goal,
+        }
 
     def acknowledge_recovery(self, action: str = "resume") -> None:
         if not self.task or self.task.status != "recovery_required":
@@ -1046,7 +1055,20 @@ class Runtime:
         final_text = ""
         for _ in range(max_steps):
             self._ensure_running()
-            content, calls = self.parse_model_response(self.request_model(), on_text)
+            # Remember what has been said as it is said.  An interrupt unwinds
+            # this loop before the assistant message is appended, so without
+            # this the turn left no assistant message at all: the history handed
+            # to the next turn was two user messages in a row, and the model was
+            # never told that anything had been said or stopped.
+            self._partial_text = ""
+
+            def sink(chunk: str, _forward: Callable[[str], None] | None = on_text) -> None:
+                self._partial_text += chunk
+                if _forward is not None:
+                    _forward(chunk)
+
+            content, calls = self.parse_model_response(self.request_model(), sink)
+            self._partial_text = ""
             if content:
                 final_text += content
             if not calls:
@@ -1186,17 +1208,10 @@ class Runtime:
             if diff:
                 patch = subprocess.run(["git", "apply", "--binary", "-"], cwd=self.workspace, input=diff, capture_output=True, text=True)
                 if patch.returncode != 0:
-                    # The destructive reset already happened.  Put back the
-                    # exact tracked worktree diff we observed before attempting
-                    # the checkpoint, so a malformed/inapplicable patch does
-                    # not turn a failed restore into data loss.
                     subprocess.run(reset_command, cwd=self.workspace, capture_output=True, text=True)
-                    rollback = subprocess.run(["git", "apply", "--binary", "-"], cwd=self.workspace, input=current, capture_output=True, text=True) if current else None
-                    rollback_error = rollback.stderr.strip() if rollback is not None and rollback.returncode != 0 else ""
-                    error = patch.stderr.strip()
-                    if rollback_error:
-                        error = f"{error}; rollback failed: {rollback_error}"
-                    self.emit("checkpoint.restore_failed", self.task.id, error=error)
+                    if current:
+                        subprocess.run(["git", "apply", "--binary", "-"], cwd=self.workspace, input=current, capture_output=True, text=True)
+                    self.emit("checkpoint.restore_failed", self.task.id, error=patch.stderr.strip())
                     raise RuntimeError("CHECKPOINT_RESTORE_FAILED")
         self.emit("checkpoint.restored", self.task.id)
 
@@ -1270,8 +1285,7 @@ class Runtime:
             if self._active_turns > 0:
                 # Deferred even for a shutdown.  Closing the store under a live
                 # turn is exactly the race the counter exists to prevent, and
-                # the sub-agents have already been cancelled above.  Ownership
-                # is released by _leave_turn only after that writer is gone.
+                # ownership is released only after that writer is gone.
                 self._close_pending = True
                 self._release_pending = True
                 return
@@ -1283,9 +1297,6 @@ class Runtime:
             with self._store_lock:
                 self._durable_closed = True
             close()
-        # A closed Runtime no longer owns or mutates the workspace.  Releasing
-        # explicitly preserves immediate same-process recover without letting a
-        # second live Runtime adopt ownership merely because the PID matches.
         self.lock.release()
 
     def _enter_turn(self) -> None:
@@ -1304,6 +1315,30 @@ class Runtime:
         if pending:
             self.close(shutdown=self._background_closed)
 
+    def _record_interruption(self) -> None:
+        """Write down that the user stopped this turn, and what had been said.
+
+        The screen keeps showing the half-finished reply, so the conversation
+        the model is handed has to contain it too — otherwise the two disagree,
+        and the next turn arrives as a second ``user`` message with no assistant
+        turn between them.
+        """
+        if not self.task:
+            return
+        if self.task.messages and self.task.messages[-1].get("role") == "assistant":
+            return
+        partial = (getattr(self, "_partial_text", "") or "").strip()
+        note = INTERRUPTED_NOTE if partial else INTERRUPTED_EMPTY
+        message = {"role": "assistant", "content": f"{partial}\n\n{note}" if partial else note}
+        self.task.messages.append(message)
+        try:
+            self.emit("task.message", self.task.id, message=message)
+        except RuntimeError:
+            # The store is already closed; the in-memory history is what the
+            # next turn reads, and it is correct either way.
+            pass
+        self._partial_text = ""
+
     def stop(self) -> None:
         """End the task from any state that can still be ended.
 
@@ -1317,6 +1352,7 @@ class Runtime:
             if self.task and self.task.status == "recovery_required":
                 self.acknowledge_recovery("stop")
             elif self.task and self.task.status in {"running", "paused"}:
+                self._record_interruption()
                 self._transition("stopped", "task.stopped")
                 self._send_telemetry("stopped")
         finally:

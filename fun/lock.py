@@ -3,10 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import uuid
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 
 def _pid_is_alive(pid: int) -> bool:
@@ -51,128 +48,59 @@ class WorkspaceLock:
         self.workspace = Path(workspace).expanduser().resolve()
         digest = hashlib.sha256(str(self.workspace).encode("utf-8")).hexdigest()[:16]
         self.path = Path(state_dir).expanduser() / f"workspace-{digest}.lock"
-        self.guard_path = self.path.with_suffix(self.path.suffix + ".guard")
-        self.owner = uuid.uuid4().hex
         self.held = False
-
-    @contextmanager
-    def _guard(self) -> Iterator[None]:
-        """Serialise lock-file inspection and replacement across processes.
-
-        The guard file is persistent; ownership is an OS advisory lock, so a
-        process crash releases it automatically without a second stale-file
-        protocol and without exposing half-written metadata.
-        """
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        stream = self.guard_path.open("a+b")
-        try:
-            if os.name == "nt":
-                import msvcrt
-
-                stream.seek(0)
-                if stream.read(1) == b"":
-                    stream.write(b"0")
-                    stream.flush()
-                stream.seek(0)
-                try:
-                    msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
-                except OSError as exc:
-                    raise WorkspaceLockError(f"WORKSPACE_LOCK_CONTENDED: {self.path}") from exc
-            else:
-                import fcntl
-
-                try:
-                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-                except OSError as exc:
-                    raise WorkspaceLockError(f"WORKSPACE_LOCK_CONTENDED: {self.path}") from exc
-            yield
-        finally:
-            try:
-                if os.name == "nt":
-                    import msvcrt
-
-                    stream.seek(0)
-                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    import fcntl
-
-                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
-            except OSError:
-                pass
-            stream.close()
-
-    def _metadata(self) -> dict[str, object] | None:
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else None
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            return None
 
     def acquire(self, attempts: int = 3) -> None:
         """Take the lock, reclaiming it only from a process that is gone.
 
-        Inspection, stale removal and replacement are one guarded transaction.
-        The metadata is written to a private temporary file and atomically linked
-        into place, so another contender can never mistake a half-written live
-        lock for stale.
+        Two processes can find the same lock stale at the same moment, both
+        unlink it, and both try to recreate it.  The retry used to sit *inside*
+        the ``except FileExistsError`` handler, so the loser's ``os.open`` raised
+        a bare ``FileExistsError`` that callers catching ``WorkspaceLockError``
+        could not handle — and the winner could not tell it had won.  Retrying
+        from the top means whoever loses simply sees a fresh live lock and is
+        refused, which is the correct answer.
         """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with self._guard():
-                if self.path.exists():
-                    data = self._metadata()
-                    # Invalid metadata is not proof that the owner is dead.  Fail
-                    # closed rather than deleting a live lock observed mid-write.
-                    if data is None:
-                        raise WorkspaceLockError(f"WORKSPACE_LOCKED: {self.path}")
-                    try:
-                        pid = int(data.get("pid", 0))
-                    except (ValueError, TypeError):
-                        raise WorkspaceLockError(f"WORKSPACE_LOCKED: {self.path}")
-                    if _pid_is_alive(pid):
-                        raise WorkspaceLockError(f"WORKSPACE_LOCKED: {self.path}")
-                    self.path.unlink()
-                temporary = self.path.with_name(f".{self.path.name}.{self.owner}.tmp")
-                try:
-                    with temporary.open("x", encoding="utf-8") as stream:
-                        json.dump({"pid": os.getpid(), "workspace": str(self.workspace), "owner": self.owner}, stream)
-                        stream.flush()
-                        os.fsync(stream.fileno())
-                    os.link(temporary, self.path)
-                except FileExistsError as exc:
+        for attempt in range(max(1, attempts)):
+            try:
+                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError as exc:
+                if not self._stale():
+                    raise WorkspaceLockError(f"WORKSPACE_LOCKED: {self.path}") from exc
+                if attempt + 1 == attempts:
                     raise WorkspaceLockError(f"WORKSPACE_LOCK_CONTENDED: {self.path}") from exc
-                finally:
-                    temporary.unlink(missing_ok=True)
-                self.held = True
-        except WorkspaceLockError:
-            raise
+                self.path.unlink(missing_ok=True)
+                continue
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump({"pid": os.getpid(), "workspace": str(self.workspace)}, stream)
+            self.held = True
+            return
+
+    def _stale(self) -> bool:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            pid = int(data.get("pid", 0))
+            return not _pid_is_alive(pid)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return True
 
     def adopt_if_owned(self) -> bool:
-        """Reattach only to this exact lock capability, never merely this PID."""
-        data = self._metadata()
-        if data is None:
-            return False
         try:
-            if int(data.get("pid", 0)) == os.getpid() and data.get("owner") == self.owner:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            if int(data.get("pid", 0)) == os.getpid():
                 self.held = True
                 return True
-        except (ValueError, TypeError):
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return False
         return False
 
     def release(self) -> None:
-        if not self.held:
-            return
-        try:
-            with self._guard():
-                data = self._metadata()
-                if data is not None and data.get("owner") == self.owner:
-                    self.path.unlink(missing_ok=True)
-        except WorkspaceLockError:
-            # Never delete without proving ownership; deleting a replacement
-            # lock would violate mutual exclusion.
-            return
-        finally:
+        if self.held:
+            try:
+                self.path.unlink()
+            except FileNotFoundError:
+                pass
             self.held = False
 
     def __enter__(self) -> "WorkspaceLock":

@@ -22,6 +22,42 @@ MAX_INDEXED_FILES = 4000
 WORD_BOUNDARIES = "/_-. "
 
 
+def mention_token(path: str) -> str:
+    """Render ``path`` as an ``@`` reference that survives being read back."""
+    return f'@"{path}"' if (" " in path or "\t" in path) else f"@{path}"
+
+
+def mentions(text: str) -> list[str]:
+    """Every ``@`` file reference in ``text``, quoted ones included.
+
+    The composer advertises "@ files", so something has to actually read them
+    back out again; for a long time nothing did, and an ``@`` reference was
+    decoration that the model was free to ignore.
+    """
+    found: list[str] = []
+    index = 0
+    while True:
+        at = text.find("@", index)
+        if at < 0:
+            return found
+        if at > 0 and not text[at - 1].isspace():
+            index = at + 1
+            continue
+        if text[at + 1 : at + 2] == '"':
+            close = text.find('"', at + 2)
+            if close < 0:
+                return found
+            path, index = text[at + 2 : close], close + 1
+        else:
+            end = at + 1
+            while end < len(text) and not text[end].isspace():
+                end += 1
+            path, index = text[at + 1 : end], end
+        path = path.strip().rstrip(",.;:，。；：")
+        if path and path not in found:
+            found.append(path)
+
+
 @dataclass
 class Candidate:
     value: str
@@ -99,6 +135,13 @@ def detect(text: str, cursor: int) -> Context | None:
             end += 1
         return Context("command", text[1:cursor], 0, end)
 
+    quoted = text.rfind('@"', line_start, cursor)
+    if quoted >= 0 and '"' not in text[quoted + 2 : cursor]:
+        # Inside an open @"… quote, so spaces belong to the path.
+        end = cursor
+        while end < len(text) and text[end] != '"':
+            end += 1
+        return Context("file", text[quoted + 2 : cursor], quoted, min(end + 1, len(text)))
     start = cursor
     while start > line_start and text[start - 1] not in " \t":
         start -= 1
@@ -169,7 +212,10 @@ class Completer:
         completing a token that sits mid-sentence does not leave a double space
         behind it.
         """
-        replacement = choice if context.kind == "command" else f"@{choice}"
+        # A path with a space in it has to be quoted, or the reference has no
+        # end: "@src/my file.py" reads as the file "src/my" followed by loose
+        # words, and the mention silently pointed at nothing.
+        replacement = choice if context.kind == "command" else mention_token(choice)
         rest = text[context.end :]
         suffix = "" if rest[:1].isspace() else " "
         new_text = text[: context.start] + replacement + suffix + rest

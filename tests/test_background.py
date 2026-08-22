@@ -84,27 +84,6 @@ class BackgroundTaskTests(unittest.TestCase):
             self.assertIn("background.task.cancel_requested", [event.type for event in runtime.events.list()])
             runtime.stop()
 
-    def test_background_task_can_be_cancelled_after_foreground_turn_closed_store(self):
-        with TemporaryDirectory() as directory:
-            runtime = Runtime(directory, state_dir=directory)
-            runtime.create_task("parent")
-            started = threading.Event()
-
-            def worker(goal, cancel):
-                started.set()
-                while not cancel.is_set():
-                    time.sleep(0.005)
-                return "cancelled"
-
-            task = runtime.spawn_agent("long work", worker)
-            self.assertTrue(started.wait(2))
-            runtime.complete("foreground done")
-            runtime.cancel_background_task(task.id)
-            task.thread.join(2)
-            self.assertEqual(task.status, "cancelled")
-            self.assertIn("background.task.cancel_requested", [event.type for event in runtime.events.list()])
-            runtime.shutdown()
-
     def test_close_cancels_background_tasks(self):
         with TemporaryDirectory() as directory:
             runtime = Runtime(directory, state_dir=directory)

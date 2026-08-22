@@ -17,7 +17,7 @@ import sys
 import threading
 from dataclasses import dataclass, field
 from shutil import get_terminal_size
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Protocol, Sequence
 
 from . import input as keys
 from .completion import Completer, CompletionState
@@ -146,9 +146,9 @@ class App:
         self.modal = field_modal(title, fields, callback)
         self._dirty = True
 
-    def open_select(self, title: str, options: list[str], callback: Callable[[str | None], None]) -> str:
+    def open_select(self, title: str, options: list[str], callback: Callable[[Any], None], multi: bool = False, chosen: Sequence[str] = ()) -> str:
         """Open a picker and return its token, for work loaded on its behalf."""
-        self.modal = select_modal(title, options, callback)
+        self.modal = select_modal(title, options, callback, multi=multi, chosen=chosen)
         self._dirty = True
         return self.modal.token
 
@@ -205,9 +205,11 @@ class App:
             options = [str(item) for item in (values or []) if str(item)]
             if options:
                 current = self.modal.options[self.modal.index] if self.modal.options else ""
-                if current in options:
-                    options = [current] + [item for item in options if item != current]
+                keep = [item for item in ([current] if current else []) + list(self.modal.chosen) if item in options]
+                for item in reversed(keep):
+                    options = [item] + [other for other in options if other != item]
                 self.modal.options = options
+                self.modal.chosen = [item for item in self.modal.chosen if item in options]
                 self.modal.index = 0
                 self.modal.loading = False
         elif kind == "approval":
@@ -441,13 +443,24 @@ class App:
             shown = state.toggle_sidebar()
             self.set_status("sidebar on" if shown else "sidebar off")
         elif key == "up":
-            # Inside a multi-line draft the arrows move the cursor; only at the
-            # top edge do they fall through to history, the way a shell behaves.
-            if not editor.move_up():
+            # History only from an empty composer.  Falling through to history
+            # whenever the cursor was at the top line meant that pressing Up
+            # while typing replaced the draft with an old message — and Enter
+            # then sent the old one.  It is also what made the wheel destroy
+            # drafts, since terminals translate it into Up by default.
+            # Empty composer, or already browsing history — and typing anything
+            # leaves history mode, so an edited recall is never overwritten.
+            if not editor.move_up() and (not editor.text or editor.history_index is not None):
                 editor.history_previous()
         elif key == "down":
-            if not editor.move_down():
+            if not editor.move_down() and (not editor.text or editor.history_index is not None):
                 editor.history_next()
+        elif key == "wheel_up":
+            state.scroll(-3)
+        elif key == "wheel_down":
+            state.scroll(3)
+        elif key == "mouse":
+            return
         elif keys.is_text(key):
             editor.insert(key)
         self._refresh_completion()

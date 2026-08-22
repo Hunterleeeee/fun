@@ -95,9 +95,6 @@ class Policy:
 
 class WorkspaceGuard:
     def __init__(self, root: str | Path) -> None:
-        # Keep both spellings.  ``root`` is canonical containment authority;
-        # ``lexical_root`` preserves names before ancestor symlinks such as
-        # macOS /var -> /private/var erase them.
         self.lexical_root = Path(root).expanduser().absolute()
         self.root = self.lexical_root.resolve()
         if not self.root.is_dir():
@@ -127,27 +124,17 @@ class WorkspaceGuard:
         """
         supplied = Path(path).expanduser()
         lexical = supplied if supplied.is_absolute() else self.lexical_root / supplied
-        # Normalise both sides.  On macOS /var is a symlink to /private/var;
-        # resolving only the root made an ordinary TemporaryDirectory child look
-        # outside its own workspace.
         try:
             lexical_relative = lexical.resolve(strict=False).relative_to(self.root)
         except (OSError, RuntimeError, ValueError) as exc:
             # Callers catch PolicyError; a bare ValueError from an
             # out-of-workspace path walked straight past every handler.
             raise PolicyError("PATH_OUTSIDE_WORKSPACE") from exc
-        patterns = [pattern.lower() for pattern in (policy or Policy()).protected_names]
-
-        # Check the path the caller actually named as well as the canonical
-        # target.  Resolving first erased a protected lexical alias such as
-        # ``.env -> public.txt`` and allowed the secret-named path through.
         try:
             lexical_parts = lexical.absolute().relative_to(self.lexical_root).parts
         except ValueError:
-            # Accept an absolute path spelled through an ancestor symlink only
-            # after canonical containment succeeded; preserve its tail by
-            # comparing it with the canonical relative path.
             lexical_parts = lexical_relative.parts
+        patterns = [pattern.lower() for pattern in (policy or Policy()).protected_names]
         for part in (*lexical_parts, *lexical_relative.parts):
             lowered = part.lower()
             if any(fnmatch(lowered, pattern) for pattern in patterns):
