@@ -105,7 +105,8 @@ class ConfigLockSchemaTests(unittest.TestCase):
             self.assertEqual(reloaded.api_key, "sk-real")
             self.assertTrue(reloaded.ready())
             self.assertFalse(reloaded.keychain_unreadable)
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
     def test_storage_names_every_place_the_key_can_live(self):
         with TemporaryDirectory() as directory:
