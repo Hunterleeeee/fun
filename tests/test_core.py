@@ -2014,6 +2014,7 @@ class JourneyTurnIntegrityTests(unittest.TestCase):
                 runtime.execute_tool_calls(calls)
             answered = {item["tool_call_id"] for item in runtime.task.messages if item.get("role") == "tool"}
             self.assertEqual(answered, {"c0", "c1", "c2"})
+            runtime.close()
 
 
 class JourneyLongSessionTests(unittest.TestCase):
